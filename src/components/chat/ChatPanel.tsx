@@ -410,8 +410,11 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
       <button
         onClick={handleCompact}
         disabled={!canCompact}
-        className="px-1.5 py-0.5 rounded bg-bg-tertiary hover:bg-bg-hover
-          text-text-muted hover:text-text-primary disabled:opacity-40 disabled:hover:bg-bg-tertiary"
+        className="px-2 py-0.5 rounded border border-border-subtle bg-bg-card
+          text-text-primary font-medium cursor-pointer transition-smooth
+          hover:bg-accent/10 hover:text-accent hover:border-accent/30
+          disabled:opacity-40 disabled:cursor-not-allowed
+          disabled:hover:bg-bg-card disabled:hover:text-text-primary disabled:hover:border-border-subtle"
         title={compactHint}
       >
         {t('chat.compact')}
