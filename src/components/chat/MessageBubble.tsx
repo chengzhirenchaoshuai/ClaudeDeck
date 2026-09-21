@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import { type ChatMessage } from '../../stores/chatStore';
 import { useFileStore } from '../../stores/fileStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -133,9 +133,7 @@ function renderUserContent(text: string): ReactNode {
 }
 
 function UserMsg({ message }: Props) {
-  const t = useT();
   const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
   const attachments = message.attachments;
   const content = safeContent(message.content);
   const lines = content.split('\n');
@@ -144,26 +142,8 @@ function UserMsg({ message }: Props) {
     ? lines.slice(0, USER_MSG_COLLAPSE_LINES).join('\n')
     : content;
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [content]);
-
   return (
     <div className="flex justify-end gap-2.5 group/user relative">
-      {/* Copy button — visible on hover */}
-      <button
-        onClick={handleCopy}
-        className="absolute -top-2 right-1 z-10 opacity-0 group-hover/user:opacity-100
-          px-1.5 py-0.5 rounded-md text-[10px] font-medium
-          bg-bg-tertiary/80 text-text-muted hover:text-text-primary
-          hover:bg-bg-tertiary border border-border-subtle
-          transition-smooth cursor-pointer"
-      >
-        {copied ? t('msg.copied') : t('msg.copyText')}
-      </button>
       <div className="max-w-[75%] px-3.5 py-2.5 rounded-2xl rounded-br-md
         bg-bg-user-msg text-text-inverse
         text-sm leading-relaxed shadow-md whitespace-pre-wrap">

@@ -2415,7 +2415,7 @@ fn compute_usage_stats() -> Result<Value, String> {
                 (cwd, msgs)
             }
         };
-        let project = if cwd.is_empty() { decode_project_name(dir_name) } else { cwd };
+        let project = resolve_project_path(&cwd, dir_name);
         for m in msgs {
             if !m.id.is_empty() && !seen.insert(m.id.clone()) {
                 continue;
@@ -2781,11 +2781,7 @@ async fn list_sessions() -> Result<Vec<Value>, String> {
                                 // Use cwd from JSONL if available (authoritative),
                                 // otherwise fall back to decoding the directory name.
                                 let project_dir = entry.file_name().to_string_lossy().to_string();
-                                let project_name = if cwd.is_empty() {
-                                    decode_project_name(&project_dir)
-                                } else {
-                                    cwd
-                                };
+                                let project_name = resolve_project_path(&cwd, &project_dir);
 
                                 sessions.push(serde_json::json!({
                                     "id": id,
@@ -3300,6 +3296,41 @@ fn extract_session_info(path: &std::path::Path) -> (String, String) {
 /// candidate span of dash-separated parts, try joining them with the
 /// original `-`, then ` ` (space), then `.` — whichever produces a path
 /// that actually exists on disk wins.
+/// CLI 把工作目录编码成 projects 下的目录名：每个不是 ASCII 字母数字的字符（含中文）都换成 '-'。
+fn encode_project_dir(path: &str) -> String {
+    path.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// 决定一个会话所属项目的真实路径。
+/// 会话文件里记录的 cwd 可能已过时：项目从 E:\GaussDB 搬到 F:\AI\mywork\GaussDB 后，
+/// 会话文件被放进了新位置对应的目录，但里面记录的仍是旧 cwd。而 CLI 是按“当前目录编码成的目录名”
+/// 去找会话文件的，所以：
+/// 1. cwd 编码后正好等于所在目录名，说明 cwd 就是它，直接用；
+/// 2. 否则用目录名还原出的路径（按磁盘实际存在的目录探测），存在就用它；
+/// 3. 都不行才退回记录的 cwd（没有 cwd 则用还原结果），此时提示“目录缺失”是准确的。
+fn resolve_project_path(cwd: &str, project_dir: &str) -> String {
+    if !cwd.is_empty() && encode_project_dir(cwd) == project_dir {
+        return cwd.to_string();
+    }
+    let mut decoded = decode_project_name(project_dir);
+    // 还原出的 Windows 路径可能在盘符后多一个反斜杠（F:\AI），会让项目键和 CLI 编码出的目录名都对不上
+    if !decoded.starts_with("\\\\") {
+        while decoded.contains("\\\\") {
+            decoded = decoded.replace("\\\\", "\\");
+        }
+    }
+    if std::path::Path::new(&decoded).exists() {
+        return decoded;
+    }
+    if cwd.is_empty() {
+        decoded
+    } else {
+        cwd.to_string()
+    }
+}
+
 fn decode_project_name(encoded: &str) -> String {
     // Detect Windows-style encoded paths: "C-Users-..." (drive letter prefix without leading dash)
     // vs Unix-style: "-Users-..." (leading dash = root /)
