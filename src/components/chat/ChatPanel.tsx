@@ -502,23 +502,26 @@ function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, on
         </div>
       </div>
 
-      <button
-        onClick={onJumpBottom}
-        className={`pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1.5
-          rounded-full border border-border-subtle bg-bg-card/90 backdrop-blur
-          shadow-lg text-xs transition-smooth
-          ${showScrollBtn
-            ? 'text-accent hover:bg-accent/10'
-            : 'text-text-tertiary hover:text-text-primary hover:bg-bg-secondary'
-          }`}
-        title={t('chat.scrollToBottom')}
-      >
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"
-          stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-          <path d="M7 2v10M3 8l4 4 4-4" />
-        </svg>
-        <span>{t('chat.latest')}</span>
-      </button>
+      {/* 只在向上翻离底部较远时显示 */}
+      {showScrollBtn && (
+        <button
+          onClick={onJumpBottom}
+          className={`pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1.5
+            rounded-full border border-border-subtle bg-bg-card/90 backdrop-blur
+            shadow-lg text-xs transition-smooth
+            ${showScrollBtn
+              ? 'text-accent hover:bg-accent/10'
+              : 'text-text-tertiary hover:text-text-primary hover:bg-bg-secondary'
+            }`}
+          title={t('chat.scrollToBottom')}
+        >
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"
+            stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M7 2v10M3 8l4 4 4-4" />
+          </svg>
+          <span>{t('chat.latest')}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -540,7 +543,21 @@ export function ChatPanel() {
   const toggleAgentPanel = useSettingsStore((s) => s.toggleAgentPanel);
   const sessionMode = useSettingsStore((s) => s.sessionMode);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
-  const directoryMissing = useFileStore((s) => s.directoryMissing);
+  // “缺失”只对当前工作目录有效：切换到别的目录（包括跳过加载的主目录 / 远程项目）时不会沿用旧的标记
+  const directoryMissing = useFileStore((s) => s.directoryMissing && s.rootPath === workingDirectory);
+  // 目录被判定为缺失时自动复查（立即、每 3 秒、窗口重新获得焦点时）：
+  // 目录其实存在只是一次读取失败的话，会自己恢复，不需要切换项目或重启
+  useEffect(() => {
+    if (!workingDirectory || !directoryMissing) return;
+    const recheck = () => { void useFileStore.getState().recheckDirectory(workingDirectory); };
+    recheck();
+    const timer = setInterval(recheck, 3000);
+    window.addEventListener('focus', recheck);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', recheck);
+    };
+  }, [workingDirectory, directoryMissing]);
   const activeProvider = useProviderStore((s) => {
     if (!s.activeProviderId) return null;
     return s.providers.find((p) => p.id === s.activeProviderId) ?? null;
@@ -945,25 +962,6 @@ export function ChatPanel() {
         />
       )}
 
-      {/* Scroll to bottom FAB */}
-      {showScrollBtn && (
-        <button
-          onClick={scrollToBottom}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10
-            inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-bg-card border border-border-subtle
-            shadow-md hover:shadow-lg justify-center
-            text-text-muted hover:text-text-primary transition-smooth
-            cursor-pointer opacity-80 hover:opacity-100"
-          title={t('chat.scrollToBottom')}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M7 2v10M3 8l4 4 4-4" />
-          </svg>
-          <span className="text-xs">{t('chat.latest')}</span>
-        </button>
-      )}
-
       {/* Directory missing banner */}
       {workingDirectory && directoryMissing && (
         <div className="mx-4 mb-3 px-4 py-3 rounded-xl bg-status-warning/10 border border-status-warning/30
@@ -975,6 +973,14 @@ export function ChatPanel() {
             <circle cx="8" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
           </svg>
           <span className="flex-1">{t('project.directoryMissing')}</span>
+          <button
+            onClick={() => { void useFileStore.getState().recheckDirectory(workingDirectory); }}
+            className="px-3 py-1 rounded-lg text-xs font-medium
+              bg-bg-secondary hover:bg-bg-tertiary text-text-muted
+              hover:text-text-primary transition-smooth"
+          >
+            {t('project.recheck')}
+          </button>
           <button
             onClick={async () => {
               const selected = await open({ directory: true, multiple: false, title: t('project.selectFolder') });

@@ -964,16 +964,6 @@ export function ConversationList() {
         </div>
       )}
 
-      {/* Refresh button */}
-      <button
-        onClick={fetchSessions}
-        className="mx-2 mt-2 py-1.5 rounded-lg text-[12px]
-          text-text-muted hover:text-text-primary
-          hover:bg-bg-secondary transition-smooth"
-      >
-        {t('conv.refresh')}
-      </button>
-
       {/* Multi-select floating toolbar — sticky at bottom of scroll container */}
       {multiSelect && (
         <div className="sticky bottom-0 mx-1 mt-2 p-2 rounded-xl

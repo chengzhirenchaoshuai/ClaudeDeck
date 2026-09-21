@@ -213,6 +213,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'project.selectFolder': '选择项目文件夹',
     'project.selectBtn': '选择项目...',
     'project.directoryMissing': '项目文件夹已被移动或删除，请重新选择',
+    'project.recheck': '重新检查',
+    'rewind.locateFailed': '无法定位回退点（会话文件尚未写入、已被删除或消息链不完整），未做任何改动，请稍后再试',
     'project.reselect': '重新选择',
 
     // Error classification
@@ -1050,6 +1052,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'project.selectFolder': 'Select Project Folder',
     'project.selectBtn': 'Select project...',
     'project.directoryMissing': 'Project folder has been moved or deleted. Please select a new one.',
+    'project.recheck': 'Check again',
+    'rewind.locateFailed': 'Cannot locate the rewind point (session file not written yet, deleted, or the message chain is incomplete). Nothing was changed; please try again later.',
     'project.reselect': 'Reselect',
 
     // Error classification

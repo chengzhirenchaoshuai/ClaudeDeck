@@ -1431,6 +1431,14 @@ async fn start_claude_session(
     if let Some(ref resume_id) = params.resume_session_id {
         args.push("--resume".to_string());
         args.push(resume_id.clone());
+        // 回退：续接到指定消息并分叉出新会话，模型只会记得该消息（含）之前的历史
+        if let Some(ref at) = params.resume_session_at {
+            if !at.is_empty() && at.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+                args.push("--resume-session-at".to_string());
+                args.push(at.clone());
+                args.push("--fork-session".to_string());
+            }
+        }
     }
 
     if let Some(ref model) = params.model {
@@ -7654,8 +7662,12 @@ struct LocalModelServiceStatus {
 }
 
 async fn run_ollama(args: &[&str]) -> Result<String, String> {
-    let output = Command::new("ollama")
-        .args(args)
+    let mut cmd = Command::new("ollama");
+    cmd.args(args);
+    // Windows 上不创建控制台窗口，否则每次调用都会闪出一个黑框
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run ollama: {}", e))?;
@@ -7679,8 +7691,11 @@ async fn run_ollama(args: &[&str]) -> Result<String, String> {
 }
 
 async fn read_ollama_version() -> Result<(Option<String>, Option<String>), String> {
-    let output = Command::new("ollama")
-        .arg("--version")
+    let mut cmd = Command::new("ollama");
+    cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run ollama: {}", e))?;
@@ -7787,11 +7802,15 @@ async fn list_local_models() -> Result<Vec<LocalModelInfo>, String> {
 #[tauri::command]
 async fn pull_local_model(app: AppHandle, model: String) -> Result<(), String> {
     let model = validate_ollama_model_name(&model)?;
-    let mut child = Command::new("ollama")
+    let mut pull_cmd = Command::new("ollama");
+    pull_cmd
         .arg("pull")
         .arg(&model)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(target_os = "windows")]
+    pull_cmd.creation_flags(0x08000000);
+    let mut child = pull_cmd
         .spawn()
         .map_err(|e| format!("Failed to start ollama pull: {}", e))?;
 

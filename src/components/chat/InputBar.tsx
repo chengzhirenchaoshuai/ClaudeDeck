@@ -799,6 +799,13 @@ export function InputBar() {
       text = `${text}\n\n${t('input.attachedFiles')}\n${filePaths}`;
     }
 
+    // 回退时“总结”的摘要：作为上下文附在这条消息前面发给模型，不显示在气泡里，发送一次后清除
+    const pendingSummary = getActiveTabState().sessionMeta.pendingSummary;
+    if (pendingSummary) {
+      text = `${pendingSummary}\n\n${text}`;
+      setSessionMeta(tabId, { pendingSummary: undefined });
+    }
+
     setInputSync('');
 
     // Silent restart: skip user message bubble (Code mode ExitPlanMode auto-recovery)
@@ -1151,6 +1158,10 @@ export function InputBar() {
           model: liveResolvedModel,
           session_id: preGeneratedId,
           resume_session_id: existingSessionId || undefined,
+          // 回退后的第一次启动：续接到回退点并分叉出新会话，模型只记得回退点之前的历史
+          resume_session_at: existingSessionId
+            ? getActiveTabState().sessionMeta.resumeAtUuid || undefined
+            : undefined,
           thinking_level: liveThinkingLevel,
           session_mode: (liveSessionMode === 'ask' || liveSessionMode === 'plan') ? liveSessionMode : undefined,
           provider_id: liveProviderId || undefined,
@@ -1165,6 +1176,7 @@ export function InputBar() {
         setSessionMeta(tabId, {
           sessionId: session.session_id,
           rewoundFromSessionId: undefined,
+          resumeAtUuid: undefined,
           stdinId: preGeneratedId,
           envFingerprint: envFingerprint(),
           snapshotMode: liveSessionMode,

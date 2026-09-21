@@ -23,6 +23,8 @@ export interface StartSessionParams {
   context_window?: number;
   /** 是否在会话中加载 MCP 服务器（默认不加载，启动更快） */
   enable_mcp?: boolean;
+  /** 回退：续接时只保留到该助手消息（uuid）为止的历史，并分叉出新会话 */
+  resume_session_at?: string;
   /** Permission mode for CLI control protocol.
    *  "acceptEdits" | "default" | "plan" | "bypassPermissions"
    *  When not "bypassPermissions", enables structured permission requests via SDK protocol. */

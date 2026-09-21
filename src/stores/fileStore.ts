@@ -39,6 +39,8 @@ interface FileState {
   isDragOverTree: boolean;
 
   loadTree: (path: string) => Promise<void>;
+  /** 目录被判定为缺失时复查：确实存在就重新加载并清除“缺失”标记 */
+  recheckDirectory: (path: string) => Promise<void>;
   /** Refresh the tree without clearing change markers. Optional path overrides rootPath. */
   refreshTree: (overridePath?: string) => Promise<void>;
   selectFile: (path: string) => Promise<void>;
@@ -63,6 +65,16 @@ interface FileState {
   createFolder: (parentDir: string, name: string) => Promise<void>;
   // External drag state
   setDragOverTree: (v: boolean) => void;
+}
+
+/** 再用 read_dir 确认一次目录是否真的不存在，避免一次瞬时失败就把目录判定为缺失 */
+async function confirmMissing(path: string): Promise<boolean> {
+  try {
+    await bridge.checkFileAccess(path); // 存在但无权限时返回 false，也算存在
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 export const useFileStore = create<FileState>()((set, get) => ({
@@ -102,10 +114,16 @@ export const useFileStore = create<FileState>()((set, get) => ({
       }
     } catch (err) {
       if (get().rootPath === path) {
-        const missing = String(err).includes('does not exist');
-        set({ isLoading: false, directoryMissing: missing });
+        const missing = String(err).includes('does not exist') && (await confirmMissing(path));
+        if (get().rootPath === path) set({ isLoading: false, directoryMissing: missing });
       }
     }
+  },
+
+  recheckDirectory: async (path: string) => {
+    if (!path || (await confirmMissing(path))) return;
+    await get().loadTree(path);
+    if (get().rootPath === path) set({ directoryMissing: false });
   },
 
   refreshTree: async (overridePath?: string) => {
@@ -120,7 +138,7 @@ export const useFileStore = create<FileState>()((set, get) => ({
         set({ tree });
       }
     } catch (err) {
-      if (String(err).includes('does not exist')) {
+      if (String(err).includes('does not exist') && (await confirmMissing(dir)) && get().rootPath === dir) {
         set({ directoryMissing: true, tree: [] });
       }
     }

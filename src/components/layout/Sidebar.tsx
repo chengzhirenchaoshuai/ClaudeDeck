@@ -19,7 +19,6 @@ export function Sidebar() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggleSettings);
   const toggleUsage = useSettingsStore((s) => s.toggleUsage);
-  const setSecondaryTab = useSettingsStore((s) => s.setSecondaryTab);
   const updateAvailable = useSettingsStore((s) => s.updateAvailable);
   const cliUpdateAvailable = useSettingsStore((s) => s.cliUpdateAvailable);
   const t = useT();
@@ -156,26 +155,6 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="pt-3 mt-3 border-t border-border-subtle px-3">
-        <button onClick={() => setSecondaryTab('preview')}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
-            text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary
-            transition-smooth">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-            <path d="M2 4h12v8H2zM5 14h6" />
-          </svg>
-          {t('panel.preview')}
-        </button>
-        <button onClick={() => setSecondaryTab('skills')}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
-            text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary
-            transition-smooth">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-            <path d="M8 1L1 4.5l7 3.5 7-3.5L8 1zM1 11.5l7 3.5 7-3.5M1 8l7 3.5L15 8" />
-          </svg>
-          {t('panel.skills')}
-        </button>
         <button onClick={toggleUsage}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
             text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary

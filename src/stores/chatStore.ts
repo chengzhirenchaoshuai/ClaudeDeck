@@ -86,6 +86,10 @@ export interface SessionMeta {
   sessionId?: string;
   /** Previous session hidden after a rewind starts a replacement CLI session. */
   rewoundFromSessionId?: string;
+  /** 回退后下一次启动会话时，续接到该助手消息（uuid）为止；只在下一次启动时使用一次 */
+  resumeAtUuid?: string;
+  /** 回退时“总结”生成的摘要，附在下一条消息前发给模型（不显示在气泡里），发送后清除 */
+  pendingSummary?: string;
   /** The desk-generated ID used as key in Rust StdinManager for sending follow-up messages */
   stdinId?: string;
   /** Message ID of a pending processing card (for CLI slash commands) */

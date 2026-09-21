@@ -187,4 +187,7 @@ pub struct StartSessionParams {
     /// 是否在会话中加载 MCP 服务器（默认 false）。
     /// false 时带 --strict-mcp-config 跳过全部 MCP，启动更快；true 时按 CLI 自身配置加载。
     pub enable_mcp: Option<bool>,
+    /// 回退用：续接（resume_session_id）时只保留到该消息（含）之前的历史，并分叉出新会话。
+    /// 值为 JSONL 里助手消息记录的 uuid。
+    pub resume_session_at: Option<String>,
 }

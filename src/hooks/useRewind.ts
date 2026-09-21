@@ -16,6 +16,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { bridge } from '../lib/tauri-bridge';
 import { parseTurns, type Turn } from '../lib/turns';
+import { resolveResumeAt, recordUuidOf } from '../lib/rewind-point';
 import { t } from '../lib/i18n';
 import { showToast } from '../components/shared/Toast';
 
@@ -72,17 +73,33 @@ export function useRewind() {
     }
   }, []);
 
-  /** Reset session state after rewind. The old CLI ID is retained only as a
-   * replacement marker so it can be hidden after the new branch is created. */
-  const resetSession = useCallback(() => {
+  /**
+   * 回退后重置会话状态。
+   * - keepSession（只回退代码）：对话内容不变，保留 CLI 会话 ID，下一条消息照常续接原会话。
+   * - 回退对话：旧会话 ID 记为 rewoundFromSessionId（新分支创建后隐藏旧的）；
+   *   resumeAt 有值时，下一次启动会续接旧会话并只保留到该消息为止的历史（分叉出新会话），
+   *   为 null 表示回退到第一轮，直接开启全新会话。
+   */
+  const resetSession = useCallback((opts: {
+    keepSession?: boolean;
+    resumeAt?: string | null;
+    pendingSummary?: string;
+  } = {}) => {
     const tid = useSessionStore.getState().selectedSessionId;
     if (!tid) return;
     const previousSessionId = useChatStore.getState().getTab(tid)?.sessionMeta.sessionId;
     useChatStore.getState().setSessionStatus(tid, 'idle');
+    if (opts.keepSession) {
+      useChatStore.getState().setSessionMeta(tid, { stdinId: undefined });
+      return;
+    }
     useChatStore.getState().setSessionMeta(tid, {
       stdinId: undefined,
-      sessionId: undefined,
+      // 有回退点时保留旧会话 ID 用于续接；没有（回到第一轮 / 还没有 CLI 会话）则开新会话
+      sessionId: opts.resumeAt ? previousSessionId : undefined,
+      resumeAtUuid: opts.resumeAt ?? undefined,
       rewoundFromSessionId: previousSessionId,
+      pendingSummary: opts.pendingSummary,
     });
   }, []);
 
@@ -109,6 +126,20 @@ export function useRewind() {
       return;
     }
 
+    // 回退对话前先算出 CLI 该续接到哪条消息：找不到就整体中止，不能悄悄丢掉全部上下文。
+    // 必须在杀进程和改界面之前做，失败时什么都不会被改动。
+    let resumeAt: string | null | undefined;
+    const oldCliSessionId = state.sessionMeta.sessionId;
+    if (action !== 'restore_code' && oldCliSessionId && !oldCliSessionId.startsWith('desk_')) {
+      try {
+        resumeAt = await resolveResumeAt(oldCliSessionId, recordUuidOf(turn));
+      } catch (err) {
+        console.error('[useRewind] cannot locate rewind point:', err);
+        showToast(t('rewind.locateFailed'), 'error');
+        return;
+      }
+    }
+
     // For file-restore actions, send rewind via stdin BEFORE killing the process
     // (SDK control protocol is fast and needs the process alive)
     const needsFileRestore = action === 'restore_all' || action === 'restore_code';
@@ -133,7 +164,7 @@ export function useRewind() {
       switch (action) {
         case 'restore_all': {
           useChatStore.getState().rewindToTurn(tid, turn.startMsgIdx);
-          resetSession();
+          resetSession({ resumeAt });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
           const successMsg = fileRestoreOk
@@ -144,9 +175,9 @@ export function useRewind() {
         }
 
         case 'restore_conversation': {
-          // Only restore conversation (keep code as-is) — instant, no CLI call
+          // Only restore conversation (keep code as-is)
           useChatStore.getState().rewindToTurn(tid, turn.startMsgIdx);
-          resetSession();
+          resetSession({ resumeAt });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
           showToast(t('rewind.success').replace('{n}', String(turn.index)), 'success');
@@ -154,8 +185,8 @@ export function useRewind() {
         }
 
         case 'restore_code': {
-          // Don't truncate messages — keep full conversation
-          resetSession();
+          // Don't truncate messages — keep full conversation and the CLI session
+          resetSession({ keepSession: true });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
           const codeMsg = fileRestoreOk
@@ -184,14 +215,17 @@ export function useRewind() {
 
           // Truncate to selected point
           useChatStore.getState().rewindToTurn(tid, turn.startMsgIdx);
-          resetSession();
 
-          // Add summary as a system message (preserves context without full messages)
           const totalTurns = turns.length;
           const summaryHeader = t('rewind.summaryTitle')
             .replace('{from}', String(turn.index))
             .replace('{to}', String(totalTurns));
           const summaryContent = `**${summaryHeader}**\n\n${summaryParts.join('\n\n')}`;
+          // 模型的上下文也回到该轮之前，摘要作为下一条消息的前缀交给模型；
+          // 否则界面上有摘要，模型却完全不知道被移除的内容
+          resetSession({ resumeAt, pendingSummary: summaryContent });
+
+          // 界面上以系统消息显示摘要
 
           useChatStore.getState().addMessage(tid, {
             id: generateMessageId(),
@@ -208,7 +242,7 @@ export function useRewind() {
     } catch (err) {
       console.error('[useRewind] executeRewind failed:', err);
       // Ensure we're in a recoverable state even if rewind failed
-      resetSession();
+      resetSession({ keepSession: true });
     }
 
     // Save to cache
