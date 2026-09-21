@@ -96,7 +96,7 @@ export function SettingsPanel() {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
 
       {/* Panel */}
-      <div className="relative w-[min(90vw,960px)] max-h-[85vh] min-h-[500px]
+      <div className="relative w-[min(90vw,960px)] h-[min(85vh,720px)] min-h-[440px]
         rounded-2xl bg-bg-card border border-border-subtle shadow-2xl
         overflow-hidden animate-fade-in flex flex-col">
 
@@ -141,7 +141,8 @@ export function SettingsPanel() {
           </nav>
 
           {/* Content area */}
-          <div className="flex-1 overflow-y-auto px-8 py-6">
+          {/* key 随页签变化：切换页签时内容区重新挂载，滚动位置回到顶部 */}
+          <div key={activeTab} className="flex-1 overflow-y-auto px-8 py-6">
             {activeTab === 'general' && <GeneralTab />}
             {activeTab === 'interface' && <InterfaceTab />}
             {activeTab === 'provider' && <ProviderTab />}
