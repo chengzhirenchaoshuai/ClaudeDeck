@@ -10,6 +10,8 @@ export interface UsageRow {
   cache5m: number;
   cache1h: number;
   messages: number;
+  /** 远程主机 id；本机数据为空 */
+  host?: string;
 }
 
 export interface UsageStats {

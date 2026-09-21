@@ -307,6 +307,104 @@ fn to_uri(host_id: &str, path: &str) -> String {
     format!("{}{}/{}", REMOTE_SCHEME, host_id, path.replace('\\', "/"))
 }
 
+/// 远端用量统计脚本：与本机 get_usage_stats 语义一致——
+/// 文件内同一消息保留 output 最大的一条，按修改时间从早到晚跨文件按消息 ID 去重，
+/// 按 (UTC 小时, 模型, 项目) 聚合后输出 JSON。只对包含 usage 的助手行做完整解析以节省时间。
+const USAGE_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$root = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$proj = Join-Path $root 'projects'
+$seen = New-Object 'System.Collections.Generic.HashSet[string]'
+$agg = @{}
+$files = @()
+if (Test-Path -LiteralPath $proj) {
+  foreach ($d in Get-ChildItem -LiteralPath $proj -Directory) {
+    foreach ($f in Get-ChildItem -LiteralPath $d.FullName -Filter *.jsonl -File) {
+      if ($f.BaseName -notlike 'desk_*') {
+        $files += [pscustomobject]@{ Path = $f.FullName; Dir = $d.Name; Time = $f.LastWriteTimeUtc }
+      }
+    }
+  }
+}
+$files = @($files | Sort-Object Time)
+$anon = 0
+foreach ($f in $files) {
+  $cwd = ''
+  $byId = @{}
+  foreach ($line in [System.IO.File]::ReadLines($f.Path)) {
+    if (-not $cwd -and $line.Contains('"cwd":"')) {
+      $m = [regex]::Match($line, '"cwd":"((?:[^"\\]|\\.)*)"')
+      if ($m.Success) { $cwd = [regex]::Unescape($m.Groups[1].Value) }
+    }
+    if (-not $line.Contains('"usage":{')) { continue }
+    if (-not $line.Contains('"type":"assistant"')) { continue }
+    try { $j = $line | ConvertFrom-Json } catch { continue }
+    if ($j.type -ne 'assistant') { continue }
+    $u = $j.message.usage
+    if (-not $u) { continue }
+    $in = [int64]$u.input_tokens
+    $out = [int64]$u.output_tokens
+    $cr = [int64]$u.cache_read_input_tokens
+    $cc = $u.cache_creation
+    if ($cc) { $c5 = [int64]$cc.ephemeral_5m_input_tokens; $c1 = [int64]$cc.ephemeral_1h_input_tokens }
+    else { $c5 = [int64]$u.cache_creation_input_tokens; $c1 = [int64]0 }
+    if (($in + $out + $cr + $c5 + $c1) -eq 0) { continue }
+    $id = [string]$j.message.id
+    if (-not $id) { $id = [string]$j.uuid }
+    if (-not $id) { $anon++; $id = "anon-$anon" }
+    $hm = [regex]::Match($line, '"timestamp":"(\d{4}-\d{2}-\d{2}T\d{2})')
+    $hour = if ($hm.Success) { $hm.Groups[1].Value } else { 'unknown' }
+    $model = [string]$j.message.model
+    if (-not $model) { $model = 'unknown' }
+    if (-not $byId.ContainsKey($id) -or $byId[$id][3] -lt $out) {
+      $byId[$id] = @($hour, $model, $in, $out, $cr, $c5, $c1)
+    }
+  }
+  $project = if ($cwd) { $cwd } else { $f.Dir }
+  foreach ($id in $byId.Keys) {
+    if (-not $seen.Add($id)) { continue }
+    $r = $byId[$id]
+    $key = $r[0] + '|' + $r[1] + '|' + $project
+    if (-not $agg.ContainsKey($key)) { $agg[$key] = @($r[0], $r[1], $project, [int64]0, [int64]0, [int64]0, [int64]0, [int64]0, [int64]0) }
+    $a = $agg[$key]
+    $a[3] += $r[2]; $a[4] += $r[3]; $a[5] += $r[4]; $a[6] += $r[5]; $a[7] += $r[6]; $a[8] += 1
+  }
+}
+$rows = foreach ($a in $agg.Values) {
+  [pscustomobject]@{ hour = $a[0]; model = $a[1]; project = $a[2]; input = $a[3]; output = $a[4]; cacheRead = $a[5]; cache5m = $a[6]; cache1h = $a[7]; messages = $a[8] }
+}
+ConvertTo-Json -InputObject @{ rows = @($rows); sessionCount = $files.Count } -Compress -Depth 4
+"#;
+
+/// 读取远端主机上的用量统计，返回与本机 `get_usage_stats` 相同结构的行，
+/// 其中 project 为 ssh:// URI，并附带 host 字段。远端需要解析全部会话文件，耗时较长（超时 5 分钟）。
+#[tauri::command]
+pub async fn get_remote_usage(host_id: String) -> Result<Value, String> {
+    let host = find_host(&host_id)?;
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(USAGE_SCRIPT), Duration::from_secs(300)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("读取远端用量失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    let mut result: Value =
+        serde_json::from_str(text).map_err(|e| format!("解析远端用量失败: {}", e))?;
+    if let Some(rows) = result["rows"].as_array_mut() {
+        for row in rows {
+            let project = row["project"].as_str().unwrap_or("").to_string();
+            row["project"] = Value::String(to_uri(&host_id, &project));
+            row["host"] = Value::String(host_id.clone());
+        }
+    }
+    Ok(result)
+}
+
 /// 列出远端主机上的 CLI 会话，返回结构与本机 `list_sessions` 一致，
 /// 其中 project、path 均为 ssh:// URI，另附 host 字段。
 #[tauri::command]

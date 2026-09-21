@@ -7,7 +7,7 @@ let quitPending = false;
 /**
  * 退出应用：有任务正在运行时先确认（区分本地与各远程主机的任务数），
  * 确认后有序终止所有会话进程，再退出。空闲时直接退出，不再弹窗。
- * 关闭窗口（未开启“最小化到任务栏”时）、设置里的“退出应用”、Ctrl+Shift+Q 都走这里。
+ * 关闭窗口（未开启“关闭时最小化到托盘”时）和托盘菜单的“退出”都走这里。
  */
 export async function requestQuit(t: (key: string) => string): Promise<void> {
   if (quitPending) return;

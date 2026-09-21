@@ -186,18 +186,6 @@ function App() {
     return () => { unlisten?.(); };
   }, []);
 
-  // Ctrl+Shift+Q：完全退出应用（隐藏到托盘开启时，关闭按钮不会退出）
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'q') {
-        e.preventDefault();
-        void requestQuit(tRef.current);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   // 托盘菜单“退出”：后端已唤起窗口，这里走统一的退出流程（确认 + 有序收尾）
   useEffect(() => {
     let unlisten: (() => void) | undefined;

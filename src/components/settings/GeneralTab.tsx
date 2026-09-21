@@ -6,8 +6,8 @@ import {
   getAutoCompactThreshold,
   MODEL_TIER_MAP as TIER_MAP,
 } from '../../stores/settingsStore';
+import { useEffect, useState } from 'react';
 import { useProviderStore } from '../../stores/providerStore';
-import { requestQuit } from '../../lib/app-quit';
 import { useT } from '../../lib/i18n';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 
@@ -18,6 +18,26 @@ const CONTEXT_WINDOW_OPTIONS: { id: ContextWindowMode; label: string; hint: stri
 
 export function GeneralTab() {
   const t = useT();
+  // 开机自启动的状态以系统为准（注册表启动项），而不是本地存储
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartError, setAutostartError] = useState('');
+  useEffect(() => {
+    import('@tauri-apps/plugin-autostart')
+      .then(({ isEnabled }) => isEnabled())
+      .then(setAutostart)
+      .catch(() => setAutostart(false));
+  }, []);
+  const toggleAutostart = async () => {
+    setAutostartError('');
+    try {
+      const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+      if (autostart) await disable();
+      else await enable();
+      setAutostart(!autostart);
+    } catch (e) {
+      setAutostartError(String(e));
+    }
+  };
   const activeProvider = useProviderStore((s) => {
     if (!s.activeProviderId) return null;
     return s.providers.find((p) => p.id === s.activeProviderId) ?? null;
@@ -202,16 +222,25 @@ export function GeneralTab() {
             </span>
             {t('settings.minimizeOnClose')}
           </button>
-          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
-            {t('settings.minimizeOnCloseHint')}
-          </p>
           <button
-            onClick={() => requestQuit(t)}
-            className="mt-2 px-2.5 py-1.5 rounded border border-border-subtle text-xs text-text-muted
-              hover:bg-bg-secondary hover:text-text-primary transition-smooth"
+            onClick={toggleAutostart}
+            disabled={autostart === null}
+            className="mt-2 inline-flex items-center gap-2 text-[12px] text-text-secondary
+              hover:text-text-primary transition-smooth disabled:opacity-50"
           >
-            {t('settings.quitApp')}
+            <span className={`relative w-8 h-4 rounded-full transition-smooth border
+              ${autostart ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
+            >
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+                ${autostart ? 'right-0.5' : 'left-0.5'}`}
+              />
+            </span>
+            {t('settings.autostart')}
           </button>
+          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
+            {t('settings.autostartHint')}
+          </p>
+          {autostartError && <p className="mt-1 text-[11px] text-red-500">{autostartError}</p>}
         </div>
 
         {/* Ctrl+Click to open externally */}

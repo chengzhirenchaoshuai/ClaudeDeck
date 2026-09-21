@@ -12,6 +12,7 @@ export function UsageChip() {
   const toggleUsage = useSettingsStore((s) => s.toggleUsage);
   const custom = useSettingsStore((s) => s.customModelPrices);
   const stats = useUsageStore((s) => s.stats);
+  const remote = useUsageStore((s) => s.remote);
   const balance = useUsageStore((s) => s.balance);
 
   useEffect(() => {
@@ -30,10 +31,12 @@ export function UsageChip() {
     return () => { clearInterval(timer); unsubscribe(); };
   }, []);
 
-  const today = useMemo(
-    () => (stats ? totalTokens(summarize(stats.rows, 'today', custom).totals) : null),
-    [stats, custom],
-  );
+  // 远程用量读取很慢，这里只并入已经读取过的部分，不主动触发
+  const today = useMemo(() => {
+    if (!stats) return null;
+    const rows = [...stats.rows, ...Object.values(remote).flatMap((r) => r.rows)];
+    return totalTokens(summarize(rows, 'today', custom).totals);
+  }, [stats, remote, custom]);
   const firstBalance = balance?.balances[0];
 
   return (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUsageStore, activeProviderSupportsBalance } from '../../stores/usageStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import {
@@ -149,13 +150,17 @@ export function UsageModal() {
   const t = useT();
   const toggleUsage = useSettingsStore((s) => s.toggleUsage);
   const custom = useSettingsStore((s) => s.customModelPrices);
-  const { stats, loading, error, balance, balanceError, balanceLoading, refresh, refreshBalance } = useUsageStore();
+  const { stats, remote, loading, error, balance, balanceError, balanceLoading, refresh, refreshBalance, refreshRemote, refreshAllRemote } = useUsageStore();
+  const remoteHosts = useSessionStore((s) => s.remoteHosts);
   const [period, setPeriod] = useState<UsagePeriod>('today');
+  // 数据来源：全部 / 仅本机 / 某台远程主机
+  const [source, setSource] = useState<string>('all');
 
   useEffect(() => {
     void refresh(true);
     void refreshBalance();
-  }, [refresh, refreshBalance]);
+    void refreshAllRemote(); // 30 分钟内读取过则不重复
+  }, [refresh, refreshBalance, refreshAllRemote]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') toggleUsage(); };
@@ -163,7 +168,14 @@ export function UsageModal() {
     return () => window.removeEventListener('keydown', handler);
   }, [toggleUsage]);
 
-  const summary = useMemo(() => (stats ? summarize(stats.rows, period, custom) : null), [stats, period, custom]);
+  const rows = useMemo(() => {
+    if (!stats) return null;
+    const all = [...stats.rows, ...Object.values(remote).flatMap((r) => r.rows)];
+    if (source === 'all') return all;
+    if (source === 'local') return all.filter((r) => !r.host);
+    return all.filter((r) => r.host === source);
+  }, [stats, remote, source]);
+  const summary = useMemo(() => (rows ? summarize(rows, period, custom) : null), [rows, period, custom]);
   const maxDaily = summary ? Math.max(1, ...summary.daily.map((d) => d.tokens)) : 1;
   const supportsBalance = activeProviderSupportsBalance();
 
@@ -176,6 +188,17 @@ export function UsageModal() {
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle flex-shrink-0">
           <h2 className="text-lg font-semibold text-text-primary">{t('usage.title')}</h2>
           <div className="flex items-center gap-2">
+            {remoteHosts.length > 0 && (
+              <select
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                className="h-7 px-2 rounded-lg border border-border-subtle bg-bg-secondary text-xs text-text-primary outline-none focus:border-accent"
+              >
+                <option value="all">{t('usage.source.all')}</option>
+                <option value="local">{t('usage.source.local')}</option>
+                {remoteHosts.map((h) => <option key={h.id} value={h.id}>{h.id}</option>)}
+              </select>
+            )}
             <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
               {PERIODS.map((p) => (
                 <button key={p} onClick={() => setPeriod(p)}
@@ -198,6 +221,35 @@ export function UsageModal() {
         </div>
 
         <div className="overflow-y-auto px-6 py-5 space-y-6">
+          {remoteHosts.length > 0 && (
+            <div className="px-3 py-2 rounded-lg border border-border-subtle bg-bg-secondary/40 space-y-1">
+              <div className="text-[13px] font-medium text-text-primary">{t('usage.remote')}</div>
+              {remoteHosts.map((h) => {
+                const r = remote[h.id];
+                return (
+                  <div key={h.id} className="flex items-center gap-2 text-[11px]">
+                    <span className="text-text-secondary w-24 truncate" title={h.id}>{h.id}</span>
+                    {r?.loading ? (
+                      <span className="text-text-tertiary">{t('usage.remoteLoading')}</span>
+                    ) : r?.error ? (
+                      <span className="text-red-500 truncate" title={r.error}>{r.error}</span>
+                    ) : r ? (
+                      <span className="text-text-tertiary">
+                        {t('usage.remoteUpdated')} {new Date(r.fetchedAt).toLocaleTimeString()} · {r.sessionCount} {t('usage.sessionsUnit')}
+                      </span>
+                    ) : (
+                      <span className="text-text-tertiary">—</span>
+                    )}
+                    <button onClick={() => void refreshRemote(h.id, true)} disabled={r?.loading}
+                      className="ml-auto text-text-tertiary hover:text-accent disabled:opacity-50">
+                      {t('usage.refresh')}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {supportsBalance && (
             <div className="px-3 py-2.5 rounded-lg border border-border-subtle bg-bg-secondary/40">
               <div className="flex items-center justify-between">

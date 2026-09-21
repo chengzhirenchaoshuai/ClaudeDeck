@@ -8496,6 +8496,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
+        // 开机自启动（Windows 写入当前用户的注册表启动项）；macOS 的启动方式在此指定
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -8556,6 +8561,7 @@ pub fn run() {
             shutdown_all_sessions,
             commands::remote::list_remote_hosts,
             commands::remote::list_remote_sessions,
+            commands::remote::get_remote_usage,
             commands::remote::read_remote_config,
             commands::remote::save_remote_host,
             commands::remote::delete_remote_host,

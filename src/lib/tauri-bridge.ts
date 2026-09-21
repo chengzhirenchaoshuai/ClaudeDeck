@@ -429,6 +429,10 @@ export const bridge = {
   /** 用量统计：按 UTC 小时 / 模型 / 项目聚合的 token（已跨文件去重） */
   getUsageStats: () => invoke<import('./usage').UsageStats>('get_usage_stats'),
 
+  /** 远程主机的用量统计（经 ssh 解析远端会话文件，较慢） */
+  getRemoteUsage: (hostId: string) =>
+    invoke<import('./usage').UsageStats>('get_remote_usage', { hostId }),
+
   /** 查询供应商账户余额（目前仅 DeepSeek） */
   getProviderBalance: (providerId: string) =>
     invoke<import('../stores/usageStore').ProviderBalance>('get_provider_balance', { providerId }),
