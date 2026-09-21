@@ -398,14 +398,78 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   );
 }
 
-function ConversationTimeline({ turns, activeTurnId, showScrollBtn, onJumpTurn, onJumpBottom }: {
+function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, onJumped, onJumpBottom }: {
   turns: Turn[];
-  activeTurnId?: string;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  messageRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   showScrollBtn: boolean;
-  onJumpTurn: (turn: Turn) => void;
+  /** 跳转后通知聊天面板：暂停流式输出时的自动贴底，避免把视图拉回底部 */
+  onJumped: () => void;
   onJumpBottom: () => void;
 }) {
   const t = useT();
+  // 当前高亮的轮次放在这里而不是 ChatPanel：滚动时它频繁变化，放在上层会导致整个消息列表重渲染而卡顿
+  const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
+  // 点击跳转后短暂锁定高亮，避免滚动事件把它改成相邻的短轮次而闪烁
+  const lockUntilRef = useRef(0);
+  const rafRef = useRef(0);
+
+  /** 节点相对滚动容器内容顶部的位置（不依赖 offsetParent，避免定位祖先带来的偏差） */
+  const nodeTop = (container: HTMLElement, node: HTMLElement) =>
+    node.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+
+  const recompute = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || turns.length === 0) {
+      setActiveTurnId(undefined);
+      return;
+    }
+    if (performance.now() < lockUntilRef.current) return;
+    const marker = el.scrollTop + 140;
+    let current = turns[0].userMessageId;
+    for (const turn of turns) {
+      const node = messageRefs.current.get(turn.userMessageId);
+      if (!node) continue;
+      if (nodeTop(el, node) <= marker) {
+        current = turn.userMessageId;
+      } else {
+        break;
+      }
+    }
+    setActiveTurnId((prev) => (prev === current ? prev : current));
+  }, [turns, scrollRef, messageRefs]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 每帧最多计算一次
+    const onScroll = () => {
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        recompute();
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    recompute();
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    };
+  }, [scrollRef, recompute]);
+
+  const jumpTo = (turn: Turn) => {
+    const el = scrollRef.current;
+    const node = messageRefs.current.get(turn.userMessageId);
+    if (!el || !node) return;
+    onJumped();
+    lockUntilRef.current = performance.now() + 300;
+    setActiveTurnId(turn.userMessageId);
+    // 直接定位，不使用平滑滚动：平滑动画期间的连续滚动事件是卡顿和闪烁的来源
+    el.scrollTo({ top: Math.max(0, nodeTop(el, node) - 16), behavior: 'auto' });
+  };
+
   if (turns.length === 0) return null;
 
   return (
@@ -420,9 +484,9 @@ function ConversationTimeline({ turns, activeTurnId, showScrollBtn, onJumpTurn, 
             return (
               <button
                 key={turn.userMessageId}
-                onClick={() => onJumpTurn(turn)}
+                onClick={() => jumpTo(turn)}
                 className={`group relative w-7 h-7 rounded-full text-[10px]
-                  flex items-center justify-center border transition-smooth
+                  flex items-center justify-center border transition-colors
                   ${active
                     ? 'bg-accent text-text-inverse border-accent shadow-md'
                     : 'bg-bg-secondary/70 text-text-tertiary border-border-subtle hover:text-text-primary hover:bg-bg-tertiary'
@@ -467,6 +531,7 @@ export function ChatPanel() {
   const sessionMeta = useActiveTab((t) => t.sessionMeta);
   const activityStatus = useActiveTab((t) => t.activityStatus);
   const sidebarOpen = useSettingsStore((s) => s.sidebarOpen);
+  const activeEnv = useSettingsStore((s) => s.activeEnv);
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSecondaryPanel = useSettingsStore((s) => s.toggleSecondaryPanel);
   const agentPanelOpen = useSettingsStore((s) => s.agentPanelOpen);
@@ -558,7 +623,6 @@ export function ChatPanel() {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const showScrollBtnRef = useRef(false);
   const scrollRafRef = useRef(0);
-  const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
   const turns = useMemo(() => parseTurns(messages), [messages]);
 
   const setMessageNode = useCallback((id: string) => (node: HTMLDivElement | null) => {
@@ -569,42 +633,18 @@ export function ChatPanel() {
     }
   }, []);
 
-  const updateActiveTurnFromScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el || turns.length === 0) {
-      setActiveTurnId(undefined);
-      return;
-    }
-
-    const marker = el.scrollTop + 140;
-    let current = turns[0].userMessageId;
-    for (const turn of turns) {
-      const node = messageRefs.current.get(turn.userMessageId);
-      if (!node) continue;
-      if (node.offsetTop <= marker) {
-        current = turn.userMessageId;
-      } else {
-        break;
-      }
-    }
-    setActiveTurnId((prev) => prev === current ? prev : current);
-  }, [turns]);
-
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // 直接定位到底部；平滑滚动会与流式输出的自动贴底互相打架
+    el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
     userScrollingUpRef.current = false;
     setShowScrollBtn(false);
-    setActiveTurnId(turns[turns.length - 1]?.userMessageId);
-  }, [turns]);
+  }, []);
 
-  const jumpToTurn = useCallback((turn: Turn) => {
-    const node = messageRefs.current.get(turn.userMessageId);
-    if (!node) return;
+  // 右侧导航跳转后，暂停流式输出时的自动贴底，避免视图被拉回底部
+  const handleTimelineJumped = useCallback(() => {
     userScrollingUpRef.current = true;
-    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setActiveTurnId(turn.userMessageId);
   }, []);
 
   // Track whether user is near the bottom of the scroll container, throttled via rAF
@@ -626,8 +666,7 @@ export function ChatPanel() {
         setShowScrollBtn(showScrollBtnRef.current);
       });
     }
-    updateActiveTurnFromScroll();
-  }, [updateActiveTurnFromScroll]);
+  }, []);
 
   // Detect intentional upward scroll via wheel event
   useEffect(() => {
@@ -649,10 +688,6 @@ export function ChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, partialText, partialThinking]);
-
-  useEffect(() => {
-    updateActiveTurnFromScroll();
-  }, [turns.length, messages.length, updateActiveTurnFromScroll]);
 
   // Auto-scroll the internal thinking <pre> to bottom as new content streams in
   useEffect(() => {
@@ -723,7 +758,9 @@ export function ChatPanel() {
                   ? 'bg-error'
                   : 'bg-text-tertiary/30'}`} />
             <span className="text-text-tertiary">
-              {activeProvider ? (activeProvider.name || 'Custom') : 'CLI'}
+              {activeEnv !== 'local'
+                ? `${t('env.remoteMode')} · ${activeEnv}`
+                : activeProvider ? (activeProvider.name || 'Custom') : 'CLI'}
             </span>
           </div>
 
@@ -895,9 +932,10 @@ export function ChatPanel() {
       {!showPlanPanel && (
         <ConversationTimeline
           turns={turns}
-          activeTurnId={activeTurnId}
+          scrollRef={scrollRef}
+          messageRefs={messageRefs}
           showScrollBtn={showScrollBtn}
-          onJumpTurn={jumpToTurn}
+          onJumped={handleTimelineJumped}
           onJumpBottom={scrollToBottom}
         />
       )}

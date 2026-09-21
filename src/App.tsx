@@ -14,13 +14,14 @@ import type { ColorTheme, FontFamily, Theme } from './stores/settingsStore';
 import { useFileStore } from './stores/fileStore';
 import { useChatStore } from './stores/chatStore';
 import { useSessionStore } from './stores/sessionStore';
-import { APP_NAME } from './lib/edition';
 import { useAgentStore } from './stores/agentStore';
 import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath } from './lib/tauri-bridge';
 import { useScrollZoom } from './lib/useScrollZoom';
 import { useT } from './lib/i18n';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { loadClaudeUuid } from './hooks/useStreamProcessor';
+import { requestQuit } from './lib/app-quit';
+import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import {
   getContextInputTokens,
   getContextOutputTokens,
@@ -161,8 +162,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Confirm before closing the window (red X / Cmd+Q)
-  const closePendingRef = useRef(false);
+  // 关闭窗口：默认最小化到任务栏（可在设置里关闭）；关闭该选项后走“退出”流程
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -171,50 +171,31 @@ function App() {
     import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
       const win = getCurrentWindow();
       win.onCloseRequested(async (event) => {
-        if (closePendingRef.current) { event.preventDefault(); return; }
         event.preventDefault();
-        closePendingRef.current = true;
-        try {
-          // 只有存在正在运行的任务时才需要确认；空闲状态直接退出
-          const tr = tRef.current;
-          const { runningSessions, sessions } = useSessionStore.getState();
-          let localCount = 0;
-          const remoteCounts = new Map<string, number>();
-          for (const id of runningSessions) {
-            const host = sessions.find((s) => s.id === id)?.host;
-            if (host) remoteCounts.set(host, (remoteCounts.get(host) || 0) + 1);
-            else localCount += 1;
-          }
-          const total = runningSessions.size;
-          if (total > 0) {
-            const parts: string[] = [];
-            if (localCount > 0) parts.push(tr('confirm.exitLocal').replace('{n}', String(localCount)));
-            for (const [host, n] of remoteCounts) {
-              parts.push(tr('confirm.exitRemote').replace('{host}', host).replace('{n}', String(n)));
-            }
-            const message = tr('confirm.exitRunning')
-              .replace('{n}', String(total))
-              .replace('{detail}', parts.join('、'));
-            const { ask } = await import('@tauri-apps/plugin-dialog');
-            const confirmed = await ask(message, {
-              title: APP_NAME,
-              kind: 'warning',
-              okLabel: tr('common.confirm'),
-              cancelLabel: tr('common.cancel'),
-            });
-            if (!confirmed) return;
-          }
-          // 有序终止本地与远端的会话进程后再退出，避免留下孤儿进程
-          await bridge.shutdownAllSessions().catch(() => {});
-          const { exit } = await import('@tauri-apps/plugin-process');
-          await exit(0);
-        } finally {
-          closePendingRef.current = false;
+        if (useSettingsStore.getState().minimizeOnClose) {
+          await win.minimize().catch(() => {});
+          return;
         }
+        await requestQuit(tRef.current);
       }).then((fn) => { unlisten = fn; });
     });
     return () => { unlisten?.(); };
   }, []);
+
+  // Ctrl+Shift+Q：完全退出应用（最小化到任务栏开启时，关闭按钮不会退出）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        void requestQuit(tRef.current);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // 应用不在最前时，会话结束会在任务栏图标上显示数字提醒
+  useTaskbarBadge();
 
   // TK-329: On app startup (incl. browser F5 refresh), handle active backend processes.
   // - Processes WITH stdinToTab mapping: re-register event listeners and restore streaming state

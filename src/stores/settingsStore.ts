@@ -113,7 +113,8 @@ interface SettingsState {
   /** Declares that the selected/provider model supports a 1M context window. */
   contextWindowMode: ContextWindowMode;
   /** User-adjustable auto compact threshold in tokens. */
-  autoCompactThresholdTokens: number;
+  /** 自动 compact 阈值（tokens）；null 表示按所选模型自动取上下文窗口的 80% */
+  autoCompactThresholdTokens: number | null;
   /** Whether a newer version is available (set by auto-check on startup) */
   updateAvailable: boolean;
   /** Whether a newer CLI version is available */
@@ -136,6 +137,8 @@ interface SettingsState {
   showHiddenFiles: boolean;
   /** Whether Enter sends (false, default) or Ctrl+Enter sends (true) */
   ctrlEnterToSend: boolean;
+  /** 点击窗口关闭按钮时最小化到任务栏（默认开启），而不是退出应用 */
+  minimizeOnClose: boolean;
   /** Whether Ctrl+Click on a file opens it with the system default app */
   ctrlClickOpenExternally: boolean;
   /** Whether to show image thumbnail previews in chat for images < 50MB */
@@ -186,7 +189,7 @@ interface SettingsState {
   setSetupCompleted: (completed: boolean) => void;
   setThinkingLevel: (level: ThinkingLevel) => void;
   setContextWindowMode: (mode: ContextWindowMode) => void;
-  setAutoCompactThresholdTokens: (tokens: number) => void;
+  setAutoCompactThresholdTokens: (tokens: number | null) => void;
   setUpdateAvailable: (available: boolean, version?: string) => void;
   setUpdateDownloaded: (downloaded: boolean) => void;
   setLastSeenVersion: (version: string) => void;
@@ -195,6 +198,7 @@ interface SettingsState {
   setUserDisplayName: (name: string) => void;
   toggleHiddenFiles: () => void;
   toggleCtrlEnterToSend: () => void;
+  toggleMinimizeOnClose: () => void;
   toggleCtrlClickOpenExternally: () => void;
   toggleShowImageThumbnails: () => void;
   addSkillDirectory: (path: string) => void;
@@ -243,7 +247,7 @@ export const useSettingsStore = create<SettingsState>()(
       setupCompleted: false,
       thinkingLevel: 'medium' as ThinkingLevel,
       contextWindowMode: 'default',
-      autoCompactThresholdTokens: 160_000,
+      autoCompactThresholdTokens: null,
       updateAvailable: false,
       updateVersion: '',
       cliUpdateAvailable: false,
@@ -255,6 +259,7 @@ export const useSettingsStore = create<SettingsState>()(
       userDisplayName: '',
       showHiddenFiles: false,
       ctrlEnterToSend: false,
+      minimizeOnClose: true,
       ctrlClickOpenExternally: false,
       showImageThumbnails: false,
       skillDirectories: [],
@@ -344,19 +349,13 @@ export const useSettingsStore = create<SettingsState>()(
         set(() => ({ thinkingLevel: level })),
 
       setContextWindowMode: (contextWindowMode) =>
-        set((state) => {
-          const oldDefault = defaultAutoCompactThreshold(state.contextWindowMode);
-          const nextDefault = defaultAutoCompactThreshold(contextWindowMode);
-          return {
-            contextWindowMode,
-            ...(state.autoCompactThresholdTokens === oldDefault
-              ? { autoCompactThresholdTokens: nextDefault }
-              : {}),
-          };
-        }),
+        set(() => ({ contextWindowMode })),
 
       setAutoCompactThresholdTokens: (autoCompactThresholdTokens) =>
-        set(() => ({ autoCompactThresholdTokens: clampAutoCompactThreshold(autoCompactThresholdTokens) })),
+        set(() => ({
+          autoCompactThresholdTokens:
+            autoCompactThresholdTokens === null ? null : clampAutoCompactThreshold(autoCompactThresholdTokens),
+        })),
 
       setUpdateAvailable: (available, version) =>
         set(() => ({
@@ -390,6 +389,9 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ showHiddenFiles: !state.showHiddenFiles })),
       toggleCtrlEnterToSend: () =>
         set((state) => ({ ctrlEnterToSend: !state.ctrlEnterToSend })),
+
+      toggleMinimizeOnClose: () =>
+        set((state) => ({ minimizeOnClose: !state.minimizeOnClose })),
       toggleCtrlClickOpenExternally: () =>
         set((state) => ({ ctrlClickOpenExternally: !state.ctrlClickOpenExternally })),
       toggleShowImageThumbnails: () =>
@@ -405,7 +407,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'tokenicode-settings',
-      version: 15,
+      version: 16,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -485,6 +487,11 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 15) {
           persisted.skillDirectories = [];
         }
+        if (version < 16) {
+          // 旧版本的阈值固定为 160K / 800K（随模式的默认值），改为“按模型自动”；用户自定义的值保留
+          const old = persisted.autoCompactThresholdTokens;
+          if (old === 160_000 || old === 800_000) persisted.autoCompactThresholdTokens = null;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -514,6 +521,7 @@ export const useSettingsStore = create<SettingsState>()(
         userDisplayName: state.userDisplayName,
         showHiddenFiles: state.showHiddenFiles,
         ctrlEnterToSend: state.ctrlEnterToSend,
+        minimizeOnClose: state.minimizeOnClose,
         ctrlClickOpenExternally: state.ctrlClickOpenExternally,
         showImageThumbnails: state.showImageThumbnails,
         skillDirectories: state.skillDirectories,
@@ -552,6 +560,8 @@ export function isLargeContextMode(model?: string, mode?: ContextWindowMode): bo
   const lower = (model || '').toLowerCase();
   // 官方 API 下默认即 1M 上下文、无需 [1m] 后缀的模型：Fable 5.x、Sonnet 5、Opus 4.7 及之后
   if (/^claude-(fable-5|sonnet-5|opus-5|opus-4-[78])/.test(lower)) return true;
+  // DeepSeek V4 Pro / Flash 官方文档标注 1,000,000 token 上下文
+  if (lower.replace(/[\s_.()[\]-]/g, '').includes('deepseekv4')) return true;
   return lower.includes('1m') || lower.includes('[1m]');
 }
 
@@ -559,11 +569,12 @@ export function getContextWindowForModel(model?: string, mode?: ContextWindowMod
   return isLargeContextMode(model, mode) ? 1_000_000 : 200_000;
 }
 
-export function getAutoCompactThreshold(model?: string, mode?: ContextWindowMode, overrideTokens?: number): number {
+/** 自动 compact 阈值：用户自定义值优先；否则取所选模型上下文窗口的 80%（200K -> 160K，1M -> 800K） */
+export function getAutoCompactThreshold(model?: string, mode?: ContextWindowMode, overrideTokens?: number | null): number {
   if (typeof overrideTokens === 'number') {
     return clampAutoCompactThreshold(overrideTokens);
   }
-  return getContextWindowForModel(model, mode) >= 1_000_000 ? 800_000 : 160_000;
+  return Math.round(getContextWindowForModel(model, mode) * 0.8);
 }
 
 // --- Runtime mode switching via SDK control protocol ---

@@ -11,6 +11,7 @@ import {
   MODEL_TIER_MAP as TIER_MAP,
 } from '../../stores/settingsStore';
 import { useProviderStore } from '../../stores/providerStore';
+import { requestQuit } from '../../lib/app-quit';
 import { useT } from '../../lib/i18n';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { AiAvatar } from '../shared/AiAvatar';
@@ -98,8 +99,8 @@ const FONT_FAMILY_OPTIONS: { id: FontFamily; label: string; sample: string }[] =
 ];
 
 const CONTEXT_WINDOW_OPTIONS: { id: ContextWindowMode; label: string; hint: string }[] = [
-  { id: 'default', label: '标准 200K', hint: '自动 compact 阈值 160K' },
-  { id: 'large1m', label: '声明 1M', hint: '自动 compact 阈值 800K' },
+  { id: 'default', label: '按模型自动', hint: '自动识别所选模型的窗口（Sonnet 5 / Opus 5 / Fable / DeepSeek V4 为 1M，其余 200K）' },
+  { id: 'large1m', label: '声明 1M', hint: '强制按 1M 计算，用于实际支持 1M 但名称无法识别的模型' },
 ];
 
 /* Mini app preview — simplified chat interface thumbnail */
@@ -158,6 +159,8 @@ export function GeneralTab() {
   const setMonoFontFollowsInterface = useSettingsStore((s) => s.setMonoFontFollowsInterface);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
   const toggleCtrlEnterToSend = useSettingsStore((s) => s.toggleCtrlEnterToSend);
+  const minimizeOnClose = useSettingsStore((s) => s.minimizeOnClose);
+  const toggleMinimizeOnClose = useSettingsStore((s) => s.toggleMinimizeOnClose);
   const ctrlClickOpenExternally = useSettingsStore((s) => s.ctrlClickOpenExternally);
   const toggleCtrlClickOpenExternally = useSettingsStore((s) => s.toggleCtrlClickOpenExternally);
   const showImageThumbnails = useSettingsStore((s) => s.showImageThumbnails);
@@ -498,8 +501,10 @@ export function GeneralTab() {
             ))}
           </div>
           <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
-            当前声明：{contextWindow.toLocaleString()} tokens；自动 compact 阈值：{compactThreshold.toLocaleString()} tokens。
-            如果当前供应商路由实际支持 1M，请选择“声明 1M”。
+            当前模型（{displayProviderModelName(actualModel)}）的上下文窗口：{contextWindow.toLocaleString()} tokens
+            （{contextWindowMode === 'large1m' ? '已声明 1M' : '按模型自动识别'}）；
+            自动 compact 阈值：{compactThreshold.toLocaleString()} tokens。
+            如果当前供应商路由实际支持 1M 而这里显示 200K，请选择“声明 1M”。
           </p>
         </div>
 
@@ -512,19 +517,30 @@ export function GeneralTab() {
               min={10}
               max={1000}
               step={10}
-              value={Math.round(autoCompactThresholdTokens / 1000)}
+              value={Math.round(compactThreshold / 1000)}
               onChange={(e) => setAutoCompactThresholdTokens(Number(e.target.value) * 1000)}
               className="w-28 px-3 py-2 text-[13px] bg-bg-chat border border-border-subtle
                 rounded-lg text-text-primary focus:outline-none focus:border-accent"
             />
             <span className="text-xs text-text-tertiary">K tokens</span>
             <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setAutoCompactThresholdTokens(null)}
+                className={`px-2 py-1 rounded-md text-[11px] border transition-smooth
+                  ${autoCompactThresholdTokens === null
+                    ? 'bg-accent/10 text-accent border-accent/30'
+                    : 'text-text-muted hover:bg-bg-secondary border-border-subtle'
+                  }`}
+                title="按所选模型自动取上下文窗口的 80%"
+              >
+                自动
+              </button>
               {[160, 400, 800, 950].map((value) => (
                 <button
                   key={value}
                   onClick={() => setAutoCompactThresholdTokens(value * 1000)}
                   className={`px-2 py-1 rounded-md text-[11px] border transition-smooth
-                    ${Math.round(autoCompactThresholdTokens / 1000) === value
+                    ${autoCompactThresholdTokens !== null && Math.round(autoCompactThresholdTokens / 1000) === value
                       ? 'bg-accent/10 text-accent border-accent/30'
                       : 'text-text-muted hover:bg-bg-secondary border-border-subtle'
                     }`}
@@ -536,6 +552,7 @@ export function GeneralTab() {
           </div>
           <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
             这个值会直接决定自动发送 `/compact` 的时机；改完后对当前会话立即生效。
+            选择“自动”时，阈值随所选模型变化，取上下文窗口的 80%（200K 为 160K，1M 为 800K）。
           </p>
         </div>
 
@@ -559,6 +576,35 @@ export function GeneralTab() {
           <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
             {t('settings.ctrlEnterToSendHint')}
           </p>
+        </div>
+
+        {/* 窗口行为：关闭时最小化到任务栏 */}
+        <div>
+          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.window')}</h3>
+          <button
+            onClick={toggleMinimizeOnClose}
+            className="inline-flex items-center gap-2 text-[12px] text-text-secondary
+              hover:text-text-primary transition-smooth"
+          >
+            <span className={`relative w-8 h-4 rounded-full transition-smooth border
+              ${minimizeOnClose ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
+            >
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+                ${minimizeOnClose ? 'right-0.5' : 'left-0.5'}`}
+              />
+            </span>
+            {t('settings.minimizeOnClose')}
+          </button>
+          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
+            {t('settings.minimizeOnCloseHint')}
+          </p>
+          <button
+            onClick={() => requestQuit(t)}
+            className="mt-2 px-2.5 py-1.5 rounded border border-border-subtle text-xs text-text-muted
+              hover:bg-bg-secondary hover:text-text-primary transition-smooth"
+          >
+            {t('settings.quitApp')}
+          </button>
         </div>
 
         {/* Ctrl+Click to open externally */}
