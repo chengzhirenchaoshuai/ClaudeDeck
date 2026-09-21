@@ -13,7 +13,7 @@ export interface StartSessionParams {
   allowed_tools?: string[];
   /** Resume an existing Claude CLI conversation by its UUID (for session continuity) */
   resume_session_id?: string;
-  /** Thinking effort level: 'off' | 'low' | 'medium' | 'high' | 'max' */
+  /** Thinking effort level: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' */
   thinking_level?: string;
   /** Session mode: "ask", "plan", or undefined for auto */
   session_mode?: string;
@@ -340,6 +340,9 @@ export const bridge = {
 
   /** TK-329: List all active stdinIds from backend ProcessManager.
    *  Used after refresh to detect orphaned processes. */
+  /** 退出前有序终止所有会话进程（含经 ssh 的远端会话） */
+  shutdownAllSessions: () => invoke<void>('shutdown_all_sessions'),
+
   listActiveProcesses: () =>
     invoke<string[]>('list_active_processes'),
 

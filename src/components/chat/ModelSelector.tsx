@@ -1,17 +1,9 @@
 import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
-import { useSettingsStore, MODEL_OPTIONS } from '../../stores/settingsStore';
+import { useSettingsStore, MODEL_OPTIONS, MODEL_TIER_MAP as TIER_MAP } from '../../stores/settingsStore';
 import { useChatStore, generateMessageId } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useProviderStore } from '../../stores/providerStore';
 import { displayProviderModelName, normalizeProviderModelName } from '../../lib/deepseek-models';
-
-/** Tier mapping from official ModelId to provider tier key */
-const TIER_MAP: Record<string, 'opus' | 'sonnet' | 'haiku'> = {
-  'claude-opus-4-6': 'opus',
-  'claude-opus-4-6-1m': 'opus',
-  'claude-sonnet-4-6': 'sonnet',
-  'claude-haiku-4-5-20251001': 'haiku',
-};
 
 const FIXED_TIERS = new Set(['opus', 'sonnet', 'haiku']);
 

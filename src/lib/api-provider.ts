@@ -1,18 +1,11 @@
 import { useProviderStore } from '../stores/providerStore';
 import { PROVIDER_PRESETS } from './provider-presets';
-import type { ModelId } from '../stores/settingsStore';
+import { MODEL_TIER_MAP as TIER_MAP, type ModelId } from '../stores/settingsStore';
 import {
   DEEPSEEK_V4_FLASH,
   DEEPSEEK_V4_PRO,
   normalizeProviderModelName,
 } from './deepseek-models';
-
-const TIER_MAP: Record<string, 'opus' | 'sonnet' | 'haiku'> = {
-  'claude-opus-4-6': 'opus',
-  'claude-opus-4-6-1m': 'opus',
-  'claude-sonnet-4-6': 'sonnet',
-  'claude-haiku-4-5-20251001': 'haiku',
-};
 
 /**
  * Result of model resolution — either a mapped model name or an error.
@@ -87,8 +80,10 @@ export function supportsDeepSeekThinking(model: string): boolean {
   return normalized === DEEPSEEK_V4_PRO || normalized === DEEPSEEK_V4_FLASH;
 }
 
-export function resolveThinkingLevelForProvider(_selectedModel: string, requestedLevel: string): string {
+export function resolveThinkingLevelForProvider(selectedModel: string, requestedLevel: string): string {
   if (requestedLevel === 'off') return 'off';
+  // xhigh 仅 Opus 5 / Sonnet 5 / Fable 等较新模型支持；Opus 4.6、Sonnet 4.6、Haiku 不支持，降为 high
+  if (requestedLevel === 'xhigh' && /opus-4-6|sonnet-4-6|haiku/.test(selectedModel)) return 'high';
   const provider = useProviderStore.getState().getActive();
   if (!provider) return requestedLevel;
   const support = PROVIDER_PRESETS.find((preset) => preset.id === provider.preset)?.thinkingSupport;

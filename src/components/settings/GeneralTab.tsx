@@ -8,6 +8,7 @@ import {
   ContextWindowMode,
   getContextWindowForModel,
   getAutoCompactThreshold,
+  MODEL_TIER_MAP as TIER_MAP,
 } from '../../stores/settingsStore';
 import { useProviderStore } from '../../stores/providerStore';
 import { useT } from '../../lib/i18n';
@@ -15,13 +16,6 @@ import { displayProviderModelName } from '../../lib/deepseek-models';
 import { AiAvatar } from '../shared/AiAvatar';
 import { UserAvatar } from '../shared/UserAvatar';
 import { AvatarCropModal } from './AvatarCropModal';
-
-const TIER_MAP: Record<string, string> = {
-  'claude-opus-4-6': 'opus',
-  'claude-opus-4-6-1m': 'opus',
-  'claude-sonnet-4-6': 'sonnet',
-  'claude-haiku-4-5-20251001': 'haiku',
-};
 
 const COLOR_THEMES: { id: ColorTheme; labelKey: string; preview: string; previewDark: string }[] = [
   {

@@ -12,11 +12,18 @@ export type Theme = 'light' | 'dark' | 'system';
 export type ColorTheme = 'black' | 'blue' | 'orange' | 'green';
 export type BackgroundTheme = 'garden' | 'sakura' | 'lake' | 'dusk' | 'ink' | 'vscode' | 'minimal';
 export type SecondaryPanelTab = 'files' | 'preview' | 'skills' | 'plugins';
-export type ModelId = 'claude-opus-4-6' | 'claude-opus-4-6-1m' | 'claude-sonnet-4-6' | 'claude-haiku-4-5-20251001';
-export type SessionMode = 'code' | 'ask' | 'plan' | 'bypass';
+export type ModelId =
+  | 'claude-fable-5-1'
+  | 'claude-opus-5'
+  | 'claude-sonnet-5'
+  | 'claude-opus-4-6'
+  | 'claude-opus-4-6-1m'
+  | 'claude-sonnet-4-6'
+  | 'claude-haiku-4-5-20251001';
+export type SessionMode = 'code' | 'ask' | 'plan' | 'auto' | 'bypass';
 export type FontFamily = 'system' | 'microsoft' | 'sourceHan' | 'lxgw' | 'mono';
 /** CLI permission mode for the SDK control protocol */
-export type CliPermissionMode = 'acceptEdits' | 'default' | 'plan' | 'bypassPermissions';
+export type CliPermissionMode = 'acceptEdits' | 'default' | 'plan' | 'auto' | 'bypassPermissions';
 export type Locale = 'zh' | 'en';
 
 /** Map frontend session mode to CLI permission mode */
@@ -25,10 +32,11 @@ export function mapSessionModeToPermissionMode(mode: SessionMode): CliPermission
     case 'code': return 'acceptEdits';
     case 'ask': return 'default';
     case 'plan': return 'plan';
+    case 'auto': return 'auto';
     case 'bypass': return 'bypassPermissions';
   }
 }
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ContextWindowMode = 'default' | 'large1m';
 
 function defaultAutoCompactThreshold(mode: ContextWindowMode): number {
@@ -43,11 +51,25 @@ function clampAutoCompactThreshold(tokens: number): number {
 // --- Model options (display mapping) ---
 
 export const MODEL_OPTIONS: { id: ModelId; label: string; short: string }[] = [
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', short: 'Fable 5.1' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', short: 'Opus 5' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', short: 'Sonnet 5' },
   { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', short: 'Opus 4.6' },
   { id: 'claude-opus-4-6-1m', label: 'Claude Opus 4.6 (1M)', short: 'Opus 4.6 1M' },
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', short: 'Sonnet 4.6' },
   { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', short: 'Haiku 4.5' },
 ];
+
+/** 官方模型所属档位；第三方供应商按档位（opus / sonnet / haiku）映射到自己的模型 */
+export const MODEL_TIER_MAP: Record<string, 'opus' | 'sonnet' | 'haiku'> = {
+  'claude-fable-5-1': 'opus',
+  'claude-opus-5': 'opus',
+  'claude-sonnet-5': 'sonnet',
+  'claude-opus-4-6': 'opus',
+  'claude-opus-4-6-1m': 'opus',
+  'claude-sonnet-4-6': 'sonnet',
+  'claude-haiku-4-5-20251001': 'haiku',
+};
 
 function migrateModelSelection(model: unknown): ModelId | undefined {
   if (typeof model !== 'string') return undefined;
@@ -528,6 +550,8 @@ export function getEffectiveThinking(meta: { snapshotThinking?: ThinkingLevel } 
 export function isLargeContextMode(model?: string, mode?: ContextWindowMode): boolean {
   if (mode === 'large1m') return true;
   const lower = (model || '').toLowerCase();
+  // 官方 API 下默认即 1M 上下文、无需 [1m] 后缀的模型：Fable 5.x、Sonnet 5、Opus 4.7 及之后
+  if (/^claude-(fable-5|sonnet-5|opus-5|opus-4-[78])/.test(lower)) return true;
   return lower.includes('1m') || lower.includes('[1m]');
 }
 

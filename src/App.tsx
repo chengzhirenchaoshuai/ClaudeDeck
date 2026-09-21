@@ -175,17 +175,39 @@ function App() {
         event.preventDefault();
         closePendingRef.current = true;
         try {
-          const { ask } = await import('@tauri-apps/plugin-dialog');
-          const confirmed = await ask(tRef.current('confirm.exit'), {
-            title: APP_NAME,
-            kind: 'warning',
-            okLabel: tRef.current('common.confirm'),
-            cancelLabel: tRef.current('common.cancel'),
-          });
-          if (confirmed) {
-            const { exit } = await import('@tauri-apps/plugin-process');
-            await exit(0);
+          // 只有存在正在运行的任务时才需要确认；空闲状态直接退出
+          const tr = tRef.current;
+          const { runningSessions, sessions } = useSessionStore.getState();
+          let localCount = 0;
+          const remoteCounts = new Map<string, number>();
+          for (const id of runningSessions) {
+            const host = sessions.find((s) => s.id === id)?.host;
+            if (host) remoteCounts.set(host, (remoteCounts.get(host) || 0) + 1);
+            else localCount += 1;
           }
+          const total = runningSessions.size;
+          if (total > 0) {
+            const parts: string[] = [];
+            if (localCount > 0) parts.push(tr('confirm.exitLocal').replace('{n}', String(localCount)));
+            for (const [host, n] of remoteCounts) {
+              parts.push(tr('confirm.exitRemote').replace('{host}', host).replace('{n}', String(n)));
+            }
+            const message = tr('confirm.exitRunning')
+              .replace('{n}', String(total))
+              .replace('{detail}', parts.join('、'));
+            const { ask } = await import('@tauri-apps/plugin-dialog');
+            const confirmed = await ask(message, {
+              title: APP_NAME,
+              kind: 'warning',
+              okLabel: tr('common.confirm'),
+              cancelLabel: tr('common.cancel'),
+            });
+            if (!confirmed) return;
+          }
+          // 有序终止本地与远端的会话进程后再退出，避免留下孤儿进程
+          await bridge.shutdownAllSessions().catch(() => {});
+          const { exit } = await import('@tauri-apps/plugin-process');
+          await exit(0);
         } finally {
           closePendingRef.current = false;
         }

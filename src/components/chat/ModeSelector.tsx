@@ -37,6 +37,17 @@ const MODES: { id: SessionMode; labelKey: string; icon: ReactNode }[] = [
     ),
   },
   {
+    id: 'auto',
+    labelKey: 'mode.auto',
+    icon: (
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 1.5l5 2v4c0 3-2 5-5 7-3-2-5-4-5-7v-4l5-2z" />
+        <path d="M6 8l1.5 1.5L10.5 6.5" />
+      </svg>
+    ),
+  },
+  {
     id: 'bypass',
     labelKey: 'mode.bypass',
     icon: (
@@ -72,6 +83,7 @@ export function ModeSelector({ disabled = false }: { disabled?: boolean }) {
     code: { i18nKey: 'cmd.switchedToCode', icon: '⚡' },
     ask: { i18nKey: 'cmd.switchedToAsk', icon: '💬' },
     plan: { i18nKey: 'cmd.switchedToPlan', icon: '📋' },
+    auto: { i18nKey: 'cmd.switchedToAuto', icon: '🛡️' },
     bypass: { i18nKey: 'cmd.switchedToBypass', icon: '⭐' },
   };
 

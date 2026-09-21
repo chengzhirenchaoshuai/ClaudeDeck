@@ -11,6 +11,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'common.cancel': '取消',
     'common.confirm': '确认',
     'confirm.exit': '确定要退出 TOKENICODE 吗？正在运行的任务将被终止。',
+    'confirm.exitRunning': '有 {n} 个任务正在运行（{detail}）。退出将中断这些任务，确定要退出 TOKENICODE 吗？',
+    'confirm.exitLocal': '本地 {n} 个',
+    'confirm.exitRemote': '远程 {host} {n} 个',
 
     // Sidebar
     'sidebar.hide': '收起侧栏',
@@ -49,6 +52,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'think.low': '浅思考',
     'think.medium': '中思考',
     'think.high': '深思考',
+    'think.xhigh': '超深思考',
     'think.max': '最深思考',
     'think.providerIgnored': '当前供应商可能不支持 thinking 设置',
     'input.shortcutHint': '⏎ 发送 · {mod}⏎ 换行',
@@ -241,6 +245,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'mode.code': '标准自动',
     'mode.ask': '询问',
     'mode.plan': '计划',
+    'mode.auto': '智能自动',
     'mode.bypass': '全自动',
 
     // Activity status
@@ -534,6 +539,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'cmd.switchedToAsk': '已切换到询问模式（仅回答问题，不修改代码）',
     'cmd.switchedToPlan': '已切换到计划模式（规划任务，不直接执行）',
     'cmd.switchedToCode': '已切换到标准自动模式（自动接受编辑，敏感操作仍会确认）',
+    'cmd.switchedToAuto': '已切换到智能自动模式（由分类器审核每个操作；账号或供应商不支持时会退回“询问”）',
     'cmd.switchedToBypass': '已切换到全自动模式（跳过权限检查，下一次发送会自动重启会话生效）',
     'cmd.compacting': '正在压缩上下文...',
     'cmd.noActiveSession': '没有活跃的会话。请先发送一条消息。',
@@ -785,6 +791,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'common.cancel': 'Cancel',
     'common.confirm': 'Confirm',
     'confirm.exit': 'Are you sure you want to quit TOKENICODE? Running tasks will be terminated.',
+    'confirm.exitRunning': '{n} task(s) are running ({detail}). Quitting will interrupt them. Quit TOKENICODE?',
+    'confirm.exitLocal': '{n} local',
+    'confirm.exitRemote': '{n} on {host}',
 
     // Sidebar
     'sidebar.hide': 'Hide sidebar',
@@ -823,6 +832,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'think.low': 'Think Low',
     'think.medium': 'Think Med',
     'think.high': 'Think High',
+    'think.xhigh': 'Think XHigh',
     'think.max': 'Think Max',
     'think.providerIgnored': 'This provider may not support thinking settings',
     'input.shortcutHint': '⏎ Send · {mod}⏎ New line',
@@ -1015,6 +1025,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'mode.code': 'Auto',
     'mode.ask': 'Ask',
     'mode.plan': 'Plan',
+    'mode.auto': 'Smart Auto',
     'mode.bypass': 'Full Auto',
 
     // Activity status
@@ -1308,6 +1319,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'cmd.switchedToAsk': 'Switched to Ask mode (answers only, no code changes)',
     'cmd.switchedToPlan': 'Switched to Plan mode (planning only, no execution)',
     'cmd.switchedToCode': 'Switched to Auto mode (accept edits, still asks for sensitive actions)',
+    'cmd.switchedToAuto': 'Switched to Smart Auto mode (a classifier reviews each action; falls back to Ask when the account or provider does not support it)',
     'cmd.switchedToBypass': 'Switched to Full Auto mode (skips permission checks; next send restarts the session automatically)',
     'cmd.compacting': 'Compacting context...',
     'cmd.noActiveSession': 'No active session. Send a message first.',

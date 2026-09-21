@@ -261,17 +261,7 @@ function SettingsFooter() {
             {t('settings.footer.changelog')}
           </button>
 
-          {/* Update controls — inline in footer */}
-          {status === 'idle' && (
-            <button
-              onClick={handleCheck}
-              className="px-2.5 py-1 text-xs font-medium rounded-md
-                border border-border-subtle text-text-muted
-                hover:bg-bg-secondary hover:text-text-primary transition-smooth"
-            >
-              {t('settings.footer.checkUpdate')}
-            </button>
-          )}
+          {/* 应用内更新已关闭（更新地址为空），不再提供“检查更新”入口 */}
 
           {status === 'checking' && (
             <span className="flex items-center gap-1.5 text-xs text-text-muted">

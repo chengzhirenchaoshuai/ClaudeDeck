@@ -41,6 +41,7 @@ const THINK_LEVELS: { id: ThinkingLevel; labelKey: string }[] = [
   { id: 'low', labelKey: 'think.low' },
   { id: 'medium', labelKey: 'think.medium' },
   { id: 'high', labelKey: 'think.high' },
+  { id: 'xhigh', labelKey: 'think.xhigh' },
   { id: 'max', labelKey: 'think.max' },
 ];
 

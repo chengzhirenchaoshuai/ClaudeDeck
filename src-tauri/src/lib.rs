@@ -2230,6 +2230,31 @@ async fn kill_session(
     Ok(())
 }
 
+/// 应用退出前有序终止所有会话进程（本地 claude 与经 ssh 启动的远端 claude 一视同仁）：
+/// 先发 interrupt 中断当前回合，稍候关闭 stdin（远端经 ssh 转发为 EOF），
+/// 等进程自行退出，超时（3 秒）才强制结束，尽量避免留下孤儿进程。
+#[tauri::command]
+async fn shutdown_all_sessions(
+    state: State<'_, ProcessManager>,
+    stdin_mgr: State<'_, StdinManager>,
+) -> Result<(), String> {
+    let ids = state.active_ids().await;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    if let Ok(interrupt) = serde_json::to_string(&protocol::ControlRequest::interrupt()) {
+        for id in &ids {
+            let _ = stdin_mgr.send(id, &interrupt).await;
+        }
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    for id in &ids {
+        stdin_mgr.remove(id).await;
+    }
+    state.wait_or_kill_all(std::time::Duration::from_secs(3)).await;
+    Ok(())
+}
+
 /// TK-329: List all active stdinIds from ProcessManager.
 /// Frontend uses this after refresh to detect and clean up orphaned backend processes.
 #[tauri::command]
@@ -8188,6 +8213,7 @@ pub fn run() {
             kill_session,
             list_active_processes,
             hide_session,
+            shutdown_all_sessions,
             commands::remote::list_remote_hosts,
             commands::remote::list_remote_sessions,
             commands::remote::read_remote_config,
