@@ -10,6 +10,8 @@ import { IS_ALPHA } from '../../lib/edition';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { resolveModelForProvider } from '../../lib/api-provider';
 import { ProfileStatsModal } from '../profile/ProfileStatsModal';
+import { EnvSwitcher, RemotePathInput } from './EnvSwitcher';
+import { LOCAL_ENV } from '../../lib/remote';
 
 /** Map raw model ID to friendly display name */
 function getModelDisplayName(modelId: string): string {
@@ -27,6 +29,9 @@ function formatTokenCount(n: number): string {
 
 export function Sidebar() {
   const [profileOpen, setProfileOpen] = useState(false);
+  const [remotePathOpen, setRemotePathOpen] = useState(false);
+  const activeEnv = useSettingsStore((s) => s.activeEnv);
+  const isRemoteEnv = activeEnv !== LOCAL_ENV;
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggleSettings);
   const setSecondaryTab = useSettingsStore((s) => s.setSecondaryTab);
@@ -52,6 +57,11 @@ export function Sidebar() {
   };
 
   const addExistingProject = async () => {
+    // 远程环境下没有本机文件夹选择框，改为展开路径输入
+    if (isRemoteEnv) {
+      setRemotePathOpen((open) => !open);
+      return;
+    }
     const selected = await open({
       directory: true,
       multiple: false,
@@ -107,6 +117,8 @@ export function Sidebar() {
         </button>
       </div>
 
+      <EnvSwitcher />
+
       {/* New Chat — navigate to WelcomeScreen where user picks a folder */}
       <div className="px-3">
       <button onClick={() => {
@@ -143,6 +155,14 @@ export function Sidebar() {
         </svg>
         {t('sidebar.addProject')}
       </button>
+      {isRemoteEnv && remotePathOpen && (
+        <div className="mb-4">
+          <RemotePathInput
+            hostId={activeEnv}
+            onOpen={(uri) => { startProjectDraft(uri); setRemotePathOpen(false); }}
+          />
+        </div>
+      )}
 
       {/* Current Session — compressed single-line card */}
       {sessionMeta.sessionId && (

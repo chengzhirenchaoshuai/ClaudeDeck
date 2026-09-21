@@ -15,6 +15,7 @@ import {
 } from '../../stores/settingsStore';
 import { getContextUsedTokens } from '../../lib/context-usage';
 import { useSessionStore } from '../../stores/sessionStore';
+import { RemotePathInput } from '../layout/EnvSwitcher';
 import { useFileStore } from '../../stores/fileStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { AgentPanel } from '../agents/AgentPanel';
@@ -1059,11 +1060,6 @@ async function startDraftSession(folderPath: string) {
 
     // Register stdinId → tabId mapping for background stream routing
     useSessionStore.getState().registerStdinTab(preWarmId, draftId);
-
-    // Skip desk_* IDs — they pollute tracked_sessions.txt (multi-session isolation fix)
-    if (!session.session_id.startsWith('desk_')) {
-      bridge.trackSession(session.session_id).catch(() => {});
-    }
   } catch {
     // Pre-warm failed — InputBar will spawn on first message instead
   }
@@ -1075,6 +1071,26 @@ function WelcomeScreen() {
   const setupCompleted = useSettingsStore((s) => s.setupCompleted);
   const recentProjects = useFileStore((s) => s.recentProjects);
   const fetchProjects = useFileStore((s) => s.fetchRecentProjects);
+  const activeEnv = useSettingsStore((s) => s.activeEnv);
+  const allSessions = useSessionStore((s) => s.sessions);
+  const isRemoteEnv = activeEnv !== 'local';
+  // 远程环境下，最近项目取自该主机上已有会话的项目目录
+  const remoteRecent = useMemo(() => {
+    if (!isRemoteEnv) return [];
+    const latest = new Map<string, number>();
+    for (const s of allSessions) {
+      if (s.host !== activeEnv || !s.project) continue;
+      latest.set(s.project, Math.max(latest.get(s.project) || 0, s.modifiedAt));
+    }
+    return Array.from(latest.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([path]) => ({
+        path,
+        name: path.split('/').filter(Boolean).pop() || path,
+        shortPath: path,
+      }));
+  }, [isRemoteEnv, activeEnv, allSessions]);
 
   useEffect(() => { fetchProjects(); }, []);
 
@@ -1105,7 +1121,15 @@ function WelcomeScreen() {
         {t('welcome.subtitle')}
       </p>
 
+      {isRemoteEnv && (
+        <div className="w-full max-w-sm mb-8">
+          <p className="text-xs text-text-tertiary mb-2">{t('env.remoteWelcome')}</p>
+          <RemotePathInput hostId={activeEnv} onOpen={startDraftSession} />
+        </div>
+      )}
+
       {/* Primary action: new chat with folder picker */}
+      {!isRemoteEnv && (
       <button
         onClick={handlePickFolder}
         className="px-6 py-3 rounded-[20px] text-sm font-medium
@@ -1119,16 +1143,17 @@ function WelcomeScreen() {
         </svg>
         {t('welcome.newChat')}
       </button>
+      )}
 
       {/* Recent projects */}
-      {recentProjects.length > 0 && (
+      {(isRemoteEnv ? remoteRecent : recentProjects).length > 0 && (
         <div className="w-full max-w-sm">
           <div className="text-[11px] font-medium text-text-tertiary uppercase
             tracking-wider mb-3">
             {t('welcome.recentProjects')}
           </div>
           <div className="flex flex-wrap justify-center gap-2">
-            {recentProjects.slice(0, 6).map((project) => (
+            {(isRemoteEnv ? remoteRecent : recentProjects).slice(0, 6).map((project) => (
               <button
                 key={project.path}
                 onClick={() => startDraftSession(project.path)}

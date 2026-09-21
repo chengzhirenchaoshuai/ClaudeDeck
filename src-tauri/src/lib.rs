@@ -800,11 +800,41 @@ fn app_data_dir() -> Result<std::path::PathBuf, String> {
 }
 
 /// Safe directory in user's home — survives Windows NSIS updates.
-/// Uses ~/.tokenicode/ which already stores tracked_sessions.txt.
+/// Uses ~/.tokenicode/ which also stores providers.json and hidden_sessions.txt.
 fn safe_data_dir() -> Result<std::path::PathBuf, String> {
     dirs::home_dir()
         .map(|d| d.join(".tokenicode"))
         .ok_or_else(|| "Cannot determine home directory".to_string())
+}
+
+/// Claude CLI 的配置根目录：优先取环境变量 CLAUDE_CONFIG_DIR，否则为 ~/.claude。
+/// 会话（projects/）、skills、commands、credentials 等都以此为准，与 CLI 保持一致。
+fn claude_config_dir() -> Result<std::path::PathBuf, String> {
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        if !dir.is_empty() {
+            return Ok(std::path::PathBuf::from(dir));
+        }
+    }
+    dirs::home_dir()
+        .map(|h| h.join(".claude"))
+        .ok_or_else(|| "Cannot find home dir".to_string())
+}
+
+/// CLI 会话目录：<配置根目录>/projects
+fn claude_projects_dir() -> Result<std::path::PathBuf, String> {
+    claude_config_dir().map(|d| d.join("projects"))
+}
+
+/// CLI 全局状态文件 .claude.json：设置了 CLAUDE_CONFIG_DIR 时位于该目录内，否则为 ~/.claude.json。
+fn claude_json_path() -> Result<std::path::PathBuf, String> {
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        if !dir.is_empty() {
+            return Ok(std::path::PathBuf::from(dir).join(".claude.json"));
+        }
+    }
+    dirs::home_dir()
+        .map(|h| h.join(".claude.json"))
+        .ok_or_else(|| "Cannot find home dir".to_string())
 }
 
 // ================================================================
@@ -1433,295 +1463,338 @@ async fn start_claude_session(
         args.push(r#"{"alwaysThinkingEnabled":true}"#.to_string());
     }
 
-    // Resolve claude binary — it may not be on the default PATH
-    let claude_bin = find_claude_binary().unwrap_or_else(|| {
+    // 远程项目（cwd 为 ssh://<主机>/<路径>）：经 ssh 在远端运行 claude，使用远端自己的配置。
+    // 不注入本机 Provider 环境变量与模型映射，也不需要本机的 claude / git-bash。
+    let remote_target = commands::remote::parse_remote_uri(&params.cwd);
+    let (mut child, claude_bin, env_count) = if let Some((host_id, remote_path)) = remote_target {
+        let host = commands::remote::find_host(&host_id)?;
+        // 去掉本机专用的参数：--strict-mcp-config（远端沿用自己的 MCP 配置）、
+        // --model（本机的模型映射对远端无意义，由远端配置决定）
+        let mut remote_args: Vec<String> = Vec::new();
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--strict-mcp-config" => {}
+                "--model" => {
+                    iter.next();
+                }
+                _ => remote_args.push(arg.clone()),
+            }
+        }
+        let effort = thinking_level.to_string();
+        let mut remote_env: Vec<(&str, &str)> = vec![
+            ("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1"),
+            ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000"),
+        ];
+        if thinking_level != "off" {
+            remote_env.push(("CLAUDE_CODE_EFFORT_LEVEL", effort.as_str()));
+        }
+        let remote_cmd = commands::remote::build_remote_claude_command(
+            &remote_path,
+            &remote_env,
+            &remote_args,
+        )?;
+        let mut cmd = commands::remote::ssh_command(&host);
+        cmd.arg(&remote_cmd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to start ssh (is OpenSSH client installed?): {}", e))?;
+        (child, format!("ssh:{}", host_id), remote_env.len())
+    } else {
+        // Resolve claude binary — it may not be on the default PATH
+        let claude_bin = find_claude_binary().unwrap_or_else(|| {
+            #[cfg(target_os = "windows")]
+            {
+                "claude.cmd".to_string()
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                "claude".to_string()
+            }
+        });
+
+        // Build an enriched PATH for the child process
+        let enriched_path = build_enriched_path();
+
+        // Resolve provider environment variables from provider_id
+        let (mut resolved_env, inherited_keys_to_remove, provider_extra_args) =
+            resolve_provider_env(params.provider_id.as_deref())?;
+
+        // Append provider-specific CLI args (e.g. --setting-sources project,local)
+        args.extend(provider_extra_args);
+
+        // Inject effort level env var for non-off thinking levels
+        if thinking_level != "off" {
+            resolved_env.insert(
+                "CLAUDE_CODE_EFFORT_LEVEL".to_string(),
+                thinking_level.to_string(),
+            );
+        }
+
+        // Raise the per-turn output token cap from the CLI default (32K) to 64K.
+        // This prevents "response exceeded the 32000 output token maximum" errors
+        // when generating large files (e.g. HTML presentations).
+        resolved_env
+            .entry("CLAUDE_CODE_MAX_OUTPUT_TOKENS".to_string())
+            .or_insert_with(|| "64000".to_string());
+
+        // Enable CLI-managed file checkpoints for rewind functionality.
+        // With --replay-user-messages, user messages in stream output carry a uuid
+        // that identifies the checkpoint. The rewind_files command uses these UUIDs.
+        resolved_env.insert(
+            "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING".to_string(),
+            "1".to_string(),
+        );
+
+        // For long-context third-party routes, override Claude Code's internal compact window.
+        // Some provider model names do not expose a 1M marker, so the frontend can declare it.
+        let declared_context_window = params.context_window.unwrap_or_else(|| {
+            params.model.as_deref().map(|model_name| {
+                let m = model_name.to_lowercase();
+                if m.contains("mimo") || m.contains("[1m]") { 1_000_000 } else { 200_000 }
+            }).unwrap_or(200_000)
+        });
+        if declared_context_window >= 1_000_000 {
+            resolved_env.insert(
+                "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
+                declared_context_window.to_string(),
+            );
+            eprintln!(
+                "[TOKENICODE] Set CLAUDE_CODE_AUTO_COMPACT_WINDOW={} for model {:?}",
+                declared_context_window,
+                params.model
+            );
+        }
+
+        // On Windows, disable MSYS2/Git Bash automatic path conversion.
+        // Without this, MSYS2 converts Windows paths (e.g. F:\秀\input\file.xlsx)
+        // to Unix-style paths (/f/秀/input/file.xlsx), which breaks file operations
+        // especially with non-ASCII (Chinese) characters in paths.
         #[cfg(target_os = "windows")]
         {
-            "claude.cmd".to_string()
+            resolved_env.entry("MSYS_NO_PATHCONV".to_string())
+                .or_insert_with(|| "1".to_string());
+            resolved_env.entry("MSYS2_ARG_CONV_EXCL".to_string())
+                .or_insert_with(|| "*".to_string());
         }
+
+        // On Windows, auto-detect git-bash and inject CLAUDE_CODE_GIT_BASH_PATH
+        // so Claude Code CLI can find bash.exe without user manual configuration.
+        #[cfg(target_os = "windows")]
+        {
+            if !resolved_env.contains_key("CLAUDE_CODE_GIT_BASH_PATH") {
+                if let Some(bash_path) = find_git_bash() {
+                    resolved_env.insert("CLAUDE_CODE_GIT_BASH_PATH".to_string(), bash_path);
+                } else {
+                    // git-bash is a hard requirement for Claude Code on Windows.
+                    // Fail fast with a clear error instead of spawning and getting a silent exit.
+                    return Err("Claude Code requires Git Bash on Windows.\n\
+                         Please reinstall Claude Code via Settings to auto-install Git,\n\
+                         or install Git for Windows manually: https://git-scm.com/downloads/win"
+                        .to_string());
+                }
+            }
+        }
+
+        // Auto-detect and inject proxy env vars into CLI subprocess.
+        // GUI apps launched from Finder/Dock don't inherit shell proxy settings.
+        // Detection order: login shell > macOS system proxy > local port probing.
         #[cfg(not(target_os = "windows"))]
         {
-            "claude".to_string()
-        }
-    });
-
-    // Build an enriched PATH for the child process
-    let enriched_path = build_enriched_path();
-
-    // Resolve provider environment variables from provider_id
-    let (mut resolved_env, inherited_keys_to_remove, provider_extra_args) =
-        resolve_provider_env(params.provider_id.as_deref())?;
-
-    // Append provider-specific CLI args (e.g. --setting-sources project,local)
-    args.extend(provider_extra_args);
-
-    // Inject effort level env var for non-off thinking levels
-    if thinking_level != "off" {
-        resolved_env.insert(
-            "CLAUDE_CODE_EFFORT_LEVEL".to_string(),
-            thinking_level.to_string(),
-        );
-    }
-
-    // Raise the per-turn output token cap from the CLI default (32K) to 64K.
-    // This prevents "response exceeded the 32000 output token maximum" errors
-    // when generating large files (e.g. HTML presentations).
-    resolved_env
-        .entry("CLAUDE_CODE_MAX_OUTPUT_TOKENS".to_string())
-        .or_insert_with(|| "64000".to_string());
-
-    // Enable CLI-managed file checkpoints for rewind functionality.
-    // With --replay-user-messages, user messages in stream output carry a uuid
-    // that identifies the checkpoint. The rewind_files command uses these UUIDs.
-    resolved_env.insert(
-        "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING".to_string(),
-        "1".to_string(),
-    );
-
-    // For long-context third-party routes, override Claude Code's internal compact window.
-    // Some provider model names do not expose a 1M marker, so the frontend can declare it.
-    let declared_context_window = params.context_window.unwrap_or_else(|| {
-        params.model.as_deref().map(|model_name| {
-            let m = model_name.to_lowercase();
-            if m.contains("mimo") || m.contains("[1m]") { 1_000_000 } else { 200_000 }
-        }).unwrap_or(200_000)
-    });
-    if declared_context_window >= 1_000_000 {
-        resolved_env.insert(
-            "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
-            declared_context_window.to_string(),
-        );
-        eprintln!(
-            "[TOKENICODE] Set CLAUDE_CODE_AUTO_COMPACT_WINDOW={} for model {:?}",
-            declared_context_window,
-            params.model
-        );
-    }
-
-    // On Windows, disable MSYS2/Git Bash automatic path conversion.
-    // Without this, MSYS2 converts Windows paths (e.g. F:\秀\input\file.xlsx)
-    // to Unix-style paths (/f/秀/input/file.xlsx), which breaks file operations
-    // especially with non-ASCII (Chinese) characters in paths.
-    #[cfg(target_os = "windows")]
-    {
-        resolved_env.entry("MSYS_NO_PATHCONV".to_string())
-            .or_insert_with(|| "1".to_string());
-        resolved_env.entry("MSYS2_ARG_CONV_EXCL".to_string())
-            .or_insert_with(|| "*".to_string());
-    }
-
-    // On Windows, auto-detect git-bash and inject CLAUDE_CODE_GIT_BASH_PATH
-    // so Claude Code CLI can find bash.exe without user manual configuration.
-    #[cfg(target_os = "windows")]
-    {
-        if !resolved_env.contains_key("CLAUDE_CODE_GIT_BASH_PATH") {
-            if let Some(bash_path) = find_git_bash() {
-                resolved_env.insert("CLAUDE_CODE_GIT_BASH_PATH".to_string(), bash_path);
-            } else {
-                // git-bash is a hard requirement for Claude Code on Windows.
-                // Fail fast with a clear error instead of spawning and getting a silent exit.
-                return Err("Claude Code requires Git Bash on Windows.\n\
-                     Please reinstall Claude Code via Settings to auto-install Git,\n\
-                     or install Git for Windows manually: https://git-scm.com/downloads/win"
-                    .to_string());
-            }
-        }
-    }
-
-    // Auto-detect and inject proxy env vars into CLI subprocess.
-    // GUI apps launched from Finder/Dock don't inherit shell proxy settings.
-    // Detection order: login shell > macOS system proxy > local port probing.
-    #[cfg(not(target_os = "windows"))]
-    {
-        let proxy_env = login_shell_proxy_env();
-        for (k, v) in proxy_env {
-            if !resolved_env.contains_key(k) && std::env::var(k).is_err() {
-                resolved_env.insert(k.clone(), v.clone());
-            }
-        }
-    }
-
-    // If still no proxy env vars, try system proxy + port probing
-    {
-        let has_proxy = resolved_env.keys().any(|k| {
-            let kl = k.to_lowercase();
-            kl == "https_proxy" || kl == "http_proxy" || kl == "all_proxy"
-        });
-        if !has_proxy {
-            // resolve_proxy_url checks: process env > system proxy > login shell > port probing
-            if let Some(url) = resolve_proxy_url() {
-                for key in &["https_proxy", "http_proxy", "HTTPS_PROXY", "HTTP_PROXY"] {
-                    resolved_env.insert(key.to_string(), url.clone());
-                }
-                if url.starts_with("socks") {
-                    resolved_env.insert("all_proxy".to_string(), url.clone());
-                    resolved_env.insert("ALL_PROXY".to_string(), url.clone());
+            let proxy_env = login_shell_proxy_env();
+            for (k, v) in proxy_env {
+                if !resolved_env.contains_key(k) && std::env::var(k).is_err() {
+                    resolved_env.insert(k.clone(), v.clone());
                 }
             }
         }
-    }
 
-    // On Windows, .cmd/.bat files must be launched via cmd /C
-    #[cfg(target_os = "windows")]
-    let mut child = {
-        // Helper: build and spawn a Command for the given binary
-        let spawn_win = |bin: &str| {
-            let needs_cmd = bin.ends_with(".cmd")
-                || bin.ends_with(".bat")
-                || (!bin.contains('\\') && !bin.contains('/') && !bin.contains('.'));
-            let mut cmd = if needs_cmd {
-                let mut c = Command::new("cmd");
-                c.arg("/C").arg(bin);
-                c
-            } else {
-                Command::new(bin)
-            };
-            cmd.args(&args)
-                .current_dir(&params.cwd)
-                .env("PATH", &enriched_path)
-                .env_remove("CLAUDECODE");
-            for key in &inherited_keys_to_remove {
-                cmd.env_remove(key);
-            }
-            for (key, value) in &resolved_env {
-                cmd.env(key, value);
-            }
-            cmd.stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .creation_flags(0x08000000)
-                .spawn()
-        };
-
-        match spawn_win(&claude_bin) {
-            Ok(c) => c,
-            Err(e) if e.raw_os_error() == Some(193) => {
-                // Error 193: not a valid Win32 application — binary is corrupt.
-                // Clean up the bad binary and try to find an alternative.
-                eprintln!("error 193 on '{}', cleaning up and retrying...", claude_bin);
-                if let Some(cli_dir) = cli_download_dir() {
-                    let suspect = cli_dir.join("claude.exe");
-                    if suspect.exists() {
-                        let _ = std::fs::remove_file(&suspect);
+        // If still no proxy env vars, try system proxy + port probing
+        {
+            let has_proxy = resolved_env.keys().any(|k| {
+                let kl = k.to_lowercase();
+                kl == "https_proxy" || kl == "http_proxy" || kl == "all_proxy"
+            });
+            if !has_proxy {
+                // resolve_proxy_url checks: process env > system proxy > login shell > port probing
+                if let Some(url) = resolve_proxy_url() {
+                    for key in &["https_proxy", "http_proxy", "HTTPS_PROXY", "HTTP_PROXY"] {
+                        resolved_env.insert(key.to_string(), url.clone());
+                    }
+                    if url.starts_with("socks") {
+                        resolved_env.insert("all_proxy".to_string(), url.clone());
+                        resolved_env.insert("ALL_PROXY".to_string(), url.clone());
                     }
                 }
-                let alt_bin = find_claude_binary().unwrap_or_else(|| "claude.cmd".to_string());
-                if alt_bin == claude_bin {
+            }
+        }
+
+        // On Windows, .cmd/.bat files must be launched via cmd /C
+        #[cfg(target_os = "windows")]
+        let child = {
+            // Helper: build and spawn a Command for the given binary
+            let spawn_win = |bin: &str| {
+                let needs_cmd = bin.ends_with(".cmd")
+                    || bin.ends_with(".bat")
+                    || (!bin.contains('\\') && !bin.contains('/') && !bin.contains('.'));
+                let mut cmd = if needs_cmd {
+                    let mut c = Command::new("cmd");
+                    c.arg("/C").arg(bin);
+                    c
+                } else {
+                    Command::new(bin)
+                };
+                cmd.args(&args)
+                    .current_dir(&params.cwd)
+                    .env("PATH", &enriched_path)
+                    .env_remove("CLAUDECODE");
+                for key in &inherited_keys_to_remove {
+                    cmd.env_remove(key);
+                }
+                for (key, value) in &resolved_env {
+                    cmd.env(key, value);
+                }
+                cmd.stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .creation_flags(0x08000000)
+                    .spawn()
+            };
+
+            match spawn_win(&claude_bin) {
+                Ok(c) => c,
+                Err(e) if e.raw_os_error() == Some(193) => {
+                    // Error 193: not a valid Win32 application — binary is corrupt.
+                    // Clean up the bad binary and try to find an alternative.
+                    eprintln!("error 193 on '{}', cleaning up and retrying...", claude_bin);
+                    if let Some(cli_dir) = cli_download_dir() {
+                        let suspect = cli_dir.join("claude.exe");
+                        if suspect.exists() {
+                            let _ = std::fs::remove_file(&suspect);
+                        }
+                    }
+                    let alt_bin = find_claude_binary().unwrap_or_else(|| "claude.cmd".to_string());
+                    if alt_bin == claude_bin {
+                        return Err(format!(
+                            "Failed to spawn claude (tried '{}'): {}",
+                            claude_bin, e
+                        ));
+                    }
+                    eprintln!("Retrying with alternative: {}", alt_bin);
+                    spawn_win(&alt_bin).map_err(|e2| {
+                        format!(
+                            "Failed to spawn claude (tried '{}' then '{}'): {}",
+                            claude_bin, alt_bin, e2
+                        )
+                    })?
+                }
+                Err(e) => {
                     return Err(format!(
                         "Failed to spawn claude (tried '{}'): {}",
                         claude_bin, e
                     ));
                 }
-                eprintln!("Retrying with alternative: {}", alt_bin);
-                spawn_win(&alt_bin).map_err(|e2| {
-                    format!(
-                        "Failed to spawn claude (tried '{}' then '{}'): {}",
-                        claude_bin, alt_bin, e2
-                    )
-                })?
             }
-            Err(e) => {
-                return Err(format!(
-                    "Failed to spawn claude (tried '{}'): {}",
-                    claude_bin, e
-                ));
-            }
-        }
-    };
-    #[cfg(not(target_os = "windows"))]
-    let mut child = {
-        let spawn_unix = |bin: &str| -> std::io::Result<tokio::process::Child> {
-            let mut cmd = Command::new(bin);
-            cmd.args(&args)
-                .current_dir(&params.cwd)
-                .env("PATH", &enriched_path)
-                // Clear CLAUDECODE env var so the CLI doesn't refuse to start
-                // when TOKENICODE itself is launched from within a Claude Code session.
-                .env_remove("CLAUDECODE");
-            // Clear inherited ANTHROPIC_* env vars that conflict with our overrides
-            for key in &inherited_keys_to_remove {
-                cmd.env_remove(key);
-            }
-            // Inject custom API provider env vars
-            for (key, value) in &resolved_env {
-                cmd.env(key, value);
-            }
-            cmd.stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
         };
+        #[cfg(not(target_os = "windows"))]
+        let child = {
+            let spawn_unix = |bin: &str| -> std::io::Result<tokio::process::Child> {
+                let mut cmd = Command::new(bin);
+                cmd.args(&args)
+                    .current_dir(&params.cwd)
+                    .env("PATH", &enriched_path)
+                    // Clear CLAUDECODE env var so the CLI doesn't refuse to start
+                    // when TOKENICODE itself is launched from within a Claude Code session.
+                    .env_remove("CLAUDECODE");
+                // Clear inherited ANTHROPIC_* env vars that conflict with our overrides
+                for key in &inherited_keys_to_remove {
+                    cmd.env_remove(key);
+                }
+                // Inject custom API provider env vars
+                for (key, value) in &resolved_env {
+                    cmd.env(key, value);
+                }
+                cmd.stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+            };
 
-        match spawn_unix(&claude_bin) {
-            Ok(c) => c,
-            Err(e) if e.raw_os_error() == Some(13) => {
-                // EACCES
-                // Permission denied — attempt to fix execute permission and retry.
-                eprintln!(
-                    "EACCES on '{}', attempting chmod +x and retrying...",
-                    claude_bin
-                );
-                let path = std::path::Path::new(&claude_bin);
-                let fixed = (|| -> Result<(), std::io::Error> {
-                    use std::os::unix::fs::PermissionsExt;
-                    let metadata = std::fs::metadata(path)?;
-                    let mut perms = metadata.permissions();
-                    perms.set_mode(perms.mode() | 0o755);
-                    std::fs::set_permissions(path, perms)?;
-                    Ok(())
-                })();
-                if let Err(chmod_err) = fixed {
-                    eprintln!("chmod +x failed: {}", chmod_err);
-                    return Err(format!(
-                        "Failed to spawn claude (tried '{}', permission denied, chmod fix also failed: {}): {}",
-                        claude_bin, chmod_err, e
-                    ));
-                }
-                eprintln!("chmod +x succeeded, retrying spawn...");
-                spawn_unix(&claude_bin).map_err(|e2| {
-                    format!(
-                        "Failed to spawn claude (tried '{}', retried after chmod +x): {}",
-                        claude_bin, e2
-                    )
-                })?
-            }
-            Err(e) if e.raw_os_error() == Some(88) || e.raw_os_error() == Some(8) => {
-                // ENOEXEC (88 on macOS, 8 on Linux) — Malformed binary.
-                // Delete the corrupt binary and try to find an alternative.
-                eprintln!(
-                    "ENOEXEC on '{}' (malformed binary), cleaning up and retrying...",
-                    claude_bin
-                );
-                if let Some(cli_dir) = cli_download_dir() {
-                    let suspect = cli_dir.join("claude");
-                    if suspect.exists() {
-                        let _ = std::fs::remove_file(&suspect);
-                        eprintln!("Removed corrupt binary: {:?}", suspect);
+            match spawn_unix(&claude_bin) {
+                Ok(c) => c,
+                Err(e) if e.raw_os_error() == Some(13) => {
+                    // EACCES
+                    // Permission denied — attempt to fix execute permission and retry.
+                    eprintln!(
+                        "EACCES on '{}', attempting chmod +x and retrying...",
+                        claude_bin
+                    );
+                    let path = std::path::Path::new(&claude_bin);
+                    let fixed = (|| -> Result<(), std::io::Error> {
+                        use std::os::unix::fs::PermissionsExt;
+                        let metadata = std::fs::metadata(path)?;
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(perms.mode() | 0o755);
+                        std::fs::set_permissions(path, perms)?;
+                        Ok(())
+                    })();
+                    if let Err(chmod_err) = fixed {
+                        eprintln!("chmod +x failed: {}", chmod_err);
+                        return Err(format!(
+                            "Failed to spawn claude (tried '{}', permission denied, chmod fix also failed: {}): {}",
+                            claude_bin, chmod_err, e
+                        ));
                     }
+                    eprintln!("chmod +x succeeded, retrying spawn...");
+                    spawn_unix(&claude_bin).map_err(|e2| {
+                        format!(
+                            "Failed to spawn claude (tried '{}', retried after chmod +x): {}",
+                            claude_bin, e2
+                        )
+                    })?
                 }
-                let alt_bin = find_claude_binary().unwrap_or_else(|| "claude".to_string());
-                if alt_bin == claude_bin {
+                Err(e) if e.raw_os_error() == Some(88) || e.raw_os_error() == Some(8) => {
+                    // ENOEXEC (88 on macOS, 8 on Linux) — Malformed binary.
+                    // Delete the corrupt binary and try to find an alternative.
+                    eprintln!(
+                        "ENOEXEC on '{}' (malformed binary), cleaning up and retrying...",
+                        claude_bin
+                    );
+                    if let Some(cli_dir) = cli_download_dir() {
+                        let suspect = cli_dir.join("claude");
+                        if suspect.exists() {
+                            let _ = std::fs::remove_file(&suspect);
+                            eprintln!("Removed corrupt binary: {:?}", suspect);
+                        }
+                    }
+                    let alt_bin = find_claude_binary().unwrap_or_else(|| "claude".to_string());
+                    if alt_bin == claude_bin {
+                        return Err(format!(
+                            "Failed to spawn claude (tried '{}', binary is malformed/corrupt — \
+                             please reinstall CLI from Settings): {}",
+                            claude_bin, e
+                        ));
+                    }
+                    eprintln!("Retrying with alternative: {}", alt_bin);
+                    spawn_unix(&alt_bin).map_err(|e2| {
+                        format!(
+                            "Failed to spawn claude (tried '{}' then '{}'): {}",
+                            claude_bin, alt_bin, e2
+                        )
+                    })?
+                }
+                Err(e) => {
                     return Err(format!(
-                        "Failed to spawn claude (tried '{}', binary is malformed/corrupt — \
-                         please reinstall CLI from Settings): {}",
+                        "Failed to spawn claude (tried '{}'): {}",
                         claude_bin, e
                     ));
                 }
-                eprintln!("Retrying with alternative: {}", alt_bin);
-                spawn_unix(&alt_bin).map_err(|e2| {
-                    format!(
-                        "Failed to spawn claude (tried '{}' then '{}'): {}",
-                        claude_bin, alt_bin, e2
-                    )
-                })?
             }
-            Err(e) => {
-                return Err(format!(
-                    "Failed to spawn claude (tried '{}'): {}",
-                    claude_bin, e
-                ));
-            }
-        }
+        };
+        (child, claude_bin, resolved_env.len())
     };
 
     let pid = child.id().unwrap_or(0);
@@ -1734,7 +1807,7 @@ async fn start_claude_session(
     eprintln!(
         "[TOKENICODE] runtime config: args={}, env_keys={}",
         args.len(),
-        resolved_env.len()
+        env_count
     );
     eprintln!("[TOKENICODE] cwd: {}", &params.cwd);
 
@@ -2166,204 +2239,132 @@ async fn list_active_processes(
     Ok(state.active_ids().await)
 }
 
-/// Path to the file tracking TOKENICODE-managed session IDs
-fn tracked_sessions_path() -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".tokenicode").join("tracked_sessions.txt")
+/// 隐藏名单文件：只记录“回退”产生的被替换旧分支。
+/// 会话列表以 CLI 的 projects 目录为准，这里的 ID 仅在列表中不显示，jsonl 文件保留以便恢复。
+fn hidden_sessions_path() -> Result<std::path::PathBuf, String> {
+    tokenicode_data_path("hidden_sessions.txt")
 }
 
-/// Load the set of tracked session IDs.
-/// If the tracking file is missing or empty, rebuild from ~/.claude/projects/
-/// to recover from index loss (e.g., after update, disk issue, new machine).
-fn load_tracked_sessions() -> std::collections::HashSet<String> {
-    use std::io::BufRead;
-    let path = tracked_sessions_path();
-    let mut set = std::collections::HashSet::new();
-    if let Ok(file) = std::fs::File::open(&path) {
-        for line in std::io::BufReader::new(file).lines().flatten() {
-            let trimmed = line.trim().to_string();
-            if !trimmed.is_empty() {
-                set.insert(trimmed);
-            }
-        }
-    }
-
-    // Fallback: if tracking file is missing/empty, rebuild from disk.
-    // Use session_names.json (tokenicode_session_names.json) as a filter to avoid
-    // importing Claude Code CLI or Her sessions. Only if session_names is also
-    // missing do we fall back to importing all sessions (better than losing data).
-    if set.is_empty() {
-        if let Some(home) = dirs::home_dir() {
-            let claude_projects = home.join(".claude").join("projects");
-            if !claude_projects.exists() {
-                return set;
-            }
-
-            // Load session_names as ownership filter (only sessions this app touched)
-            let names_filter: Option<std::collections::HashSet<String>> =
-                session_names_path().ok().and_then(|p| {
-                    std::fs::read_to_string(&p).ok().and_then(|content| {
-                        serde_json::from_str::<serde_json::Value>(&content).ok().map(|v| {
-                            v.as_object()
-                                .map(|obj| obj.keys().cloned().collect())
-                                .unwrap_or_default()
-                        })
-                    })
-                });
-
-            if let Ok(entries) = std::fs::read_dir(&claude_projects) {
-                for entry in entries.flatten() {
-                    if entry.path().is_dir() {
-                        if let Ok(files) = std::fs::read_dir(entry.path()) {
-                            for file in files.flatten() {
-                                let p = file.path();
-                                if p.extension().map_or(false, |e| e == "jsonl") {
-                                    if let Some(stem) = p.file_stem() {
-                                        let id = stem.to_string_lossy().to_string();
-                                        if id.starts_with("desk_") { continue; }
-                                        if let Some(ref filter) = names_filter {
-                                            if filter.contains(&id) { set.insert(id); }
-                                        } else {
-                                            set.insert(id);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if !set.is_empty() {
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                use std::io::Write;
-                if let Ok(mut f) = std::fs::File::create(&path) {
-                    for id in &set {
-                        let _ = writeln!(f, "{}", id);
-                    }
-                }
-                let mode = if names_filter.is_some() { "filtered by session_names" } else { "all (no filter)" };
-                eprintln!("[TOKENICODE] Rebuilt tracked_sessions.txt: {} sessions ({})", set.len(), mode);
-            }
-        }
-    }
-
-    set
+/// 读取隐藏名单。文件不存在或读取失败时视为空。
+fn load_hidden_sessions() -> std::collections::HashSet<String> {
+    let Ok(path) = hidden_sessions_path() else {
+        return std::collections::HashSet::new();
+    };
+    std::fs::read_to_string(&path)
+        .map(|content| {
+            content
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-/// Register a CLI session ID as managed by TOKENICODE
+/// 会话是否应出现在列表中：排除 desk_* 临时 ID 与被回退隐藏的旧分支。
+fn is_listable_session(id: &str, hidden: &std::collections::HashSet<String>) -> bool {
+    !id.starts_with("desk_") && !hidden.contains(id)
+}
+
+/// 从列表中隐藏一个被替换的会话（不删除 JSONL 文件）。回退功能用它替换可见分支。
 #[tauri::command]
-async fn track_session(session_id: String) -> Result<(), String> {
-    // Defense-in-depth: never persist desk-generated temporary IDs
-    if session_id.starts_with("desk_") {
+async fn hide_session(session_id: String) -> Result<(), String> {
+    if session_id.is_empty() || load_hidden_sessions().contains(&session_id) {
         return Ok(());
     }
-    let path = tracked_sessions_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create .tokenicode dir: {}", e))?;
-    }
     use std::io::Write;
+    let path = hidden_sessions_path()?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|e| format!("Failed to open tracked sessions: {}", e))?;
-    writeln!(file, "{}", session_id).map_err(|e| format!("Failed to write session ID: {}", e))?;
-    Ok(())
+        .map_err(|e| format!("Failed to open hidden sessions: {}", e))?;
+    writeln!(file, "{}", session_id).map_err(|e| format!("Failed to write hidden session: {}", e))
 }
 
-/// Hide a superseded session from TOKENICODE without deleting its JSONL file.
-/// Rewind uses this to replace the visible branch while keeping recovery data.
-#[tauri::command]
-async fn untrack_session(session_id: String) -> Result<(), String> {
-    let path = tracked_sessions_path();
-    if !path.exists() {
-        return Ok(());
-    }
-    use std::io::BufRead;
-    let contents: Vec<String> = std::io::BufReader::new(
-        std::fs::File::open(&path).map_err(|e| format!("Failed to read tracked sessions: {}", e))?,
-    )
-    .lines()
-    .flatten()
-    .filter(|line| line.trim() != session_id)
-    .collect();
-    let tmp = path.with_extension("txt.tmp");
-    let body = if contents.is_empty() { String::new() } else { contents.join("\n") + "\n" };
-    std::fs::write(&tmp, body).map_err(|e| format!("Failed to write tracked sessions: {}", e))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to rename tracked sessions: {}", e))?;
-    Ok(())
-}
+/// 监听 CLI 会话目录（<配置目录>/projects），jsonl 有新增、修改或删除时，
+/// 经 1 秒防抖向前端发送 `cli-sessions:changed`（附带变化的文件路径），
+/// 使会话列表和已打开的会话内容与 CLI 保持同步。
+/// projects 目录尚未创建时（CLI 从未运行）每 3 秒重试，不主动创建该目录。
+fn start_sessions_watcher(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use notify::{Event, EventKind, RecursiveMode, Watcher};
+        use std::time::Duration;
 
-/// One-time cleanup: remove desk_* entries and duplicates from tracked_sessions.txt.
-/// Uses atomic write (write to temp file, then rename) to prevent truncation on crash.
-fn cleanup_tracked_sessions() {
-    let path = tracked_sessions_path();
-    if !path.exists() {
-        return;
-    }
-    use std::io::{BufRead, Write};
-    let lines: Vec<String> = match std::fs::File::open(&path) {
-        Ok(f) => std::io::BufReader::new(f).lines().flatten().collect(),
-        Err(_) => return,
-    };
-    let mut seen = std::collections::HashSet::new();
-    let clean: Vec<&String> = lines
-        .iter()
-        .filter(|l| {
-            let t = l.trim();
-            !t.is_empty() && !t.starts_with("desk_") && seen.insert(t.to_string())
-        })
-        .collect();
-    if clean.len() < lines.len() {
-        // Atomic write: temp file + rename to prevent truncation
-        let tmp = path.with_extension("txt.tmp");
-        if let Ok(mut f) = std::fs::File::create(&tmp) {
-            for line in &clean {
-                let _ = writeln!(f, "{}", line.trim());
-            }
-            let _ = std::fs::rename(&tmp, &path);
-        }
-    }
-}
-
-/// Delete a session: remove from tracking file and delete the .jsonl file
-#[tauri::command]
-async fn delete_session(session_id: String, session_path: String) -> Result<(), String> {
-    // Remove from tracking file
-    let track_path = tracked_sessions_path();
-    if track_path.exists() {
-        use std::io::BufRead;
-        let contents: Vec<String> = {
-            let file = std::fs::File::open(&track_path)
-                .map_err(|e| format!("Failed to read tracked sessions: {}", e))?;
-            std::io::BufReader::new(file)
-                .lines()
-                .flatten()
-                .filter(|line| line.trim() != session_id)
-                .collect()
+        let Ok(dir) = claude_projects_dir() else {
+            return;
         };
-        // Atomic write: temp file + rename to prevent truncation on crash
-        let tmp = track_path.with_extension("txt.tmp");
-        std::fs::write(&tmp, contents.join("\n") + "\n")
-            .map_err(|e| format!("Failed to write tracked sessions: {}", e))?;
-        std::fs::rename(&tmp, &track_path)
-            .map_err(|e| format!("Failed to rename tracked sessions: {}", e))?;
+        while !dir.exists() {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+
+        // 通道里传递本次事件涉及的 jsonl 路径；删除整个项目文件夹时路径不带 .jsonl 后缀，
+        // 此时发送空列表，仅提示前端刷新会话列表
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<String>>();
+        let mut watcher = match notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+            let Ok(event) = res else { return };
+            let jsonl_paths: Vec<String> = event
+                .paths
+                .iter()
+                .filter(|p| p.extension().map_or(false, |e| e == "jsonl"))
+                .map(|p| p.to_string_lossy().to_string())
+                .collect();
+            let relevant = match event.kind {
+                EventKind::Remove(_) => true,
+                EventKind::Create(_) | EventKind::Modify(_) => !jsonl_paths.is_empty(),
+                _ => false,
+            };
+            if relevant {
+                let _ = tx.send(jsonl_paths);
+            }
+        }) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[TOKENICODE] Failed to create sessions watcher: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
+            eprintln!("[TOKENICODE] Failed to watch {:?}: {}", dir, e);
+            return;
+        }
+
+        // watcher 需在此作用域内保持存活，否则监听会随之停止
+        while let Some(first) = rx.recv().await {
+            let mut changed: std::collections::HashSet<String> = first.into_iter().collect();
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            while let Ok(more) = rx.try_recv() {
+                changed.extend(more);
+            }
+            let _ = app.emit(
+                "cli-sessions:changed",
+                serde_json::json!({ "paths": changed.into_iter().collect::<Vec<_>>() }),
+            );
+        }
+    });
+}
+
+/// Delete a session: delete the .jsonl file under the CLI projects dir
+#[tauri::command]
+async fn delete_session(_session_id: String, session_path: String) -> Result<(), String> {
+    if session_path.starts_with(commands::remote::REMOTE_SCHEME) {
+        return Err("远程会话暂不支持在本应用中删除".to_string());
     }
-    // Delete the .jsonl file — validate path is under ~/.claude/projects/ (P0-1 fix)
+    // 仅允许删除 CLI projects 目录内的 jsonl（P0-1 fix）
     if !session_path.is_empty() {
         let target = std::path::Path::new(&session_path);
         if target.exists() {
             let canonical = target
                 .canonicalize()
                 .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-            let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-            let allowed_dir = home.join(".claude").join("projects");
+            // 白名单目录也需规范化，否则 Windows 下 \\?\ 前缀会导致 starts_with 误判
+            let allowed_dir = claude_projects_dir()?
+                .canonicalize()
+                .map_err(|e| format!("Failed to canonicalize projects dir: {}", e))?;
             if !canonical.starts_with(&allowed_dir) {
                 return Err(format!(
-                    "Refusing to delete file outside ~/.claude/projects/: {:?}",
+                    "Refusing to delete file outside CLI projects dir: {:?}",
                     canonical
                 ));
             }
@@ -2376,15 +2377,14 @@ async fn delete_session(session_id: String, session_path: String) -> Result<(), 
 
 #[tauri::command]
 async fn list_sessions() -> Result<Vec<Value>, String> {
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    let claude_dir = home.join(".claude").join("projects");
+    let claude_dir = claude_projects_dir()?;
 
     if !claude_dir.exists() {
         return Ok(vec![]);
     }
 
-    // Only show sessions tracked by TOKENICODE
-    let tracked = load_tracked_sessions();
+    // 以 CLI 的 projects 目录为准，仅排除临时 ID 与回退隐藏的旧分支
+    let hidden = load_hidden_sessions();
 
     let mut sessions = vec![];
     if let Ok(entries) = std::fs::read_dir(&claude_dir) {
@@ -2397,8 +2397,7 @@ async fn list_sessions() -> Result<Vec<Value>, String> {
                             if let Some(name) = path.file_stem() {
                                 let id = name.to_string_lossy().to_string();
 
-                                // Skip sessions not created by TOKENICODE
-                                if !tracked.contains(&id) {
+                                if !is_listable_session(&id, &hidden) {
                                     continue;
                                 }
 
@@ -2411,7 +2410,7 @@ async fn list_sessions() -> Result<Vec<Value>, String> {
                                     .unwrap_or(0);
 
                                 // Read the first few lines to extract preview and cwd.
-                                // A tracked session must remain visible even when it has no
+                                // A session must remain visible even when it has no
                                 // assistant record yet (for example after an API failure).
                                 let (preview, cwd) = extract_session_info(&path);
 
@@ -2484,8 +2483,7 @@ async fn get_profile_stats() -> Result<Value, String> {
     use std::collections::{HashMap, HashSet};
     use std::io::BufRead;
 
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    let claude_dir = home.join(".claude").join("projects");
+    let claude_dir = claude_projects_dir()?;
     if !claude_dir.exists() {
         return Ok(serde_json::json!({
             "totalInputTokens": 0u64,
@@ -2501,7 +2499,7 @@ async fn get_profile_stats() -> Result<Value, String> {
         }));
     }
 
-    let tracked = load_tracked_sessions();
+    let hidden = load_hidden_sessions();
     let mut daily: HashMap<String, ProfileDailyStats> = HashMap::new();
     let mut models: HashMap<String, ProfileModelStats> = HashMap::new();
     let mut counted_sessions: HashSet<String> = HashSet::new();
@@ -2528,7 +2526,7 @@ async fn get_profile_stats() -> Result<Value, String> {
                     continue;
                 };
                 let session_id = name.to_string_lossy().to_string();
-                if !tracked.contains(&session_id) {
+                if !is_listable_session(&session_id, &hidden) {
                     continue;
                 }
                 counted_sessions.insert(session_id.clone());
@@ -2627,7 +2625,7 @@ async fn get_profile_stats() -> Result<Value, String> {
     }))
 }
 
-/// Search across tracked session JSONL files for a query string.
+/// Search across listed session JSONL files for a query string.
 /// Returns matching sessions with snippets, sorted by match_count descending (max 50).
 #[tauri::command]
 async fn search_sessions(query: String) -> Result<Vec<Value>, String> {
@@ -2635,14 +2633,13 @@ async fn search_sessions(query: String) -> Result<Vec<Value>, String> {
         return Ok(vec![]);
     }
 
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    let claude_dir = home.join(".claude").join("projects");
+    let claude_dir = claude_projects_dir()?;
 
     if !claude_dir.exists() {
         return Ok(vec![]);
     }
 
-    let tracked = load_tracked_sessions();
+    let hidden = load_hidden_sessions();
     let query_lower = query.to_lowercase();
 
     let mut results: Vec<Value> = Vec::new();
@@ -2656,7 +2653,7 @@ async fn search_sessions(query: String) -> Result<Vec<Value>, String> {
                         if path.extension().map_or(false, |e| e == "jsonl") {
                             if let Some(name) = path.file_stem() {
                                 let id = name.to_string_lossy().to_string();
-                                if !tracked.contains(&id) {
+                                if !is_listable_session(&id, &hidden) {
                                     continue;
                                 }
                                 if let Some(result) = search_session_file(&path, &query_lower) {
@@ -3065,6 +3062,10 @@ fn decode_project_name(encoded: &str) -> String {
 #[tauri::command]
 async fn load_session(path: String) -> Result<Vec<Value>, String> {
     use std::io::BufRead;
+    // 远程会话（ssh:// URI）经 ssh 读取
+    if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        return commands::remote::load_remote_session(&path).await;
+    }
     let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
     let reader = std::io::BufReader::new(file);
     let mut messages = vec![];
@@ -3133,9 +3134,8 @@ fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
 
 #[tauri::command]
 async fn get_session_tokens(session_id: String) -> Result<Value, String> {
-    // Find the JSONL file: ~/.claude/projects/<any-project>/<session_id>.jsonl
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    let projects_dir = home.join(".claude").join("projects");
+    // Find the JSONL file: <CLI 配置目录>/projects/<any-project>/<session_id>.jsonl
+    let projects_dir = claude_projects_dir()?;
     let mut jsonl_path = None;
 
     if projects_dir.exists() {
@@ -3789,8 +3789,7 @@ async fn export_session_json(path: String, output_path: String) -> Result<(), St
 /// List recent projects by scanning ~/.claude/projects/ directory names
 #[tauri::command]
 async fn list_recent_projects() -> Result<Vec<Value>, String> {
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    let projects_dir = home.join(".claude").join("projects");
+    let projects_dir = claude_projects_dir()?;
 
     if !projects_dir.exists() {
         return Ok(vec![]);
@@ -4207,8 +4206,8 @@ async fn list_slash_commands(cwd: Option<String>) -> Result<Vec<SlashCommand>, S
     }
 
     // Global custom commands: ~/.claude/commands/*.md
-    if let Some(home) = dirs::home_dir() {
-        let global_dir = home.join(".claude").join("commands");
+    if let Ok(config_dir) = claude_config_dir() {
+        let global_dir = config_dir.join("commands");
         commands.extend(scan_commands_dir(&global_dir, "global"));
     }
 
@@ -4603,8 +4602,8 @@ async fn list_skills(cwd: Option<String>, additional_dirs: Option<Vec<String>>) 
 
     // Only Claude's native skill directory is scanned by default. Codex and
     // other agent-specific skills are not necessarily compatible with Claude.
-    if let Some(home) = dirs::home_dir() {
-        skills.extend(scan_skill_infos(&home.join(".claude").join("skills"), "global"));
+    if let Ok(config_dir) = claude_config_dir() {
+        skills.extend(scan_skill_infos(&config_dir.join("skills"), "global"));
     }
 
     // Project-local Claude skills.
@@ -5293,8 +5292,8 @@ async fn list_all_commands(cwd: Option<String>, additional_dirs: Option<Vec<Stri
     }
 
     // 2. Global custom commands: ~/.claude/commands/*.md
-    if let Some(home) = dirs::home_dir() {
-        let global_dir = home.join(".claude").join("commands");
+    if let Ok(config_dir) = claude_config_dir() {
+        let global_dir = config_dir.join("commands");
         commands.extend(scan_commands_dir(&global_dir, "global"));
     }
 
@@ -5307,8 +5306,8 @@ async fn list_all_commands(cwd: Option<String>, additional_dirs: Option<Vec<Stri
     }
 
     // 4. Global Claude skills only.
-    if let Some(home) = dirs::home_dir() {
-        commands.extend(scan_skill_commands(&home.join(".claude").join("skills"), "global"));
+    if let Ok(config_dir) = claude_config_dir() {
+        commands.extend(scan_skill_commands(&config_dir.join("skills"), "global"));
     }
 
     // 5. Project-local Claude skills.
@@ -7689,8 +7688,8 @@ async fn check_claude_auth() -> Result<AuthStatus, String> {
     let enriched_path = build_enriched_path();
 
     // First try a quick credential file check (instant, no subprocess)
-    if let Some(home) = dirs::home_dir() {
-        let cred_path = home.join(".claude").join("credentials.json");
+    if let Ok(config_dir) = claude_config_dir() {
+        let cred_path = config_dir.join("credentials.json");
         if cred_path.exists() {
             // Parse JSON and check for actual token fields
             if let Ok(content) = std::fs::read_to_string(&cred_path) {
@@ -7714,8 +7713,8 @@ async fn check_claude_auth() -> Result<AuthStatus, String> {
             }
         }
         // Also check .claude.json (older format)
-        let alt_path = std::path::Path::new(&home).join(".claude.json");
-        if alt_path.exists() {
+        let alt_exists = claude_json_path().map(|p| p.exists()).unwrap_or(false);
+        if alt_exists {
             return Ok(AuthStatus {
                 authenticated: true,
                 unknown: false,
@@ -7773,10 +7772,9 @@ async fn check_claude_auth() -> Result<AuthStatus, String> {
     }
 }
 
-/// Path to the session-names metadata file (~/.claude/tokenicode_session_names.json).
+/// Path to the session-names metadata file (<CLI 配置目录>/tokenicode_session_names.json).
 fn session_names_path() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    Ok(home.join(".claude").join("tokenicode_session_names.json"))
+    Ok(claude_config_dir()?.join("tokenicode_session_names.json"))
 }
 
 /// Load custom session display names from disk.
@@ -8150,8 +8148,8 @@ pub fn run() {
             // titleBarStyle: "Overlay" in tauri.conf.json handles macOS traffic lights
             // and native titlebar drag/double-click-to-maximize automatically.
 
-            // One-time cleanup: purge desk_* entries from tracked_sessions.txt
-            cleanup_tracked_sessions();
+            // 监听 CLI 会话目录，让会话列表随 CLI 变化自动同步
+            start_sessions_watcher(app.handle().clone());
 
             // Propagate proxy env vars from login shell to the process environment
             // so that ALL HTTP clients (including the updater plugin) can reach
@@ -8189,8 +8187,14 @@ pub fn run() {
             send_raw_stdin,
             kill_session,
             list_active_processes,
-            track_session,
-            untrack_session,
+            hide_session,
+            commands::remote::list_remote_hosts,
+            commands::remote::list_remote_sessions,
+            commands::remote::read_remote_config,
+            commands::remote::save_remote_host,
+            commands::remote::delete_remote_host,
+            commands::remote::list_ssh_config_hosts,
+            commands::remote::test_remote_connection,
             delete_session,
             list_sessions,
             get_profile_stats,

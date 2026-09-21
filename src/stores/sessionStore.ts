@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { bridge, SessionListItem, ContentSearchResult } from '../lib/tauri-bridge';
+import { bridge, SessionListItem, ContentSearchResult, RemoteHost } from '../lib/tauri-bridge';
+import { useSettingsStore } from './settingsStore';
+
+/** 从 ssh://<主机>/<路径> 中取出主机 id；本机路径返回 undefined */
+function hostOfPath(p: string): string | undefined {
+  return p.match(/^ssh:\/\/([^/]+)\//)?.[1];
+}
 
 // Persist custom session names in localStorage as fast cache,
 // and sync to disk via Tauri backend for durability.
@@ -47,6 +53,13 @@ function saveStdinToTab(map: Record<string, string>) {
 
 interface SessionState {
   sessions: SessionListItem[];
+  /** 各远程主机的会话缓存（经 ssh 读取较慢，不随 fetchSessions 每次刷新） */
+  remoteSessions: SessionListItem[];
+  /** 已配置的远程主机 */
+  remoteHosts: RemoteHost[];
+  /** 远程主机读取失败的原因，key 为主机 id */
+  remoteErrors: Record<string, string>;
+  isRemoteLoading: boolean;
   isLoading: boolean;
   searchQuery: string;
   selectedSessionId: string | null;
@@ -99,10 +112,16 @@ interface SessionState {
   searchSessionContent: (query: string) => Promise<void>;
   /** Clear content search results */
   clearContentSearch: () => void;
+  /** 读取所有已配置远程主机的会话（经 ssh，较慢，需手动或在启动时调用） */
+  fetchRemoteSessions: () => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => ({
   sessions: [],
+  remoteSessions: [],
+  remoteHosts: [],
+  remoteErrors: {},
+  isRemoteLoading: false,
   isLoading: false,
   searchQuery: '',
   selectedSessionId: null,
@@ -123,9 +142,39 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       const drafts = get().sessions.filter(
         (s) => s.path === '' && !diskSessions.some((d) => d.id === s.id),
       );
-      set({ sessions: [...drafts, ...diskSessions], isLoading: false });
+      set({ sessions: [...drafts, ...diskSessions, ...get().remoteSessions], isLoading: false });
     } catch {
       set({ isLoading: false });
+    }
+  },
+
+  fetchRemoteSessions: async () => {
+    set({ isRemoteLoading: true });
+    try {
+      const hosts = await bridge.listRemoteHosts();
+      // 当前所处的远程主机已被删除时，退回本地模式
+      const { activeEnv, setActiveEnv } = useSettingsStore.getState();
+      if (activeEnv !== 'local' && !hosts.some((h) => h.id === activeEnv)) {
+        setActiveEnv('local');
+      }
+      const results = await Promise.allSettled(hosts.map((h) => bridge.listRemoteSessions(h.id)));
+      const remoteSessions: SessionListItem[] = [];
+      const remoteErrors: Record<string, string> = {};
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') remoteSessions.push(...r.value);
+        else remoteErrors[hosts[i].id] = String(r.reason);
+      });
+      // 用最新的远程会话替换列表中旧的远程部分，本机会话与草稿保持不变
+      // 远程草稿（尚未写入磁盘的新对话，path 为空）需要保留
+      set((state) => ({
+        remoteHosts: hosts,
+        remoteSessions,
+        remoteErrors,
+        isRemoteLoading: false,
+        sessions: [...state.sessions.filter((s) => !s.host || s.path === ''), ...remoteSessions],
+      }));
+    } catch {
+      set({ isRemoteLoading: false });
     }
   },
 
@@ -148,6 +197,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       projectDir,
       modifiedAt: Date.now(),
       preview: '',
+      host: hostOfPath(projectPath),
     };
     return {
       sessions: [draft, ...state.sessions],
@@ -158,7 +208,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   updateDraftProject: (id, projectPath) => set((state) => ({
     sessions: state.sessions.map((s) =>
       s.id === id
-        ? { ...s, project: projectPath, projectDir: projectPath.replace(/\//g, '-'), modifiedAt: Date.now() }
+        ? { ...s, project: projectPath, projectDir: projectPath.replace(/\//g, '-'), modifiedAt: Date.now(), host: hostOfPath(projectPath) }
         : s,
     ),
   })),

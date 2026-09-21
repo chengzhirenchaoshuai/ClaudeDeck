@@ -4,12 +4,11 @@ import { useChatStore, generateMessageId } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useFileStore } from '../../stores/fileStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { bridge, SessionListItem } from '../../lib/tauri-bridge';
+import { bridge, SessionListItem, onCliSessionsChanged } from '../../lib/tauri-bridge';
+import { applyDiskSession, syncSession } from '../../lib/session-sync';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
-import { parseSessionMessages } from '../../lib/session-loader';
-import { getDateCategory } from '../../lib/date-utils';
 import { isWindows } from '../../lib/platform';
 import { SessionGroup } from './SessionGroup';
 import { SessionItem } from './SessionItem';
@@ -26,6 +25,7 @@ function isWindowsAbsolutePath(p: string): boolean {
 }
 
 function resolveProjectPath(raw: string): string {
+  if (raw.startsWith('ssh://')) return raw;
   if (raw.startsWith('/') || isWindowsAbsolutePath(raw)) return raw;
   if (raw.startsWith('~/') || raw === '~') {
     if (_cachedHomeDir) return raw.replace('~', _cachedHomeDir);
@@ -127,6 +127,7 @@ export function ConversationList() {
     } catch { return new Set(); }
   });
   const [showArchived, setShowArchived] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // View mode: 'folder' | 'recent'
   const [viewMode, setViewMode] = useState<'folder' | 'recent'>(() => {
@@ -201,15 +202,71 @@ export function ConversationList() {
         }
       }
     });
+    // 远程会话经 ssh 读取较慢，只在启动时拉取一次，之后在设置的“远程连接”里手动刷新
+    useSessionStore.getState().fetchRemoteSessions();
     const interval = setInterval(fetchSessions, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // CLI 会话目录变化（含终端里直接运行的 claude）：刷新列表，并同步已打开的会话
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let running = false;
+    let pending = false;
+    const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+
+    const currentSession = () => {
+      const st = useSessionStore.getState();
+      return st.sessions.find((s) => s.id === st.selectedSessionId);
+    };
+    // 同一时刻只同步一次；期间又有变化则在 2 秒后再补一次，避免大会话被高频重复解析
+    const syncCurrent = async () => {
+      if (running) { pending = true; return; }
+      running = true;
+      try {
+        await syncSession(currentSession());
+      } finally {
+        running = false;
+        if (pending) { pending = false; setTimeout(syncCurrent, 2000); }
+      }
+    };
+
+    onCliSessionsChanged((paths) => {
+      fetchSessions();
+      const cur = currentSession();
+      if (cur?.path && !cur.host && paths.some((p) => norm(p) === norm(cur.path))) {
+        syncCurrent();
+      }
+    }).then((fn) => { unlisten = fn; }).catch(() => {});
+    return () => { unlisten?.(); };
+  }, [fetchSessions]);
+
+  // 手动同步：刷新会话列表（远程环境下同时刷新远程会话），并重新读取当前会话
+  const handleSyncAll = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      const st = useSessionStore.getState();
+      const current = st.sessions.find((s) => s.id === st.selectedSessionId);
+      const isRemoteEnv = useSettingsStore.getState().activeEnv !== 'local';
+      await Promise.allSettled([
+        fetchSessions(),
+        isRemoteEnv ? st.fetchRemoteSessions() : Promise.resolve(),
+        syncSession(current, { force: true }),
+      ]);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [fetchSessions]);
 
   // Listen for sessions:changed event for instant refresh
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen('sessions:changed', () => {
       fetchSessions();
+      // 远程会话没有目录监听，会话进程结束时顺带刷新远程列表
+      if (useSettingsStore.getState().activeEnv !== 'local') {
+        useSessionStore.getState().fetchRemoteSessions();
+      }
     }).then((fn) => { unlisten = fn; }).catch(() => {});
     return () => { unlisten?.(); };
   }, [fetchSessions]);
@@ -232,8 +289,10 @@ export function ConversationList() {
   }, [customPreviews]);
 
   // Filtered sessions (search + archive)
+  const activeEnv = useSettingsStore((s) => s.activeEnv);
   const filtered = useMemo(() => {
-    let result = sessions;
+    // 本地与远程模式互相隔离：只显示当前环境的会话
+    let result = sessions.filter((s) => (activeEnv === 'local' ? !s.host : s.host === activeEnv));
 
     // Archive filter: OFF = hide archived, ON = show ONLY archived
     if (showArchived) {
@@ -254,7 +313,7 @@ export function ConversationList() {
     }
 
     return result;
-  }, [sessions, searchQuery, displayName, showArchived, archivedSessions]);
+  }, [sessions, searchQuery, displayName, showArchived, archivedSessions, activeEnv]);
 
   // Group by project
   const projectGroups = useMemo(() => {
@@ -277,51 +336,24 @@ export function ConversationList() {
     return entries;
   }, [filtered]);
 
-  // Recently Active view: pinned first, then date-grouped by modifiedAt descending
+  // 最近活跃视图：置顶在前，其余按修改时间从新到旧平铺
   const recentlyActiveGroups = useMemo(() => {
     const pinned: SessionListItem[] = [];
-    const unpinned: SessionListItem[] = [];
-
+    const others: SessionListItem[] = [];
     for (const s of filtered) {
-      if (pinnedSessions.has(s.id)) {
-        pinned.push(s);
-      } else {
-        unpinned.push(s);
-      }
+      (pinnedSessions.has(s.id) ? pinned : others).push(s);
     }
-
     pinned.sort((a, b) => b.modifiedAt - a.modifiedAt);
-
-    const categoryMap = new Map<string, SessionListItem[]>();
-    for (const s of unpinned) {
-      const cat = getDateCategory(s.modifiedAt);
-      if (!categoryMap.has(cat)) categoryMap.set(cat, []);
-      categoryMap.get(cat)!.push(s);
-    }
-
-    const categoryOrder = [
-      { key: 'today', label: t('conv.today') },
-      { key: 'yesterday', label: t('conv.yesterday') },
-      { key: 'thisWeek', label: t('conv.thisWeek') },
-      { key: 'earlier', label: t('conv.older') },
-    ];
-
-    const dateGroups: { category: string; label: string; items: SessionListItem[] }[] = [];
-    for (const { key, label } of categoryOrder) {
-      const items = categoryMap.get(key);
-      if (items && items.length > 0) {
-        dateGroups.push({ category: key, label, items });
-      }
-    }
-
-    return { pinned, dateGroups };
-  }, [filtered, pinnedSessions, t]);
+    others.sort((a, b) => b.modifiedAt - a.modifiedAt);
+    return { pinned, others };
+  }, [filtered, pinnedSessions]);
 
   // Content-only matches: sessions hit by content search but NOT by metadata filter
   const contentOnlyMatches = useMemo(() => {
     if (!searchQuery.trim() || contentSearchResults.size === 0) return [];
     const metadataIds = new Set(filtered.map((s) => s.id));
     return sessions.filter((s) => {
+      if (s.host) return false;
       if (metadataIds.has(s.id)) return false;
       if (!contentSearchResults.has(s.id)) return false;
       // Respect archive filter
@@ -380,6 +412,8 @@ export function ConversationList() {
       if (projectOrDir) {
         useSettingsStore.getState().setWorkingDirectory(resolveProjectPath(projectOrDir));
       }
+      // 缓存可能已落后于磁盘（例如终端里的 claude 在此期间继续了对话），后台刷新一次
+      void syncSession(session);
       return;
     }
 
@@ -405,43 +439,8 @@ export function ConversationList() {
     setSessionMeta(sessionId, { sessionId, stdinId: undefined });
 
     try {
-      const rawMessages = await bridge.loadSession(sessionPath);
-      if (useSessionStore.getState().selectedSessionId !== sessionId) {
-        return;
-      }
-      const { messages, agents } = parseSessionMessages(rawMessages);
-
-      // Restore both billing totals and the latest occupied-context snapshot.
-      // Persisted Claude JSONL contains full assistant usage records; without
-      // this step, selecting a historical session incorrectly resets Ctx to 0.
-      const tokenUsage = await bridge.getSessionTokens(sessionId).catch(() => null);
-      if (tokenUsage) {
-        setSessionMeta(sessionId, {
-          inputTokens: tokenUsage.contextInputTokens,
-          outputTokens: tokenUsage.contextOutputTokens,
-          contextInputTokens: tokenUsage.contextInputTokens,
-          contextOutputTokens: tokenUsage.contextOutputTokens,
-          totalInputTokens: tokenUsage.totalInputTokens,
-          totalOutputTokens: tokenUsage.totalOutputTokens,
-        });
-      }
-
-      // Apply agents
-      for (const agent of agents) {
-        agentActions.upsertAgent(agent);
-      }
-
-      // Apply messages
-      for (const msg of messages) {
-        if (msg.toolResultContent) {
-          // For messages that have tool results, add the base message first, then update
-          const { toolResultContent, ...baseMsg } = msg;
-          addMessage(sessionId, baseMsg);
-          useChatStore.getState().updateMessage(sessionId, msg.id, { toolResultContent });
-        } else {
-          addMessage(sessionId, msg);
-        }
-      }
+      const applied = await applyDiskSession(sessionId, sessionPath);
+      if (!applied) return;
 
       setSessionStatus(sessionId, 'completed');
     } catch (err) {
@@ -576,9 +575,7 @@ export function ConversationList() {
     const ids: string[] = [];
     if (viewMode === 'recent') {
       for (const s of recentlyActiveGroups.pinned) ids.push(s.id);
-      for (const group of recentlyActiveGroups.dateGroups) {
-        for (const s of group.items) ids.push(s.id);
-      }
+      for (const s of recentlyActiveGroups.others) ids.push(s.id);
     } else {
       for (const [project, items] of projectGroups) {
         if (isExpanded(project)) {
@@ -807,6 +804,19 @@ export function ConversationList() {
             {t('conv.viewRecent')}
           </span>
         </button>
+        <button
+          onClick={handleSyncAll}
+          disabled={isSyncing}
+          className="flex-shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-text-primary
+            hover:bg-bg-secondary transition-smooth disabled:opacity-50"
+          title={t('conv.syncTitle')}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            className={isSyncing ? 'animate-spin' : ''}>
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+          </svg>
+        </button>
       </div>
 
       {/* Loading */}
@@ -886,41 +896,32 @@ export function ConversationList() {
                   isHighlighted={highlightedSessionId === session.id}
                 />
               ))}
-              {recentlyActiveGroups.dateGroups.length > 0 && (
+              {recentlyActiveGroups.others.length > 0 && (
                 <div className="my-1 mx-3 border-t border-border-subtle/50" />
               )}
             </div>
           )}
 
-          {/* Date-grouped sessions */}
-          {recentlyActiveGroups.dateGroups.map(({ category, label, items }) => (
-            <div key={category}>
-              <div className="text-[11px] text-text-tertiary font-medium px-3 py-1 mt-1
-                select-none">
-                {label}
-              </div>
-              {items.map((session) => (
-                <SessionItem
-                  key={session.id}
-                  session={session}
-                  isSelected={selectedId === session.id}
-                  isRunning={runningSessions.has(session.id)}
-                  isPinned={false}
-                  isArchived={archivedSessions.has(session.id)}
-                  displayName={displayName(session)}
-                  multiSelect={multiSelect}
-                  isChecked={selectedIds.has(session.id)}
-                  onSelect={handleLoadSession}
-                  onContextMenu={handleContextMenu}
-                  onRename={handleRename}
-                  onDelete={handleDeleteSingle}
-                  onToggleCheck={handleToggleCheck}
-                  triggerRename={renamingSessionId === session.id}
-                  onRenameDone={handleRenameDone}
-                  isHighlighted={highlightedSessionId === session.id}
-                />
-              ))}
-            </div>
+          {recentlyActiveGroups.others.map((session) => (
+            <SessionItem
+              key={session.id}
+              session={session}
+              isSelected={selectedId === session.id}
+              isRunning={runningSessions.has(session.id)}
+              isPinned={false}
+              isArchived={archivedSessions.has(session.id)}
+              displayName={displayName(session)}
+              multiSelect={multiSelect}
+              isChecked={selectedIds.has(session.id)}
+              onSelect={handleLoadSession}
+              onContextMenu={handleContextMenu}
+              onRename={handleRename}
+              onDelete={handleDeleteSingle}
+              onToggleCheck={handleToggleCheck}
+              triggerRename={renamingSessionId === session.id}
+              onRenameDone={handleRenameDone}
+              isHighlighted={highlightedSessionId === session.id}
+            />
           ))}
         </>
       )}

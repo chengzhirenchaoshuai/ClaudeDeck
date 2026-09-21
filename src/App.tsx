@@ -16,7 +16,7 @@ import { useChatStore } from './stores/chatStore';
 import { useSessionStore } from './stores/sessionStore';
 import { APP_NAME } from './lib/edition';
 import { useAgentStore } from './stores/agentStore';
-import { bridge, onFileChange, onClaudeStream, onSessionExit } from './lib/tauri-bridge';
+import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath } from './lib/tauri-bridge';
 import { useScrollZoom } from './lib/useScrollZoom';
 import { useT } from './lib/i18n';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -600,6 +600,11 @@ function App() {
       return;
     }
 
+    // 远程项目（ssh://）的文件树暂不支持，避免对本机文件系统读取无效路径
+    if (isRemotePath(workingDirectory)) {
+      return;
+    }
+
     // Unwatch previous directory
     if (prevDirRef.current && prevDirRef.current !== workingDirectory) {
       bridge.unwatchDirectory(prevDirRef.current).catch(() => {});
@@ -614,6 +619,12 @@ function App() {
       bridge.unwatchDirectory(workingDirectory).catch(() => {});
     };
   }, [workingDirectory, homeDirReady]);
+
+  // 启动时保证当前环境与工作目录一致（本地环境不应指向 ssh://，远程环境不应指向本机路径）
+  useEffect(() => {
+    const { activeEnv, workingDirectory: dir, setWorkingDirectory } = useSettingsStore.getState();
+    if (isRemotePath(dir) !== (activeEnv !== 'local')) setWorkingDirectory('');
+  }, []);
 
   // Listen for file change events from the watcher
   // Debounce tree refresh for created/removed events (structure changes)

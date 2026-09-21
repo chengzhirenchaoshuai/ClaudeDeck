@@ -42,7 +42,38 @@ export interface SessionListItem {
   projectDir: string;
   modifiedAt: number;
   preview: string;
+  /** 远程会话所属主机 id；本机会话为空 */
+  host?: string;
 }
+
+/** 远程主机配置：id 同时作为 ssh://<id>/<路径> 中的主机名 */
+export interface RemoteHost {
+  id: string;
+  /** ssh 目标：~/.ssh/config 的 Host 别名，或 user@host */
+  destination: string;
+  port?: number | null;
+  identityFile?: string | null;
+}
+
+export interface RemoteTestResult {
+  ok: boolean;
+  shellIsCmd: boolean;
+  claudeVersion: string;
+  message: string;
+}
+
+/** 远端 Claude 配置的只读快照（密钥已在后端脱敏） */
+export interface RemoteConfig {
+  configDir: string;
+  settings: Record<string, unknown> | null;
+  mcpServers: { name: string; type: string; command: string; url: string }[];
+  skills: string[];
+  commands: string[];
+}
+
+/** 判断路径是否为远程项目 URI（ssh://<主机>/<路径>） */
+export const isRemotePath = (p: string | null | undefined): boolean =>
+  !!p && p.startsWith('ssh://');
 
 export interface ContentSearchResult {
   session_id: string;
@@ -315,11 +346,20 @@ export const bridge = {
   abortSession: (sessionId: string) =>
     invoke<void>('abort_session', { sessionId }),
 
-  trackSession: (sessionId: string) =>
-    invoke<void>('track_session', { sessionId }),
+  /** 从列表隐藏被回退替换的旧分支（不删除 JSONL 文件） */
+  hideSession: (sessionId: string) =>
+    invoke<void>('hide_session', { sessionId }),
 
-  untrackSession: (sessionId: string) =>
-    invoke<void>('untrack_session', { sessionId }),
+  listRemoteHosts: () => invoke<RemoteHost[]>('list_remote_hosts'),
+  saveRemoteHost: (host: RemoteHost) => invoke<void>('save_remote_host', { host }),
+  deleteRemoteHost: (id: string) => invoke<void>('delete_remote_host', { id }),
+  listSshConfigHosts: () => invoke<string[]>('list_ssh_config_hosts'),
+  testRemoteConnection: (id: string) =>
+    invoke<RemoteTestResult>('test_remote_connection', { id }),
+  listRemoteSessions: (hostId: string) =>
+    invoke<SessionListItem[]>('list_remote_sessions', { hostId }),
+  readRemoteConfig: (hostId: string) =>
+    invoke<RemoteConfig>('read_remote_config', { hostId }),
 
   deleteSession: (sessionId: string, sessionPath: string) =>
     invoke<void>('delete_session', { sessionId, sessionPath }),
@@ -746,6 +786,16 @@ export function onLocalModelPullProgress(
   return listen<LocalModelPullEvent>(
     'local-model:pull-progress',
     (event) => callback(event.payload),
+  );
+}
+
+/** CLI 会话目录中的 jsonl 发生变化（含终端里直接运行的 claude），paths 为变化的文件路径 */
+export function onCliSessionsChanged(
+  callback: (paths: string[]) => void,
+): Promise<UnlistenFn> {
+  return listen<{ paths: string[] }>(
+    'cli-sessions:changed',
+    (event) => callback(event.payload?.paths ?? []),
   );
 }
 

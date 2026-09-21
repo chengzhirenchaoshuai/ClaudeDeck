@@ -374,8 +374,10 @@ export function InputBar() {
     ? workingDirectory.split(/[\\/]/).filter(Boolean).pop() || workingDirectory
     : t('input.projectFolder');
 
+  const isRemoteEnv = useSettingsStore((s) => s.activeEnv) !== 'local';
+
   const handlePickWorkingDirectory = useCallback(async () => {
-    if (isRunning) return;
+    if (isRunning || isRemoteEnv) return;
     try {
       const selected = await open({
         directory: true,
@@ -389,7 +391,7 @@ export function InputBar() {
     } catch (error) {
       console.warn('[InputBar] failed to pick working directory', error);
     }
-  }, [isRunning, t, workingDirectory]);
+  }, [isRunning, isRemoteEnv, t, workingDirectory]);
 
   // --- Slash command detection ---
   // Relaxed: detect "/" at start of first line, keep popover open even after spaces
@@ -1205,18 +1207,14 @@ export function InputBar() {
             useChatStore.setState({ tabs: newTabs, sessionCache: newTabs });
           }
           useSessionStore.getState().promoteDraft(tabId, session.session_id);
-          bridge.untrackSession(rewoundFromSessionId).catch((error) => {
+          bridge.hideSession(rewoundFromSessionId).catch((error) => {
             console.warn('[TOKENICODE:rewind] failed to hide superseded session:', error);
           });
           tabId = session.session_id;
         }
         // Note: stdinId → tabId mapping already registered before listener setup (TK-329)
 
-        // Track the session and refresh conversation list
-        // Skip desk_* IDs — they pollute tracked_sessions.txt (multi-session isolation fix)
-        if (!session.session_id.startsWith('desk_')) {
-          bridge.trackSession(session.session_id).catch(() => {});
-        }
+        // 会话列表以 CLI 目录为准，无需登记，直接刷新
         useSessionStore.getState().fetchSessions();
         // Delayed retry in case JSONL file isn't written yet
         setTimeout(() => useSessionStore.getState().fetchSessions(), 1500);
@@ -1657,7 +1655,7 @@ export function InputBar() {
 
           <button
             onClick={handlePickWorkingDirectory}
-            disabled={isRunning}
+            disabled={isRunning || isRemoteEnv}
             className="inline-flex items-center gap-1.5 max-w-[220px] px-2 py-1 rounded-lg text-xs
               text-text-secondary hover:text-text-primary hover:bg-bg-secondary
               disabled:opacity-40 disabled:cursor-not-allowed transition-smooth"

@@ -71,6 +71,8 @@ interface SettingsState {
   secondaryPanelWidth: number;
   settingsOpen: boolean;
   workingDirectory: string;
+  /** 当前环境：'local' 表示本机，否则为远程主机 id。本地与远程模式互相隔离 */
+  activeEnv: string;
   selectedModel: string;
   sessionMode: SessionMode;
   locale: Locale;
@@ -147,6 +149,8 @@ interface SettingsState {
   setSecondaryPanelWidth: (width: number) => void;
   toggleSettings: () => void;
   setWorkingDirectory: (dir: string) => void;
+  /** 切换环境，并清空工作目录（本地与远程的项目路径互不通用） */
+  setActiveEnv: (env: string) => void;
   setSelectedModel: (model: string) => void;
   setSessionMode: (mode: SessionMode) => void;
   setLocale: (locale: Locale) => void;
@@ -206,6 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
       settingsOpen: false,
       agentPanelOpen: false,
       workingDirectory: '',
+      activeEnv: 'local',
       selectedModel: 'claude-sonnet-4-6',
       sessionMode: 'bypass',
       locale: 'zh',
@@ -276,6 +281,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       setWorkingDirectory: (dir) =>
         set(() => ({ workingDirectory: dir })),
+
+      setActiveEnv: (env) =>
+        set((state) => (state.activeEnv === env ? {} : { activeEnv: env, workingDirectory: '' })),
 
       setSelectedModel: (model) =>
         set(() => ({ selectedModel: model })),
@@ -464,6 +472,7 @@ export const useSettingsStore = create<SettingsState>()(
         sidebarOpen: state.sidebarOpen,
         secondaryPanelWidth: state.secondaryPanelWidth,
         workingDirectory: state.workingDirectory,
+        activeEnv: state.activeEnv,
         selectedModel: state.selectedModel,
         sessionMode: state.sessionMode,
         locale: state.locale,

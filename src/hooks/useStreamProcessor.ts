@@ -1024,7 +1024,6 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       const currentId = useChatStore.getState().getTab(tabId)?.sessionMeta.sessionId;
       if (currentId !== cliSessionId) {
         setSessionMeta({ sessionId: cliSessionId });
-        bridge.trackSession(cliSessionId).catch(() => {});
         // Persist Claude session UUID for F5 recovery (token totals read from JSONL)
         _persistClaudeUuid(tabId, cliSessionId);
 
@@ -1718,7 +1717,6 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
                 });
                 const tabId = useSessionStore.getState().selectedSessionId;
                 if (tabId) useSessionStore.getState().registerStdinTab(retryId, tabId);
-                bridge.trackSession(session.session_id).catch(() => {});
               } catch (retryErr) {
                 console.error('[TOKENICODE] Provider-switch auto-retry failed:', retryErr);
                 // P0-5: Clean up the retry listeners on failure

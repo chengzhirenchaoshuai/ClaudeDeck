@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { SessionItem } from './SessionItem';
 import { useT } from '../../lib/i18n';
-import { getDateCategory } from '../../lib/date-utils';
 
 interface SessionGroupProps {
   projectKey: string;
@@ -57,46 +56,15 @@ export function SessionGroup({
 }: SessionGroupProps) {
   const t = useT();
 
-  // Split into pinned and unpinned, then group unpinned by date
-  const { pinnedItems, dateGroups } = useMemo(() => {
+  // 置顶的会话排在前面，其余保持传入顺序（调用方已按修改时间从新到旧排序）
+  const { pinnedItems, unpinnedItems } = useMemo(() => {
     const pinned: SessionListItem[] = [];
     const unpinned: SessionListItem[] = [];
-
     for (const s of sessions) {
-      if (pinnedSessions.has(s.id)) {
-        pinned.push(s);
-      } else {
-        unpinned.push(s);
-      }
+      (pinnedSessions.has(s.id) ? pinned : unpinned).push(s);
     }
-
-    // Group unpinned by date category
-    const groups: { category: string; label: string; items: SessionListItem[] }[] = [];
-    const categoryMap = new Map<string, SessionListItem[]>();
-
-    for (const s of unpinned) {
-      const cat = getDateCategory(s.modifiedAt);
-      if (!categoryMap.has(cat)) categoryMap.set(cat, []);
-      categoryMap.get(cat)!.push(s);
-    }
-
-    // Define order
-    const categoryOrder: Array<{ key: string; label: string }> = [
-      { key: 'today', label: t('conv.today') },
-      { key: 'yesterday', label: t('conv.yesterday') },
-      { key: 'thisWeek', label: t('conv.thisWeek') },
-      { key: 'earlier', label: t('conv.older') },
-    ];
-
-    for (const { key, label } of categoryOrder) {
-      const items = categoryMap.get(key);
-      if (items && items.length > 0) {
-        groups.push({ category: key, label, items });
-      }
-    }
-
-    return { pinnedItems: pinned, dateGroups: groups };
-  }, [sessions, pinnedSessions, t]);
+    return { pinnedItems: pinned, unpinnedItems: unpinned };
+  }, [sessions, pinnedSessions]);
 
   const getDisplayName = (session: SessionListItem) =>
     customPreviews[session.id] || session.preview || '';
@@ -175,41 +143,32 @@ export function SessionGroup({
                   isHighlighted={highlightedSessionId === session.id}
                 />
               ))}
-              {dateGroups.length > 0 && (
+              {unpinnedItems.length > 0 && (
                 <div className="my-1 mx-7 border-t border-border-subtle/50" />
               )}
             </>
           )}
 
-          {/* Date-grouped sessions */}
-          {dateGroups.map(({ category, label: dateLabel, items }) => (
-            <div key={category}>
-              <div className="text-[11px] text-text-tertiary font-medium px-7 py-1 mt-1
-                select-none">
-                {dateLabel}
-              </div>
-              {items.map((session) => (
-                <SessionItem
-                  key={session.id}
-                  session={session}
-                  isSelected={selectedId === session.id}
-                  isRunning={runningSessions.has(session.id)}
-                  isPinned={false}
-                  isArchived={archivedSessions.has(session.id)}
-                  displayName={getDisplayName(session)}
-                  multiSelect={multiSelect}
-                  isChecked={selectedIds.has(session.id)}
-                  onSelect={onLoadSession}
-                  onContextMenu={onContextMenu}
-                  onRename={onRename}
-                  onDelete={onDelete}
-                  onToggleCheck={onToggleCheck}
-                  triggerRename={renamingSessionId === session.id}
-                  onRenameDone={onRenameDone}
-                  isHighlighted={highlightedSessionId === session.id}
-                />
-              ))}
-            </div>
+          {unpinnedItems.map((session) => (
+            <SessionItem
+              key={session.id}
+              session={session}
+              isSelected={selectedId === session.id}
+              isRunning={runningSessions.has(session.id)}
+              isPinned={false}
+              isArchived={archivedSessions.has(session.id)}
+              displayName={getDisplayName(session)}
+              multiSelect={multiSelect}
+              isChecked={selectedIds.has(session.id)}
+              onSelect={onLoadSession}
+              onContextMenu={onContextMenu}
+              onRename={onRename}
+              onDelete={onDelete}
+              onToggleCheck={onToggleCheck}
+              triggerRename={renamingSessionId === session.id}
+              onRenameDone={onRenameDone}
+              isHighlighted={highlightedSessionId === session.id}
+            />
           ))}
         </div>
       )}
