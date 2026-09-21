@@ -184,4 +184,7 @@ pub struct StartSessionParams {
     /// When not "bypassPermissions", enables --permission-prompt-tool stdio for structured
     /// permission requests via the SDK control protocol.
     pub permission_mode: Option<String>,
+    /// 是否在会话中加载 MCP 服务器（默认 false）。
+    /// false 时带 --strict-mcp-config 跳过全部 MCP，启动更快；true 时按 CLI 自身配置加载。
+    pub enable_mcp: Option<bool>,
 }

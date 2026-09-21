@@ -1085,6 +1085,7 @@ async function startDraftSession(folderPath: string) {
       provider_id: providerId || undefined,
       context_window: getContextWindowForModel(resolvedModel, contextWindowMode),
       permission_mode: mapSessionModeToPermissionMode(sessionMode),
+      enable_mcp: useSettingsStore.getState().enableMcp,
     });
 
     // Store stdinId so InputBar can send the first message via stdin

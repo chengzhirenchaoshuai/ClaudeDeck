@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useMcpStore } from '../../stores/mcpStore';
 import type { DiscoveredMcpServer, McpServer, McpServerConfig } from '../../stores/mcpStore';
 import { useT } from '../../lib/i18n';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 export function McpTab() {
   const t = useT();
@@ -20,6 +21,8 @@ export function McpTab() {
   const isAdding = useMcpStore((s) => s.isAdding);
   const setEditing = useMcpStore((s) => s.setEditing);
   const setAdding = useMcpStore((s) => s.setAdding);
+  const enableMcp = useSettingsStore((s) => s.enableMcp);
+  const toggleEnableMcp = useSettingsStore((s) => s.toggleEnableMcp);
 
   useEffect(() => {
     fetchServers();
@@ -36,6 +39,27 @@ export function McpTab() {
 
   return (
     <div className="space-y-4">
+      {/* 会话中是否加载 MCP */}
+      <div className="px-3 py-2.5 rounded-lg border border-border-subtle bg-bg-secondary/40">
+        <button
+          onClick={toggleEnableMcp}
+          className="inline-flex items-center gap-2 text-[12px] text-text-secondary
+            hover:text-text-primary transition-smooth"
+        >
+          <span className={`relative w-8 h-4 rounded-full transition-smooth border
+            ${enableMcp ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
+          >
+            <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+              ${enableMcp ? 'right-0.5' : 'left-0.5'}`}
+            />
+          </span>
+          {t('mcp.enableInSessions')}
+        </button>
+        <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
+          {t('mcp.enableInSessionsHint')}
+        </p>
+      </div>
+
       {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

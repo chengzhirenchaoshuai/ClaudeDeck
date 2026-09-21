@@ -21,6 +21,8 @@ export interface StartSessionParams {
   provider_id?: string;
   /** Declared model context window, e.g. 1000000 for compatible DeepSeek/CC Switch routes. */
   context_window?: number;
+  /** 是否在会话中加载 MCP 服务器（默认不加载，启动更快） */
+  enable_mcp?: boolean;
   /** Permission mode for CLI control protocol.
    *  "acceptEdits" | "default" | "plan" | "bypassPermissions"
    *  When not "bypassPermissions", enables structured permission requests via SDK protocol. */

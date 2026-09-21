@@ -144,6 +144,8 @@ interface SettingsState {
   ctrlEnterToSend: boolean;
   /** 点击窗口关闭按钮时最小化到任务栏（默认开启），而不是退出应用 */
   minimizeOnClose: boolean;
+  /** 在会话中加载 MCP 服务器（默认关闭：加载 MCP 会拖慢每个会话的启动） */
+  enableMcp: boolean;
   /** Whether Ctrl+Click on a file opens it with the system default app */
   ctrlClickOpenExternally: boolean;
   /** Whether to show image thumbnail previews in chat for images < 50MB */
@@ -204,6 +206,7 @@ interface SettingsState {
   toggleHiddenFiles: () => void;
   toggleCtrlEnterToSend: () => void;
   toggleMinimizeOnClose: () => void;
+  toggleEnableMcp: () => void;
   toggleUsage: () => void;
   setCustomModelPrice: (model: string, price: ModelPrice | null) => void;
   toggleCtrlClickOpenExternally: () => void;
@@ -269,6 +272,7 @@ export const useSettingsStore = create<SettingsState>()(
       showHiddenFiles: false,
       ctrlEnterToSend: false,
       minimizeOnClose: true,
+      enableMcp: false,
       ctrlClickOpenExternally: false,
       showImageThumbnails: false,
       skillDirectories: [],
@@ -401,6 +405,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       toggleMinimizeOnClose: () =>
         set((state) => ({ minimizeOnClose: !state.minimizeOnClose })),
+
+      toggleEnableMcp: () =>
+        set((state) => ({ enableMcp: !state.enableMcp })),
 
       toggleUsage: () => set((state) => ({ usageOpen: !state.usageOpen })),
 
@@ -541,6 +548,7 @@ export const useSettingsStore = create<SettingsState>()(
         showHiddenFiles: state.showHiddenFiles,
         ctrlEnterToSend: state.ctrlEnterToSend,
         minimizeOnClose: state.minimizeOnClose,
+        enableMcp: state.enableMcp,
         customModelPrices: state.customModelPrices,
         ctrlClickOpenExternally: state.ctrlClickOpenExternally,
         showImageThumbnails: state.showImageThumbnails,

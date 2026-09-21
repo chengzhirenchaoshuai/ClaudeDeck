@@ -1178,6 +1178,7 @@ export function InputBar() {
           provider_id: liveProviderId || undefined,
           context_window: liveContextWindow,
           permission_mode: mapSessionModeToPermissionMode(liveSessionMode),
+          enable_mcp: useSettingsStore.getState().enableMcp,
         });
         console.log('[TOKENICODE:session] started successfully', { sessionId: session.session_id, pid: session.pid, cli: session.cli_path });
 

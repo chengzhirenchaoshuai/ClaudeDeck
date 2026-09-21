@@ -1418,11 +1418,14 @@ async fn start_claude_session(
         "--verbose".to_string(),
         "--include-partial-messages".to_string(),
         "--replay-user-messages".to_string(),
-        // Skip global MCP servers from ~/.claude.json to avoid slow cold start.
-        // MCP servers (chrome-devtools, codex, gemini, pencil etc.) add 20-30s startup
-        // overhead as each must initialize before the CLI accepts input.
-        "--strict-mcp-config".to_string(),
     ];
+
+    // 默认跳过全部 MCP 服务器以加快冷启动：MCP 服务器（chrome-devtools、codex 等）
+    // 需要逐个初始化，CLI 才会接受输入，可能多出 20-30 秒。
+    // 用户在“MCP 服务器”页打开“会话中加载 MCP”后，按 CLI 自身的配置加载。
+    if !params.enable_mcp.unwrap_or(false) {
+        args.push("--strict-mcp-config".to_string());
+    }
 
     // Resume an existing CLI session if requested
     if let Some(ref resume_id) = params.resume_session_id {

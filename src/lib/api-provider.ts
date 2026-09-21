@@ -1,6 +1,6 @@
 import { useProviderStore } from '../stores/providerStore';
 import { PROVIDER_PRESETS } from './provider-presets';
-import { MODEL_TIER_MAP as TIER_MAP, type ModelId } from '../stores/settingsStore';
+import { MODEL_TIER_MAP as TIER_MAP, useSettingsStore, type ModelId } from '../stores/settingsStore';
 import {
   DEEPSEEK_V4_FLASH,
   DEEPSEEK_V4_PRO,
@@ -100,5 +100,7 @@ export function envFingerprint(): string {
   return JSON.stringify({
     activeProviderId,
     updatedAt: provider?.updatedAt ?? 0,
+    // MCP 开关只能在进程启动时决定，切换后旧进程需要重启
+    enableMcp: useSettingsStore.getState().enableMcp,
   });
 }
