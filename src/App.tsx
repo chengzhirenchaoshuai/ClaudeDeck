@@ -5,6 +5,7 @@ import { ChatPanel } from './components/chat/ChatPanel';
 import { SecondaryPanel } from './components/layout/SecondaryPanel';
 import { CommandPalette } from './components/commands/CommandPalette';
 import { SettingsPanel } from './components/settings/SettingsPanel';
+import { UsageModal } from './components/usage/UsageModal';
 import { ImageLightbox } from './components/shared/ImageLightbox';
 import { ChangelogModal } from './components/shared/ChangelogModal';
 import { Toast } from './components/shared/Toast';
@@ -133,6 +134,7 @@ function App() {
   const fontFamily = useSettingsStore((s) => s.fontFamily);
   const monoFontFollowsInterface = useSettingsStore((s) => s.monoFontFollowsInterface);
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
+  const usageOpen = useSettingsStore((s) => s.usageOpen);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
   const lastSeenVersion = useSettingsStore((s) => s.lastSeenVersion);
   const setLastSeenVersion = useSettingsStore((s) => s.setLastSeenVersion);
@@ -683,6 +685,7 @@ function App() {
       />
       <CommandPalette />
       {settingsOpen && <SettingsPanel />}
+      {usageOpen && <UsageModal />}
       <ImageLightbox />
       {showChangelog && currentAppVersion && (
         <ChangelogModal

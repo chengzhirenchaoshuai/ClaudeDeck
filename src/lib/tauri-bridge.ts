@@ -426,6 +426,13 @@ export const bridge = {
   getHomeDir: () =>
     invoke<string>('get_home_dir'),
 
+  /** 用量统计：按 UTC 小时 / 模型 / 项目聚合的 token（已跨文件去重） */
+  getUsageStats: () => invoke<import('./usage').UsageStats>('get_usage_stats'),
+
+  /** 查询供应商账户余额（目前仅 DeepSeek） */
+  getProviderBalance: (providerId: string) =>
+    invoke<import('../stores/usageStore').ProviderBalance>('get_provider_balance', { providerId }),
+
   /** Claude CLI 的配置目录与 .claude.json 路径（遵循 CLAUDE_CONFIG_DIR） */
   getClaudeConfigPaths: () =>
     invoke<{ configDir: string; claudeJson: string }>('get_claude_config_paths'),

@@ -16,6 +16,7 @@ import {
 import { getContextUsedTokens } from '../../lib/context-usage';
 import { useSessionStore } from '../../stores/sessionStore';
 import { RemotePathInput } from '../layout/EnvSwitcher';
+import { UsageChip } from '../usage/UsageChip';
 import { useFileStore } from '../../stores/fileStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { AgentPanel } from '../agents/AgentPanel';
@@ -795,6 +796,7 @@ export function ChatPanel() {
           tabId={selectedSessionId}
           sessionStatus={sessionStatus}
         />
+        <UsageChip />
         <UpdateButton />
         <ExportMenu sessionPath={currentSessionPath} />
         <button onClick={toggleSecondaryPanel}

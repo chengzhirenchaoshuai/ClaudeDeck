@@ -18,6 +18,7 @@ export function Sidebar() {
   const isRemoteEnv = activeEnv !== LOCAL_ENV;
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggleSettings);
+  const toggleUsage = useSettingsStore((s) => s.toggleUsage);
   const setSecondaryTab = useSettingsStore((s) => s.setSecondaryTab);
   const updateAvailable = useSettingsStore((s) => s.updateAvailable);
   const cliUpdateAvailable = useSettingsStore((s) => s.cliUpdateAvailable);
@@ -173,6 +174,16 @@ export function Sidebar() {
             <path d="M8 1L1 4.5l7 3.5 7-3.5L8 1zM1 11.5l7 3.5 7-3.5M1 8l7 3.5L15 8" />
           </svg>
           {t('panel.skills')}
+        </button>
+        <button onClick={toggleUsage}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
+            text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary
+            transition-smooth">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M3 13V8M8 13V3M13 13V6" />
+          </svg>
+          {t('usage.title')}
         </button>
         <button onClick={toggleSettings}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl

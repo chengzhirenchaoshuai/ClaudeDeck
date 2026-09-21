@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { ModelPrice } from '../lib/usage';
 import {
   DEEPSEEK_V4_FLASH,
   DEEPSEEK_V4_PRO,
@@ -92,6 +93,10 @@ interface SettingsState {
   secondaryPanelTab: SecondaryPanelTab;
   secondaryPanelWidth: number;
   settingsOpen: boolean;
+  /** 用量面板是否打开（不持久化） */
+  usageOpen: boolean;
+  /** 用户自定义的模型价格（键为归一化的模型名）；覆盖内置的官方标价 */
+  customModelPrices: Record<string, ModelPrice>;
   workingDirectory: string;
   /** 当前环境：'local' 表示本机，否则为远程主机 id。本地与远程模式互相隔离 */
   activeEnv: string;
@@ -199,6 +204,8 @@ interface SettingsState {
   toggleHiddenFiles: () => void;
   toggleCtrlEnterToSend: () => void;
   toggleMinimizeOnClose: () => void;
+  toggleUsage: () => void;
+  setCustomModelPrice: (model: string, price: ModelPrice | null) => void;
   toggleCtrlClickOpenExternally: () => void;
   toggleShowImageThumbnails: () => void;
   addSkillDirectory: (path: string) => void;
@@ -234,6 +241,8 @@ export const useSettingsStore = create<SettingsState>()(
       secondaryPanelTab: 'files',
       secondaryPanelWidth: 300,
       settingsOpen: false,
+      usageOpen: false,
+      customModelPrices: {},
       agentPanelOpen: false,
       workingDirectory: '',
       activeEnv: 'local',
@@ -392,6 +401,16 @@ export const useSettingsStore = create<SettingsState>()(
 
       toggleMinimizeOnClose: () =>
         set((state) => ({ minimizeOnClose: !state.minimizeOnClose })),
+
+      toggleUsage: () => set((state) => ({ usageOpen: !state.usageOpen })),
+
+      setCustomModelPrice: (model, price) =>
+        set((state) => {
+          const next = { ...state.customModelPrices };
+          if (price) next[model] = price;
+          else delete next[model];
+          return { customModelPrices: next };
+        }),
       toggleCtrlClickOpenExternally: () =>
         set((state) => ({ ctrlClickOpenExternally: !state.ctrlClickOpenExternally })),
       toggleShowImageThumbnails: () =>
@@ -522,6 +541,7 @@ export const useSettingsStore = create<SettingsState>()(
         showHiddenFiles: state.showHiddenFiles,
         ctrlEnterToSend: state.ctrlEnterToSend,
         minimizeOnClose: state.minimizeOnClose,
+        customModelPrices: state.customModelPrices,
         ctrlClickOpenExternally: state.ctrlClickOpenExternally,
         showImageThumbnails: state.showImageThumbnails,
         skillDirectories: state.skillDirectories,
