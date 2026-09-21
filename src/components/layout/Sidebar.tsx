@@ -104,13 +104,14 @@ export function Sidebar() {
 
       {/* New Chat — navigate to WelcomeScreen where user picks a folder */}
       <div className="px-3">
+      {/* New Chat — 只跳转到新建页面，选好文件夹并发送第一条消息时才真正创建 */}
       <button onClick={() => {
-        const workingDirectory = useSettingsStore.getState().workingDirectory;
-        if (!workingDirectory) {
-          useSessionStore.getState().setSelectedSession(null);
-          return;
+        const currentTabId = useSessionStore.getState().selectedSessionId;
+        if (currentTabId) {
+          useChatStore.getState().saveToCache(currentTabId);
+          useAgentStore.getState().saveToCache(currentTabId);
         }
-        startProjectDraft(workingDirectory);
+        useSessionStore.getState().setSelectedSession(null);
       }}
         className="w-full py-2.5 px-4 rounded-[20px] text-sm font-medium
           bg-accent hover:bg-accent-hover text-text-inverse

@@ -183,9 +183,20 @@ pub async fn run_remote(
     ))
 }
 
+/// 注入到每个远端脚本开头的辅助函数：把 JSON 中的非 ASCII 字符转成 \uXXXX。
+/// 经 ssh 运行 PowerShell 时通常没有控制台，脚本里设置 [Console]::OutputEncoding 会静默失败，
+/// 输出退回系统 OEM 代码页（中文系统是 GBK），本端按 UTF-8 解码就会全部乱码。
+/// 输出纯 ASCII 后，与任何编码设置都无关。
+const PS_ASCII_HELPER: &str = r#"
+function Out-AsciiJson($json) {
+  [regex]::Replace([string]$json, '[^\x00-\x7F]', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) ('\u{0:x4}' -f [int][char]$m.Value) })
+}
+"#;
+
 /// 把 PowerShell 脚本编码为 -EncodedCommand 形式的远端命令，避免经 cmd 传递时的引号转义问题。
 fn powershell_command(script: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let script = format!("{}{}", PS_ASCII_HELPER, script);
     let bytes: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
     format!(
         "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {}",
@@ -222,7 +233,7 @@ if (Test-Path -LiteralPath $proj) {
     }
   }
 }
-ConvertTo-Json -InputObject @($out) -Compress
+Out-AsciiJson (ConvertTo-Json -InputObject @($out) -Compress)
 "#;
 
 /// 读取远端 Claude 配置的脚本：settings.json、.claude.json 中的 MCP、skills 与自定义命令名称。
@@ -249,7 +260,7 @@ if (Test-Path -LiteralPath $sd) { $skills = @(Get-ChildItem -LiteralPath $sd -Di
 $cmds = @(); $cd = Join-Path $root 'commands'
 if (Test-Path -LiteralPath $cd) { $cmds = @(Get-ChildItem -LiteralPath $cd -Filter *.md -File | ForEach-Object { $_.BaseName }) }
 $result = [pscustomobject]@{ configDir = $root; settings = $settings; mcpServers = @($mcp); skills = @($skills); commands = @($cmds) }
-ConvertTo-Json -InputObject $result -Depth 20 -Compress
+Out-AsciiJson (ConvertTo-Json -InputObject $result -Depth 20 -Compress)
 "#;
 
 /// 递归脱敏：键名含 key/token/secret/password/auth 的字符串值不回传，只保留“已设置”标记。
@@ -375,7 +386,7 @@ foreach ($f in $files) {
 $rows = foreach ($a in $agg.Values) {
   [pscustomobject]@{ hour = $a[0]; model = $a[1]; project = $a[2]; input = $a[3]; output = $a[4]; cacheRead = $a[5]; cache5m = $a[6]; cache1h = $a[7]; messages = $a[8] }
 }
-ConvertTo-Json -InputObject @{ rows = @($rows); sessionCount = $files.Count } -Compress -Depth 4
+Out-AsciiJson (ConvertTo-Json -InputObject @{ rows = @($rows); sessionCount = $files.Count } -Compress -Depth 4)
 "#;
 
 /// 读取远端主机上的用量统计，返回与本机 `get_usage_stats` 相同结构的行，
@@ -465,12 +476,22 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
         return Err("远程路径含有不支持的字符".to_string());
     }
     let host = find_host(&host_id)?;
-    let cmd = format!("type \"{}\"", path.replace('/', "\\"));
-    let (stdout, stderr, code) = run_remote(&host, &cmd, Duration::from_secs(120)).await?;
+    // 用 PowerShell 读取文件字节并以 base64 输出（纯 ASCII），避免控制台编码影响中文内容
+    let win_path = path.replace('/', "\\").replace('\'', "''");
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; [Convert]::ToBase64String([System.IO.File]::ReadAllBytes('{}'))",
+        win_path
+    );
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(120)).await?;
     if code != 0 {
         return Err(format!("读取远端会话失败: {}", stderr.trim()));
     }
-    Ok(stdout
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = STANDARD
+        .decode(stdout.trim().as_bytes())
+        .map_err(|e| format!("解码远端会话失败: {}", e))?;
+    Ok(String::from_utf8_lossy(&bytes)
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .collect())
