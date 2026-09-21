@@ -340,10 +340,25 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   const percent = Math.min(100, Math.round((used / contextWindow) * 100));
   const thresholdPercent = Math.min(100, Math.round((compactThreshold / contextWindow) * 100));
   const isBusy = sessionStatus === 'running';
-  const canCompact = Boolean(tabId && sessionMeta.stdinId && !isBusy && !isCompacting);
+  const hasLiveProcess = Boolean(sessionMeta.stdinId);
+  // 没有运行中的进程时（历史会话），只要是有内容的真实会话，也可以压缩：
+  // 点击后由输入框把 /compact 作为第一条消息发给 CLI，续接会话并压缩
+  const canResumeAndCompact = Boolean(
+    tabId && !hasLiveProcess && used > 0
+    && sessionMeta.sessionId && !sessionMeta.sessionId.startsWith('desk_'),
+  );
+  const canCompact = Boolean(tabId && !isBusy && !isCompacting && (hasLiveProcess || canResumeAndCompact));
+  const compactHint = canCompact
+    ? t('chat.compactNow')
+    : isBusy || isCompacting ? t('chat.compactBusy') : t('chat.compactEmpty');
 
   const handleCompact = async () => {
-    if (!tabId || !sessionMeta.stdinId || isBusy) return;
+    if (!canCompact || !tabId) return;
+    if (!hasLiveProcess) {
+      window.dispatchEvent(new CustomEvent('tokenicode:compact-now'));
+      return;
+    }
+    if (!sessionMeta.stdinId) return;
     setIsCompacting(true);
     const processingMsgId = generateMessageId();
     const store = useChatStore.getState();
@@ -375,7 +390,12 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   return (
     <div className="hidden md:flex items-center gap-2 ml-2 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary"
-      title={`Actual model: ${displayProviderModelName(modelForContext)}; context used ${used.toLocaleString()} / ${contextWindow.toLocaleString()}; available ${available.toLocaleString()}; auto compact at ${compactThreshold.toLocaleString()}`}>
+      title={t('chat.contextTooltip')
+        .replace('{model}', displayProviderModelName(modelForContext))
+        .replace('{used}', used.toLocaleString())
+        .replace('{window}', contextWindow.toLocaleString())
+        .replace('{free}', available.toLocaleString())
+        .replace('{threshold}', compactThreshold.toLocaleString())}>
       <span className="font-medium text-text-muted">{t('chat.contextLabel')}</span>
       <div className="w-20 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
         <div
@@ -386,15 +406,15 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
       <span className={percent >= thresholdPercent ? 'text-warning' : 'text-text-tertiary'}>
         {percent}%
       </span>
-      <span>{formatTokens(available)} free</span>
+      <span>{t('chat.contextFree').replace('{n}', formatTokens(available))}</span>
       <button
         onClick={handleCompact}
         disabled={!canCompact}
         className="px-1.5 py-0.5 rounded bg-bg-tertiary hover:bg-bg-hover
           text-text-muted hover:text-text-primary disabled:opacity-40 disabled:hover:bg-bg-tertiary"
-        title={canCompact ? 'Compact context now' : 'Compact is available after a live session is idle'}
+        title={compactHint}
       >
-        Compact
+        {t('chat.compact')}
       </button>
     </div>
   );

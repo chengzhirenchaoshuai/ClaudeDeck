@@ -261,6 +261,18 @@ export function InputBar() {
     });
   }, [setInputSync]);
 
+  // 右上角“压缩”按钮：会话没有运行中的进程时，通过发送 /compact 续接会话并压缩
+  useEffect(() => {
+    const handler = () => {
+      setInputSync('/compact');
+      requestAnimationFrame(() => {
+        handleSubmitRef.current();
+      });
+    };
+    window.addEventListener('tokenicode:compact-now', handler);
+    return () => window.removeEventListener('tokenicode:compact-now', handler);
+  }, [setInputSync]);
+
   // Listen for plan-execute events from PlanReviewCard and Enter shortcut
   useEffect(() => {
     const handler = () => handlePlanApprove();
@@ -761,7 +773,12 @@ export function InputBar() {
         const match = cmds.find(
           (c) => c.immediate && c.name.toLowerCase() === cmdPart
         );
-        if (match) {
+        // /compact 在没有运行中的进程时（如刚打开的历史会话），不走“需要活动会话”的拦截，
+        // 而是作为这个会话的第一条消息发给 CLI：会续接该会话并执行压缩
+        const compactWithoutProcess = cmdPart === '/compact'
+          && !getActiveTabState().sessionMeta.stdinId
+          && !!getActiveTabState().sessionMeta.sessionId;
+        if (match && !compactWithoutProcess) {
           setInputSync('');
           executeImmediateCommand(match.name, restText || undefined);
           return;
