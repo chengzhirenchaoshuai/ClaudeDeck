@@ -9,7 +9,6 @@ import { applyDiskSession, syncSession } from '../../lib/session-sync';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
-import { isWindows } from '../../lib/platform';
 import { SessionGroup } from './SessionGroup';
 import { SessionItem } from './SessionItem';
 import { SessionContextMenu, ProjectContextMenu } from './SessionContextMenu';
@@ -89,6 +88,7 @@ export function ConversationList() {
   const customPreviews = useSessionStore((s) => s.customPreviews);
   const setCustomPreview = useSessionStore((s) => s.setCustomPreview);
   const runningSessions = useSessionStore((s) => s.runningSessions);
+  const unreadSessions = useSessionStore((s) => s.unreadSessions);
   const contentSearchResults = useSessionStore((s) => s.contentSearchResults);
   const isContentSearching = useSessionStore((s) => s.isContentSearching);
   const searchSessionContent = useSessionStore((s) => s.searchSessionContent);
@@ -329,12 +329,15 @@ export function ConversationList() {
     }
     const entries = Array.from(map.entries());
     entries.sort((a, b) => {
+      const pa = pinnedSessions.has(`project:${a[0]}`) ? 1 : 0;
+      const pb = pinnedSessions.has(`project:${b[0]}`) ? 1 : 0;
+      if (pa !== pb) return pb - pa;
       const ta = a[1][0]?.modifiedAt || 0;
       const tb = b[1][0]?.modifiedAt || 0;
       return tb - ta;
     });
     return entries;
-  }, [filtered]);
+  }, [filtered, pinnedSessions]);
 
   // 最近活跃视图：置顶在前，其余按修改时间从新到旧平铺
   const recentlyActiveGroups = useMemo(() => {
@@ -658,10 +661,23 @@ export function ConversationList() {
     setRenamingSessionId(null);
   }, []);
 
-  const handleSelectMode = useCallback((_project: string) => {
+  // 从会话右键菜单进入多选，并预先勾选该会话
+  const handleSelectSession = useCallback((session: SessionListItem) => {
     setMultiSelect(true);
-    setSelectedIds(new Set());
+    setSelectedIds(new Set([session.id]));
   }, []);
+
+  const handleToggleUnread = useCallback((session: SessionListItem) => {
+    useSessionStore.getState().toggleUnread(session.id);
+  }, []);
+
+  const handleToggleProjectPin = useCallback((project: string) => {
+    const key = `project:${project}`;
+    const next = new Set(pinnedSessions);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    persistPinned(next);
+  }, [pinnedSessions, persistPinned]);
 
   // Folder operation handlers (resolve projectKey to real path)
   const resolveRealPathFromKey = useCallback((projectKey: string): string => {
@@ -678,16 +694,6 @@ export function ConversationList() {
   const handleOpenInExplorer = useCallback((projectKey: string) => {
     const realPath = resolveRealPathFromKey(projectKey);
     bridge.openWithDefaultApp(realPath).catch(() => {});
-  }, [resolveRealPathFromKey]);
-
-  const handleOpenInTerminal = useCallback((projectKey: string) => {
-    const realPath = resolveRealPathFromKey(projectKey);
-    bridge.openFolderInTerminal(realPath).catch(() => {});
-  }, [resolveRealPathFromKey]);
-
-  const handleOpenInTerminalAdmin = useCallback((projectKey: string) => {
-    const realPath = resolveRealPathFromKey(projectKey);
-    bridge.openFolderInTerminalAdmin(realPath).catch(() => {});
   }, [resolveRealPathFromKey]);
 
   const handleLocateInFolder = useCallback((session: SessionListItem) => {
@@ -844,7 +850,6 @@ export function ConversationList() {
             <SessionGroup
               projectKey={project}
               projectLabel={projectLabel(project, isDuplicate)}
-              projectPath={project}
               sessions={items}
               isExpanded={isExpanded(project)}
               selectedId={selectedId}
@@ -856,7 +861,9 @@ export function ConversationList() {
               selectedIds={selectedIds}
               onToggleCollapse={toggleCollapse}
               onContextMenu={handleContextMenu}
-              onDelete={handleDeleteSingle}
+              onArchive={handleToggleArchive}
+              unreadSessions={unreadSessions}
+              isPinned={pinnedSessions.has(`project:${project}`)}
               onProjectContextMenu={handleProjectContextMenu}
               onLoadSession={handleLoadSession}
               onRename={handleRename}
@@ -889,7 +896,8 @@ export function ConversationList() {
                   onSelect={handleLoadSession}
                   onContextMenu={handleContextMenu}
                   onRename={handleRename}
-                  onDelete={handleDeleteSingle}
+                  onArchive={handleToggleArchive}
+                  isUnread={unreadSessions.has(session.id)}
                   onToggleCheck={handleToggleCheck}
                   triggerRename={renamingSessionId === session.id}
                   onRenameDone={handleRenameDone}
@@ -916,7 +924,8 @@ export function ConversationList() {
               onSelect={handleLoadSession}
               onContextMenu={handleContextMenu}
               onRename={handleRename}
-              onDelete={handleDeleteSingle}
+              onArchive={handleToggleArchive}
+              isUnread={unreadSessions.has(session.id)}
               onToggleCheck={handleToggleCheck}
               triggerRename={renamingSessionId === session.id}
               onRenameDone={handleRenameDone}
@@ -955,7 +964,8 @@ export function ConversationList() {
                 onSelect={handleLoadSession}
                 onContextMenu={handleContextMenu}
                 onRename={handleRename}
-                onDelete={handleDeleteSingle}
+                onArchive={handleToggleArchive}
+                isUnread={unreadSessions.has(session.id)}
                 onToggleCheck={handleToggleCheck}
                 triggerRename={renamingSessionId === session.id}
                 onRenameDone={handleRenameDone}
@@ -1044,6 +1054,9 @@ export function ConversationList() {
           isPinned={pinnedSessions.has(contextMenu.session.id)}
           isArchived={archivedSessions.has(contextMenu.session.id)}
           onLocateInFolder={viewMode === 'recent' ? handleLocateInFolder : undefined}
+          onSelectMode={handleSelectSession}
+          onToggleUnread={handleToggleUnread}
+          isUnread={unreadSessions.has(contextMenu.session.id)}
           onClose={() => setContextMenu(null)}
         />
       )}
@@ -1056,11 +1069,9 @@ export function ConversationList() {
           project={projectMenu.project}
           onNewSession={handleNewSessionInProject}
           onDeleteAll={handleDeleteAllInProject}
-          onSelectMode={handleSelectMode}
+          onPin={handleToggleProjectPin}
           onOpenInExplorer={handleOpenInExplorer}
-          onOpenInTerminal={handleOpenInTerminal}
-          onOpenInTerminalAdmin={handleOpenInTerminalAdmin}
-          isWindows={isWindows()}
+          isPinned={pinnedSessions.has(`project:${projectMenu.project}`)}
           onClose={() => setProjectMenu(null)}
         />
       )}

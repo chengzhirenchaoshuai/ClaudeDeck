@@ -12,6 +12,23 @@ function hostOfPath(p: string): string | undefined {
 const CUSTOM_PREVIEWS_KEY = 'tokenicode_custom_previews';
 const LAST_SESSION_KEY = 'tokenicode_last_session';
 const STDIN_TO_TAB_KEY = 'tokenicode_stdinToTab';
+const UNREAD_KEY = 'tokenicode_unread_sessions';
+
+function loadUnreadSync(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(UNREAD_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveUnread(ids: Set<string>) {
+  try {
+    localStorage.setItem(UNREAD_KEY, JSON.stringify([...ids]));
+  } catch {
+    // 本地存储不可用时，未读标记只在本次运行内有效
+  }
+}
 
 function loadCustomPreviewsSync(): Record<string, string> {
   try {
@@ -69,6 +86,8 @@ interface SessionState {
   customPreviews: Record<string, string>;
   /** Track which sessions are actively running (streaming/working) */
   runningSessions: Set<string>;
+  /** 未读会话（任务结束时用户不在该会话窗口），持久化在本地存储 */
+  unreadSessions: Set<string>;
   /** Map stdinId → tabId so stream events can be routed to the correct session */
   stdinToTab: Record<string, string>;
   /** Content search results keyed by session ID */
@@ -114,6 +133,9 @@ interface SessionState {
   clearContentSearch: () => void;
   /** 读取所有已配置远程主机的会话（经 ssh，较慢，需手动或在启动时调用） */
   fetchRemoteSessions: () => Promise<void>;
+  markUnread: (sessionId: string) => void;
+  markRead: (sessionId: string) => void;
+  toggleUnread: (sessionId: string) => void;
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => ({
@@ -128,6 +150,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   previousSessionId: null,
   customPreviews: loadCustomPreviewsSync(),
   runningSessions: new Set<string>(),
+  unreadSessions: loadUnreadSync(),
   stdinToTab: loadStdinToTabSync(),
   contentSearchResults: new Map<string, ContentSearchResult>(),
   isContentSearching: false,
@@ -235,6 +258,28 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   }),
 
   isSessionRunning: (sessionId) => get().runningSessions.has(sessionId),
+
+  markUnread: (sessionId) => set((state) => {
+    if (state.unreadSessions.has(sessionId)) return {};
+    const next = new Set(state.unreadSessions);
+    next.add(sessionId);
+    saveUnread(next);
+    return { unreadSessions: next };
+  }),
+
+  markRead: (sessionId) => set((state) => {
+    if (!state.unreadSessions.has(sessionId)) return {};
+    const next = new Set(state.unreadSessions);
+    next.delete(sessionId);
+    saveUnread(next);
+    return { unreadSessions: next };
+  }),
+
+  toggleUnread: (sessionId) => {
+    const { unreadSessions, markUnread, markRead } = get();
+    if (unreadSessions.has(sessionId)) markRead(sessionId);
+    else markUnread(sessionId);
+  },
 
   registerStdinTab: (stdinId, tabId) => {
     const next = { ...get().stdinToTab, [stdinId]: tabId };

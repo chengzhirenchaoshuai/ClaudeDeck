@@ -1,31 +1,15 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useSettingsStore, MODEL_OPTIONS } from '../../stores/settingsStore';
-import { useChatStore, useActiveTab } from '../../stores/chatStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { ConversationList } from '../conversations/ConversationList';
 import { useT } from '../../lib/i18n';
 import { useAgentStore } from '../../stores/agentStore';
 import { IS_ALPHA } from '../../lib/edition';
-import { displayProviderModelName } from '../../lib/deepseek-models';
-import { resolveModelForProvider } from '../../lib/api-provider';
 import { ProfileStatsModal } from '../profile/ProfileStatsModal';
 import { EnvSwitcher, RemotePathInput } from './EnvSwitcher';
 import { LOCAL_ENV } from '../../lib/remote';
-
-/** Map raw model ID to friendly display name */
-function getModelDisplayName(modelId: string): string {
-  const option = MODEL_OPTIONS.find((m) => modelId === m.id);
-  return option?.short || displayProviderModelName(modelId);
-}
-
-/** Format token count: 1234 → "1.2k", 123456 → "123k", 1234567 → "1.2M" */
-function formatTokenCount(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 100_000) return (n / 1000).toFixed(1) + 'k';
-  if (n < 1_000_000) return Math.round(n / 1000) + 'k';
-  return (n / 1_000_000).toFixed(1) + 'M';
-}
 
 export function Sidebar() {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -37,8 +21,6 @@ export function Sidebar() {
   const setSecondaryTab = useSettingsStore((s) => s.setSecondaryTab);
   const updateAvailable = useSettingsStore((s) => s.updateAvailable);
   const cliUpdateAvailable = useSettingsStore((s) => s.cliUpdateAvailable);
-  const sessionMeta = useActiveTab((t) => t.sessionMeta);
-  const sessionStatus = useActiveTab((t) => t.sessionStatus);
   const t = useT();
 
   const startProjectDraft = (folderPath: string) => {
@@ -161,31 +143,6 @@ export function Sidebar() {
             hostId={activeEnv}
             onOpen={(uri) => { startProjectDraft(uri); setRemotePathOpen(false); }}
           />
-        </div>
-      )}
-
-      {/* Current Session — compressed single-line card */}
-      {sessionMeta.sessionId && (
-        <div className="px-3 py-2 rounded-xl bg-bg-secondary border border-border-subtle mb-3
-          flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 transition-smooth
-            ${sessionStatus === 'running'
-              ? 'bg-success shadow-[0_0_8px_var(--color-accent-glow)] animate-pulse-soft'
-              : sessionStatus === 'completed' ? 'bg-success'
-              : sessionStatus === 'error' ? 'bg-error'
-              : 'bg-text-tertiary'}`} />
-          <span className="text-xs font-medium text-text-primary truncate">
-            {getModelDisplayName(sessionMeta.model || resolveModelForProvider(useSettingsStore.getState().selectedModel))}
-          </span>
-          {(sessionMeta.totalInputTokens || sessionMeta.totalOutputTokens
-            || sessionMeta.inputTokens || sessionMeta.outputTokens) ? (
-            <span className="text-[10px] text-text-tertiary font-mono flex items-center gap-1 ml-auto flex-shrink-0">
-              <span>↑{formatTokenCount(sessionMeta.totalInputTokens || sessionMeta.inputTokens || 0)}</span>
-              <span>↓{formatTokenCount(sessionMeta.totalOutputTokens || sessionMeta.outputTokens || 0)}</span>
-            </span>
-          ) : (
-            <span className="text-[10px] text-text-tertiary capitalize ml-auto flex-shrink-0">{sessionStatus}</span>
-          )}
         </div>
       )}
       </div>

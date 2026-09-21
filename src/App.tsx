@@ -22,6 +22,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { loadClaudeUuid } from './hooks/useStreamProcessor';
 import { requestQuit } from './lib/app-quit';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
+import { useUnreadSessions } from './hooks/useUnreadSessions';
 import {
   getContextInputTokens,
   getContextOutputTokens,
@@ -196,6 +197,9 @@ function App() {
 
   // 应用不在最前时，会话结束会在任务栏图标上显示数字提醒
   useTaskbarBadge();
+
+  // 会话结束时不在该会话窗口，则标记为未读
+  useUnreadSessions();
 
   // TK-329: On app startup (incl. browser F5 refresh), handle active backend processes.
   // - Processes WITH stdinToTab mapping: re-register event listeners and restore streaming state

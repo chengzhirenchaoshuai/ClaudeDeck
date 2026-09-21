@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { useSessionStore } from '../stores/sessionStore';
+import { finishedSessionIds } from '../lib/session-finish';
 
 /** 绘制任务栏角标：红底白字数字，超过 99 显示 99+ */
 async function renderBadge(count: number): Promise<Uint8Array | null> {
@@ -68,10 +69,8 @@ export function useTaskbarBadge(): void {
 
     const unsubscribe = useSessionStore.subscribe((state, prev) => {
       if (state.runningSessions === prev.runningSessions) return;
-      const removed = [...prev.runningSessions].filter((id) => !state.runningSessions.has(id));
-      const added = [...state.runningSessions].filter((id) => !prev.runningSessions.has(id));
-      // 同时有移除和新增是草稿升级为正式会话（ID 替换），不算会话结束
-      if (removed.length === 0 || added.length > 0 || !win) return;
+      const removed = finishedSessionIds(prev.runningSessions, state.runningSessions);
+      if (removed.length === 0 || !win) return;
       void win.isFocused().then((focused) => {
         if (focused) return;
         removed.forEach((id) => finished.add(id));

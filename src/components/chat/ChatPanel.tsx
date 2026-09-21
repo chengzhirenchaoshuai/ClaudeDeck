@@ -322,6 +322,7 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   tabId: string | null;
   sessionStatus?: string;
 }) {
+  const t = useT();
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const contextWindowMode = useSettingsStore((s) => s.contextWindowMode);
   const autoCompactThresholdTokens = useSettingsStore((s) => s.autoCompactThresholdTokens);
@@ -374,7 +375,7 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
     <div className="hidden md:flex items-center gap-2 ml-2 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary"
       title={`Actual model: ${displayProviderModelName(modelForContext)}; context used ${used.toLocaleString()} / ${contextWindow.toLocaleString()}; available ${available.toLocaleString()}; auto compact at ${compactThreshold.toLocaleString()}`}>
-      <span className="font-medium text-text-muted">Ctx</span>
+      <span className="font-medium text-text-muted">{t('chat.contextLabel')}</span>
       <div className="w-20 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
         <div
           className={`h-full rounded-full ${percent >= thresholdPercent ? 'bg-warning' : 'bg-accent'}`}
@@ -715,17 +716,13 @@ export function ChatPanel() {
             </svg>
           </button>
         )}
-        {/* Left: model name + project hint */}
+        <div className="flex flex-col justify-center min-w-0 gap-0.5">
+        <div className="flex items-center">
+        {/* Left: model name */}
         <div className="flex items-center gap-3 pointer-events-none">
           {sessionMeta.model && (
             <span className="text-sm font-medium text-text-muted">
               {getModelDisplayName(sessionMeta.model)}
-            </span>
-          )}
-          {workingDirectory && (
-            <span className="text-[10px] text-text-tertiary truncate max-w-[160px]"
-              title={workingDirectory}>
-              {workingDirectory.split(/[\\/]/).pop()}
             </span>
           )}
         </div>
@@ -783,6 +780,16 @@ export function ChatPanel() {
               </div>
             </>
           )}
+        </div>
+
+        </div>
+        {/* 项目完整路径，单独一行 */}
+        {workingDirectory && (
+          <div className="text-[10px] text-text-tertiary truncate max-w-[560px] pointer-events-none"
+            title={workingDirectory}>
+            {workingDirectory}
+          </div>
+        )}
         </div>
 
         {/* Spacer + right-side actions */}

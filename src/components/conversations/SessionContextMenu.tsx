@@ -14,8 +14,11 @@ interface SessionContextMenuProps {
   onPin?: (session: SessionListItem) => void;
   onArchive?: (session: SessionListItem) => void;
   onLocateInFolder?: (session: SessionListItem) => void;
+  onSelectMode?: (session: SessionListItem) => void;
+  onToggleUnread?: (session: SessionListItem) => void;
   isPinned?: boolean;
   isArchived?: boolean;
+  isUnread?: boolean;
   onClose: () => void;
 }
 
@@ -30,8 +33,11 @@ export function SessionContextMenu({
   onPin,
   onArchive,
   onLocateInFolder,
+  onSelectMode,
+  onToggleUnread,
   isPinned,
   isArchived,
+  isUnread,
   onClose,
 }: SessionContextMenuProps) {
   const t = useT();
@@ -101,6 +107,38 @@ export function SessionContextMenu({
             <path d="M6 9h4" />
           </svg>
           {isArchived ? t('conv.unarchive') : t('conv.archive')}
+        </button>
+      )}
+
+      {onSelectMode && (
+        <button
+          onClick={() => { onClose(); onSelectMode(session); }}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5
+            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="2" width="5" height="5" rx="1" />
+            <rect x="9" y="2" width="5" height="5" rx="1" />
+            <rect x="2" y="9" width="5" height="5" rx="1" />
+            <rect x="9" y="9" width="5" height="5" rx="1" />
+          </svg>
+          {t('conv.selectMode')}
+        </button>
+      )}
+
+      {onToggleUnread && (
+        <button
+          onClick={() => { onClose(); onToggleUnread(session); }}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5
+            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="8" r="3" fill={isUnread ? 'none' : 'currentColor'} />
+            <circle cx="8" cy="8" r="6" />
+          </svg>
+          {isUnread ? t('conv.markRead') : t('conv.markUnread')}
         </button>
       )}
 
@@ -174,11 +212,9 @@ interface ProjectContextMenuProps {
   project: string;
   onNewSession: (project: string) => void;
   onDeleteAll: (project: string) => void;
-  onSelectMode?: (project: string) => void;
+  onPin?: (project: string) => void;
   onOpenInExplorer?: (project: string) => void;
-  onOpenInTerminal?: (project: string) => void;
-  onOpenInTerminalAdmin?: (project: string) => void;
-  isWindows?: boolean;
+  isPinned?: boolean;
   onClose: () => void;
 }
 
@@ -188,11 +224,9 @@ export function ProjectContextMenu({
   project,
   onNewSession,
   onDeleteAll,
-  onSelectMode,
+  onPin,
   onOpenInExplorer,
-  onOpenInTerminal,
-  onOpenInTerminalAdmin,
-  isWindows,
+  isPinned,
   onClose,
 }: ProjectContextMenuProps) {
   const t = useT();
@@ -234,26 +268,22 @@ export function ProjectContextMenu({
         {t('conv.newChat')}
       </button>
 
-      {onSelectMode && (
-        <>
-          <button
-            onClick={() => { onClose(); onSelectMode(project); }}
-            className="w-full flex items-center gap-2.5 px-3 py-1.5
-              text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="2" width="5" height="5" rx="1" />
-              <rect x="9" y="2" width="5" height="5" rx="1" />
-              <rect x="2" y="9" width="5" height="5" rx="1" />
-              <rect x="9" y="9" width="5" height="5" rx="1" />
-            </svg>
-            {t('conv.selectMode')}
-          </button>
-        </>
+      {onPin && (
+        <button
+          onClick={() => { onClose(); onPin(project); }}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5
+            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9.5 2L14 6.5L8.5 12L6 14L4.5 11.5L2 9.5L4 7.5L9.5 2z" />
+            <path d="M4.5 11.5L1.5 14.5" />
+          </svg>
+          {isPinned ? t('conv.unpinProject') : t('conv.pinProject')}
+        </button>
       )}
 
-      {(onOpenInExplorer || onOpenInTerminal || onOpenInTerminalAdmin) && (
+      {onOpenInExplorer && (
         <div className="my-1 border-t border-border-subtle" />
       )}
 
@@ -269,37 +299,6 @@ export function ProjectContextMenu({
             <path d="M8 11v-3M6 9h4" />
           </svg>
           {t('conv.openInExplorer')}
-        </button>
-      )}
-
-      {onOpenInTerminal && (
-        <button
-          onClick={() => { onClose(); onOpenInTerminal(project); }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5
-            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="3" width="12" height="10" rx="1.5" />
-            <path d="M5 13V9l3 3-3 3" />
-          </svg>
-          {t('conv.openInTerminal')}
-        </button>
-      )}
-
-      {onOpenInTerminalAdmin && isWindows && (
-        <button
-          onClick={() => { onClose(); onOpenInTerminalAdmin(project); }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5
-            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="3" width="12" height="10" rx="1.5" />
-            <path d="M5 13V9l3 3-3 3" />
-            <path d="M11 7l-6 0" />
-          </svg>
-          {t('conv.openInTerminalAdmin')}
         </button>
       )}
 

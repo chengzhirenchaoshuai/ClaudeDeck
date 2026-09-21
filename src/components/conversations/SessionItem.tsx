@@ -59,7 +59,8 @@ interface SessionItemProps {
   onSelect: (session: SessionListItem) => void;
   onContextMenu: (e: React.MouseEvent, session: SessionListItem) => void;
   onRename: (sessionId: string, newName: string) => void;
-  onDelete?: (session: SessionListItem) => void;
+  onArchive?: (session: SessionListItem) => void;
+  isUnread?: boolean;
   onToggleCheck?: (sessionId: string, shiftKey?: boolean) => void;
   contentSnippet?: string;
   matchCount?: number;
@@ -81,7 +82,8 @@ export const SessionItem = memo(function SessionItem({
   onSelect,
   onContextMenu,
   onRename,
-  onDelete,
+  onArchive,
+  isUnread,
   contentSnippet,
   matchCount,
   searchQuery,
@@ -200,6 +202,10 @@ export const SessionItem = memo(function SessionItem({
           <div className={`text-xs truncate leading-snug font-normal flex-1 min-w-0
             ${name ? 'text-text-primary' : 'text-text-muted italic'}
             ${titleAnimating ? 'animate-title-update' : ''}`}>
+            {isUnread && (
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent mr-1.5 align-middle"
+                title={t('conv.unread')} />
+            )}
             {isPinned && (
               <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
                 stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
@@ -213,31 +219,30 @@ export const SessionItem = memo(function SessionItem({
         <span className="text-[10px] text-text-tertiary flex-shrink-0">
           {formatRelativeTime(session.modifiedAt)}
         </span>
-        {!multiSelect && !isRenaming && onDelete && (
+        {!multiSelect && !isRenaming && onArchive && (
           <span
             role="button"
             tabIndex={0}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onDelete(session);
+              onArchive(session);
             }}
             onKeyDown={(e) => {
               if (e.key !== 'Enter' && e.key !== ' ') return;
               e.preventDefault();
               e.stopPropagation();
-              onDelete(session);
+              onArchive(session);
             }}
             className="flex-shrink-0 p-0.5 rounded text-text-tertiary opacity-0
-              group-hover:opacity-100 hover:text-error hover:bg-error/10 transition-smooth"
-            title={t('conv.delete')}
+              group-hover:opacity-100 hover:text-accent hover:bg-accent/10 transition-smooth"
+            title={isArchived ? t('conv.unarchive') : t('conv.archive')}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 4h10" />
-              <path d="M6 4V2.8h4V4" />
-              <path d="M5 6v7h6V6" />
-              <path d="M7 7.5v4M9 7.5v4" />
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1.5" y="2.5" width="13" height="3.5" rx="1" />
+              <path d="M2.5 6v6.5a1 1 0 001 1h9a1 1 0 001-1V6" />
+              <path d="M6.5 9h3" />
             </svg>
           </span>
         )}

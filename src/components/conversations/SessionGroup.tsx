@@ -6,7 +6,6 @@ import { useT } from '../../lib/i18n';
 interface SessionGroupProps {
   projectKey: string;
   projectLabel: string;
-  projectPath: string;
   sessions: SessionListItem[];
   isExpanded: boolean;
   selectedId: string | null;
@@ -18,7 +17,10 @@ interface SessionGroupProps {
   selectedIds: Set<string>;
   onToggleCollapse: (project: string) => void;
   onContextMenu: (e: React.MouseEvent, session: SessionListItem) => void;
-  onDelete: (session: SessionListItem) => void;
+  onArchive: (session: SessionListItem) => void;
+  unreadSessions: Set<string>;
+  /** 该项目是否被置顶 */
+  isPinned?: boolean;
   onProjectContextMenu: (e: React.MouseEvent, project: string) => void;
   onLoadSession: (session: SessionListItem) => void;
   onRename: (sessionId: string, newName: string) => void;
@@ -32,7 +34,6 @@ interface SessionGroupProps {
 export function SessionGroup({
   projectKey,
   projectLabel: label,
-  projectPath,
   sessions,
   isExpanded,
   selectedId,
@@ -44,7 +45,9 @@ export function SessionGroup({
   selectedIds,
   onToggleCollapse,
   onContextMenu,
-  onDelete,
+  onArchive,
+  unreadSessions,
+  isPinned,
   onProjectContextMenu,
   onLoadSession,
   onRename,
@@ -91,6 +94,16 @@ export function SessionGroup({
           truncate flex-1 text-left min-w-0">
           {label}
         </span>
+        {isPinned && (
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            className="flex-shrink-0 text-accent">
+            <path d="M9.5 2L14 6.5L8.5 12L6 14L4.5 11.5L2 9.5L4 7.5L9.5 2z" />
+          </svg>
+        )}
+        {!isExpanded && sessions.some((s) => unreadSessions.has(s.id)) && (
+          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent" title={t('conv.unread')} />
+        )}
         <span className="text-[11px] text-text-tertiary flex-shrink-0">
           {sessions.length} {t('conv.sessions')}
         </span>
@@ -106,15 +119,6 @@ export function SessionGroup({
           </svg>
         </button>
       </div>
-
-      {/* Project path */}
-      {isExpanded && projectKey !== label && (
-        <div className="px-7 pb-0.5">
-          <span className="text-[10px] text-text-tertiary truncate block">
-            {projectPath}
-          </span>
-        </div>
-      )}
 
       {/* Sessions */}
       {isExpanded && (
@@ -136,7 +140,8 @@ export function SessionGroup({
                   onSelect={onLoadSession}
                   onContextMenu={onContextMenu}
                   onRename={onRename}
-                  onDelete={onDelete}
+                  onArchive={onArchive}
+                  isUnread={unreadSessions.has(session.id)}
                   onToggleCheck={onToggleCheck}
                   triggerRename={renamingSessionId === session.id}
                   onRenameDone={onRenameDone}
@@ -163,7 +168,8 @@ export function SessionGroup({
               onSelect={onLoadSession}
               onContextMenu={onContextMenu}
               onRename={onRename}
-              onDelete={onDelete}
+              onArchive={onArchive}
+              isUnread={unreadSessions.has(session.id)}
               onToggleCheck={onToggleCheck}
               triggerRename={renamingSessionId === session.id}
               onRenameDone={onRenameDone}
