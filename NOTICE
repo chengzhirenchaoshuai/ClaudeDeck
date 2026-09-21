@@ -19,3 +19,22 @@ Major modifications in this fork include:
   - Skills metadata translation and SKILL.md preview translation
   - UI changes for local DeepSeek-oriented workflows
 
+
+This self-use build:
+  Maintained by chengzhiren66 (Copyright 2026 chengzhiren66, for the
+  modifications made in this build only).
+
+  Derivation chain:
+    TOKENICODE (TinyZ, https://github.com/yiliqi78/TOKENICODE)
+      -> TOKENICODE DeepSeek Alpha (https://github.com/mistydew/tokenicode-deepseek-alpha)
+        -> this self-use build
+
+  Modifications in this build include:
+    - Session list follows the Claude CLI projects directory (CLAUDE_CONFIG_DIR aware),
+      grouped by project, with live sync of changes made by the CLI
+    - Remote connections over SSH (remote Windows hosts) with a local/remote mode switch
+    - Model, thinking-effort and permission-mode options updated to match current Claude Code
+    - Model-aware context window and auto-compact threshold
+    - Taskbar overlay badge for finished sessions, minimize-to-taskbar on close
+    - In-app updater disabled
+

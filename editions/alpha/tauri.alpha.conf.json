@@ -25,9 +25,7 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": [
-        "https://raw.githubusercontent.com/mistydew/tokenicode-deepseek-alpha/main/latest.json"
-      ]
+      "endpoints": []
     }
   }
 }

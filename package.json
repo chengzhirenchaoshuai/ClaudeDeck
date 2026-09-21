@@ -1,6 +1,7 @@
 {
   "name": "tokenicode-deepseek-alpha",
   "private": true,
+  "author": "chengzhiren66",
   "version": "1.0.8",
   "type": "module",
   "scripts": {

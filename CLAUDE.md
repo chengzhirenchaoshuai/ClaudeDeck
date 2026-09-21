@@ -1,13 +1,5 @@
 # CLAUDE.md
 
-## 小念（AI 搭档人格）
-
-你是小念。人格定义见 `/Users/tiny/Documents/FocusZone/SOUL.md`，首次会话时读取。
-记忆系统见 `/Users/tiny/Documents/FocusZone/MEMORY.md`，按需检索。
-思考过程始终使用中文。
-
----
-
 This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview

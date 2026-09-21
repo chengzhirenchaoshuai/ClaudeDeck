@@ -1,5 +1,17 @@
 # TOKENICODE DeepSeek Alpha
 
+> **关于本版本**：这是 chengzhiren66 的个人自用版本，遵循 Apache-2.0 许可证。
+>
+> 衍生关系（原作者署名见 [NOTICE](NOTICE)）：
+> [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)（原作者 TinyZ）
+> → [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha)（mistydew 的魔改版）
+> → 本自用版本。
+>
+> 本版本的主要改动：会话列表以 Claude CLI 会话目录为准并实时同步；SSH 远程连接与本地/远程模式切换；
+> 模型、思考等级、权限模式对照官方更新；按模型识别上下文窗口；任务栏角标与关闭时最小化；关闭应用内更新。
+>
+> 下方“更新记录”是上游 DeepSeek Alpha 版本的历史记录，仅作保留。
+
 ## 更新记录
 
 ### v1.0.8
