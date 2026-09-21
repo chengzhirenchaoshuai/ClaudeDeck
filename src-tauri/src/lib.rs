@@ -2230,6 +2230,64 @@ async fn kill_session(
     Ok(())
 }
 
+/// 显示并聚焦主窗口（托盘点击、托盘菜单、再次启动应用时使用）
+fn show_main_window(app: &AppHandle) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+}
+
+/// 创建系统托盘图标：左键显示主窗口，右键菜单提供“显示 / 退出”。
+/// 退出交给前端处理（前端知道有哪些任务在运行，需要先确认并有序收尾）。
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show = MenuItem::with_id(app, "tray-show", "显示 TOKENICODE", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+
+    TrayIconBuilder::with_id("main")
+        .icon(icon)
+        .tooltip("TOKENICODE")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray-show" => show_main_window(app),
+            "tray-quit" => {
+                show_main_window(app);
+                let _ = app.emit("tray:quit-requested", ());
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+/// 返回 Claude CLI 的配置目录与 .claude.json 路径（遵循 CLAUDE_CONFIG_DIR），
+/// 供前端读写 MCP、skills 等配置，避免写死 ~/.claude。
+#[tauri::command]
+async fn get_claude_config_paths() -> Result<Value, String> {
+    Ok(serde_json::json!({
+        "configDir": claude_config_dir()?.to_string_lossy(),
+        "claudeJson": claude_json_path()?.to_string_lossy(),
+    }))
+}
+
 /// 应用退出前有序终止所有会话进程（本地 claude 与经 ssh 启动的远端 claude 一视同仁）：
 /// 先发 interrupt 中断当前回合，稍候关闭 stdin（远端经 ssh 转发为 EOF），
 /// 等进程自行退出，超时（3 秒）才强制结束，尽量避免留下孤儿进程。
@@ -8164,6 +8222,10 @@ async fn set_dock_icon(app: AppHandle, png_base64: String) -> Result<(), String>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 关闭窗口会隐藏到托盘，此时再次启动应用应唤起已有窗口，而不是再开一个实例
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -8177,6 +8239,9 @@ pub fn run() {
 
             // 监听 CLI 会话目录，让会话列表随 CLI 变化自动同步
             start_sessions_watcher(app.handle().clone());
+
+            // 系统托盘
+            setup_tray(app)?;
 
             // Propagate proxy env vars from login shell to the process environment
             // so that ALL HTTP clients (including the updater plugin) can reach
@@ -8215,6 +8280,7 @@ pub fn run() {
             kill_session,
             list_active_processes,
             hide_session,
+            get_claude_config_paths,
             shutdown_all_sessions,
             commands::remote::list_remote_hosts,
             commands::remote::list_remote_sessions,

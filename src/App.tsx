@@ -21,6 +21,7 @@ import { useT } from './lib/i18n';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { loadClaudeUuid } from './hooks/useStreamProcessor';
 import { requestQuit } from './lib/app-quit';
+import { listen } from '@tauri-apps/api/event';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
 import {
@@ -163,7 +164,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // 关闭窗口：默认最小化到任务栏（可在设置里关闭）；关闭该选项后走“退出”流程
+  // 关闭窗口：默认隐藏到系统托盘（可在设置里关闭）；关闭该选项后走“退出”流程
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -174,7 +175,7 @@ function App() {
       win.onCloseRequested(async (event) => {
         event.preventDefault();
         if (useSettingsStore.getState().minimizeOnClose) {
-          await win.minimize().catch(() => {});
+          await win.hide().catch(() => {});
           return;
         }
         await requestQuit(tRef.current);
@@ -183,7 +184,7 @@ function App() {
     return () => { unlisten?.(); };
   }, []);
 
-  // Ctrl+Shift+Q：完全退出应用（最小化到任务栏开启时，关闭按钮不会退出）
+  // Ctrl+Shift+Q：完全退出应用（隐藏到托盘开启时，关闭按钮不会退出）
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'q') {
@@ -193,6 +194,14 @@ function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // 托盘菜单“退出”：后端已唤起窗口，这里走统一的退出流程（确认 + 有序收尾）
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('tray:quit-requested', () => { void requestQuit(tRef.current); })
+      .then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   }, []);
 
   // 应用不在最前时，会话结束会在任务栏图标上显示数字提醒

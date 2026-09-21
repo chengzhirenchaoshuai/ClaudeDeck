@@ -100,9 +100,9 @@ export const useSkillStore = create<SkillState>()((set, get) => ({
   },
 
   createSkill: async (name: string, scope: 'global' | 'project', cwd: string, content: string) => {
-    const home = await bridge.getHomeDir();
+    const { configDir } = await bridge.getClaudeConfigPaths();
     const basePath = scope === 'global'
-      ? `${home}/.claude/skills/${name}/SKILL.md`
+      ? `${configDir}/skills/${name}/SKILL.md`
       : `${cwd}/.claude/skills/${name}/SKILL.md`;
     try {
       await bridge.writeSkill(basePath, content);

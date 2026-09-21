@@ -5,19 +5,26 @@ import { APP_NAME } from '../../lib/edition';
 import { ChangelogModal } from '../shared/ChangelogModal';
 import { isPermissionError, isNetworkError } from './settingsUtils';
 import { GeneralTab } from './GeneralTab';
+import { InterfaceTab } from './InterfaceTab';
 import { ProviderTab } from './ProviderTab';
 import { CliTab } from './CliTab';
 import { McpTab } from './McpTab';
 import { LocalModelsTab } from './LocalModelsTab';
 import { RemoteTab } from './RemoteTab';
 
-type SettingsTab = 'general' | 'provider' | 'cli' | 'localModels' | 'mcp' | 'remote';
+type SettingsTab = 'general' | 'interface' | 'provider' | 'cli' | 'localModels' | 'mcp' | 'remote';
 
 const TAB_ICONS: Record<SettingsTab, React.ReactNode> = {
   general: (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
       <circle cx="8" cy="8" r="3" />
       <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+    </svg>
+  ),
+  interface: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      <path d="M2 6h12M5.5 6v7.5" />
     </svg>
   ),
   provider: (
@@ -58,6 +65,7 @@ const TAB_ICONS: Record<SettingsTab, React.ReactNode> = {
 
 const TAB_ITEMS: { id: SettingsTab; labelKey: string }[] = [
   { id: 'general', labelKey: 'settings.tab.general' },
+  { id: 'interface', labelKey: 'settings.tab.interface' },
   { id: 'provider', labelKey: 'settings.tab.provider' },
   { id: 'cli', labelKey: 'settings.tab.cli' },
   { id: 'localModels', labelKey: '本地模型' },
@@ -135,6 +143,7 @@ export function SettingsPanel() {
           {/* Content area */}
           <div className="flex-1 overflow-y-auto px-8 py-6">
             {activeTab === 'general' && <GeneralTab />}
+            {activeTab === 'interface' && <InterfaceTab />}
             {activeTab === 'provider' && <ProviderTab />}
             {activeTab === 'cli' && <CliTab />}
             {activeTab === 'localModels' && <LocalModelsTab />}

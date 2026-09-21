@@ -426,6 +426,10 @@ export const bridge = {
   getHomeDir: () =>
     invoke<string>('get_home_dir'),
 
+  /** Claude CLI 的配置目录与 .claude.json 路径（遵循 CLAUDE_CONFIG_DIR） */
+  getClaudeConfigPaths: () =>
+    invoke<{ configDir: string; claudeJson: string }>('get_claude_config_paths'),
+
   exportSessionMarkdown: (path: string, outputPath: string, conversationOnly = false) =>
     invoke<void>('export_session_markdown', { path, outputPath, conversationOnly }),
 

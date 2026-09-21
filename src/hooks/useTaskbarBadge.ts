@@ -29,8 +29,64 @@ async function renderBadge(count: number): Promise<Uint8Array | null> {
   return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
 }
 
+let trayBaseImage: Promise<HTMLImageElement> | null = null;
+
+function loadTrayBase(): Promise<HTMLImageElement> {
+  if (!trayBaseImage) {
+    trayBaseImage = new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = '/tray-icon.png';
+    });
+  }
+  return trayBaseImage;
+}
+
+/** 托盘图标：在基础图标右上角叠加红色数字角标；count 为 0 时就是基础图标 */
+async function renderTrayIcon(count: number): Promise<Uint8Array | null> {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(await loadTrayBase(), 0, 0, size, size);
+
+  if (count > 0) {
+    const r = 20;
+    const cx = size - r;
+    const cy = r;
+    ctx.fillStyle = '#e5484d';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    const text = count > 99 ? '99+' : String(count);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${text.length === 1 ? 28 : text.length === 2 ? 22 : 16}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, cy + 1);
+  }
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+}
+
+async function updateTray(count: number): Promise<void> {
+  const { TrayIcon } = await import('@tauri-apps/api/tray');
+  const tray = await TrayIcon.getById('main');
+  if (!tray) return;
+  const icon = await renderTrayIcon(count);
+  if (icon) await tray.setIcon(icon);
+  await tray.setTooltip(count > 0 ? `TOKENICODE · ${count} 个会话已结束` : 'TOKENICODE');
+}
+
 /**
- * 任务栏角标：应用不在最前（未获得焦点或已最小化）时，每有一个会话结束，
+ * 任务栏 / 托盘角标：应用不在最前（未获得焦点或已最小化）时，每有一个会话结束，
  * 任务栏图标上的数字加一（同一会话只计一次）；窗口重新获得焦点后清零。
  * 结束的判定取自 sessionStore.runningSessions 中会话的移除。
  */
@@ -52,6 +108,11 @@ export function useTaskbarBadge(): void {
         }
       } catch (err) {
         console.warn('[TOKENICODE] failed to update taskbar badge:', err);
+      }
+      try {
+        await updateTray(finished.size);
+      } catch (err) {
+        console.warn('[TOKENICODE] failed to update tray badge:', err);
       }
     };
 

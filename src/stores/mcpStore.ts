@@ -41,9 +41,16 @@ interface McpState {
 
 // --- Helpers ---
 
+let _configPaths: { configDir: string; claudeJson: string } | null = null;
+
+/** CLI 的配置目录与 .claude.json 位置：设置了 CLAUDE_CONFIG_DIR 时不在 ~ 下，不能写死 */
+async function claudeConfigPaths() {
+  if (!_configPaths) _configPaths = await bridge.getClaudeConfigPaths();
+  return _configPaths;
+}
+
 async function readClaudeJson(): Promise<Record<string, unknown>> {
-  const home = await bridge.getHomeDir();
-  const path = `${home}/.claude.json`;
+  const path = (await claudeConfigPaths()).claudeJson;
   try {
     const content = await bridge.readFileContent(path);
     return JSON.parse(content);
@@ -53,8 +60,7 @@ async function readClaudeJson(): Promise<Record<string, unknown>> {
 }
 
 async function writeClaudeJson(data: Record<string, unknown>): Promise<void> {
-  const home = await bridge.getHomeDir();
-  const path = `${home}/.claude.json`;
+  const path = (await claudeConfigPaths()).claudeJson;
   await bridge.writeFileContent(path, JSON.stringify(data, null, 2));
 }
 
@@ -266,13 +272,15 @@ export const useMcpStore = create<McpState>()((set, get) => ({
     const discovered: DiscoveredMcpServer[] = [];
     const seen = new Set<string>();
     const home = await bridge.getHomeDir();
+    const { configDir, claudeJson } = await claudeConfigPaths();
+    const shortPath = (p: string) => p.replace(home, '~');
     const currentJson = await readClaudeJson();
     const imported = parseServers(currentJson.mcpServers as Record<string, unknown> | undefined);
     const importedNames = new Set(imported.map((s) => s.name));
 
     try {
       for (const server of imported) {
-        mergeDiscovered(discovered, server, '~/.claude.json', importedNames, seen);
+        mergeDiscovered(discovered, server, shortPath(claudeJson), importedNames, seen);
       }
 
       const projects = currentJson.projects as Record<string, unknown> | undefined;
@@ -287,14 +295,14 @@ export const useMcpStore = create<McpState>()((set, get) => ({
       }
 
       for (const path of [
-        `${home}/.claude/settings.json`,
-        `${home}/.claude/settings.local.json`,
+        `${configDir}/settings.json`,
+        `${configDir}/settings.local.json`,
         `${home}/.mcp.json`,
       ]) {
         const json = await readJsonFile(path);
         const mcp = json ? getMcpRecord(json) : undefined;
         for (const server of parseServers(mcp)) {
-          mergeDiscovered(discovered, server, path.replace(home, '~'), importedNames, seen);
+          mergeDiscovered(discovered, server, shortPath(path), importedNames, seen);
         }
       }
 

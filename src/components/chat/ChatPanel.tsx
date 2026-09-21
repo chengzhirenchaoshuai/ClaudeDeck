@@ -718,20 +718,11 @@ export function ChatPanel() {
         )}
         <div className="flex flex-col justify-center min-w-0 gap-0.5">
         <div className="flex items-center">
-        {/* Left: model name */}
-        <div className="flex items-center gap-3 pointer-events-none">
-          {sessionMeta.model && (
-            <span className="text-sm font-medium text-text-muted">
-              {getModelDisplayName(sessionMeta.model)}
-            </span>
-          )}
-        </div>
-
-        {/* Integrated status: Agent + API route — left-aligned with color dots */}
-        <div className="relative flex items-center gap-3 ml-3">
+        {/* Integrated status: Agent + API route — 与下一行的路径左对齐 */}
+        <div className="relative flex items-center gap-3">
           {/* Agent status — clickable dot + label → opens AgentPanel */}
           <button onClick={toggleAgentPanel}
-            className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg
+            className={`flex items-center gap-1.5 -ml-1.5 px-1.5 py-0.5 rounded-lg
               transition-smooth text-[9px]
               ${agentPanelOpen ? 'bg-accent/10' : 'hover:bg-bg-secondary/50'}`}
             title={t('agents.toggle')}>
@@ -782,6 +773,11 @@ export function ChatPanel() {
           )}
         </div>
 
+        {sessionMeta.model && (
+          <span className="ml-4 text-[11px] font-medium text-text-muted pointer-events-none">
+            {getModelDisplayName(sessionMeta.model)}
+          </span>
+        )}
         </div>
         {/* 项目完整路径，单独一行 */}
         {workingDirectory && (
