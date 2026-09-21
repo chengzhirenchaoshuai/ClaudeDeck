@@ -3,6 +3,7 @@ import { bridge } from '../../lib/tauri-bridge';
 import type { RemoteHost, RemoteTestResult, RemoteConfig } from '../../lib/tauri-bridge';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUsageStore } from '../../stores/usageStore';
 import { startRemoteProject } from '../../lib/remote';
 import { useT } from '../../lib/i18n';
 
@@ -25,6 +26,8 @@ export function RemoteTab() {
   const [sshAliases, setSshAliases] = useState<string[]>([]);
   const [form, setForm] = useState<typeof EMPTY_FORM | null>(null);
   const [formError, setFormError] = useState('');
+  // 正在编辑的主机 id；为空表示新增。名称不可改，因为它是 ssh://<名称>/... 会话路径的一部分
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, RemoteTestResult | string>>({});
   const [paths, setPaths] = useState<Record<string, string>>({});
@@ -53,18 +56,42 @@ export function RemoteTab() {
     }
     try {
       await bridge.saveRemoteHost({
-        id: form.id.trim(),
+        id: editingId ?? form.id.trim(),
         destination: form.destination.trim(),
         port,
         identityFile: form.identityFile.trim() || null,
       });
+      if (editingId) {
+        // 连接目标可能已换成另一台机器，之前的测试结果、配置和用量都不再可信
+        setTestResults((prev) => { const next = { ...prev }; delete next[editingId]; return next; });
+        setConfigs((prev) => { const next = { ...prev }; delete next[editingId]; return next; });
+        useUsageStore.getState().clearRemote(editingId);
+      }
       setForm(null);
+      setEditingId(null);
       setFormError('');
       await loadHosts();
       fetchRemoteSessions();
     } catch (e) {
       setFormError(String(e));
     }
+  };
+
+  const openEdit = (host: RemoteHost) => {
+    setEditingId(host.id);
+    setForm({
+      id: host.id,
+      destination: host.destination,
+      port: host.port ? String(host.port) : '',
+      identityFile: host.identityFile ?? '',
+    });
+    setFormError('');
+  };
+
+  const cancelForm = () => {
+    setForm(null);
+    setEditingId(null);
+    setFormError('');
   };
 
   const handleDelete = async (id: string) => {
@@ -126,29 +153,16 @@ export function RemoteTab() {
     </div>
   );
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-[13px] font-medium text-text-primary">{t('remote.title')}</h3>
-        <p className="mt-1 text-xs text-text-tertiary">{t('remote.desc')}</p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button className={BTN_CLS} onClick={() => { setForm({ ...EMPTY_FORM }); setFormError(''); }}>
-          {t('remote.add')}
-        </button>
-        <button className={BTN_CLS} disabled={isRemoteLoading} onClick={() => fetchRemoteSessions()}>
-          {isRemoteLoading ? t('remote.refreshing') : t('remote.refresh')}
-        </button>
-      </div>
-
-      {form && (
+  const renderForm = () => form && (
         <div className="p-3 rounded-lg border border-border-subtle space-y-2">
+          {editingId && <div className="text-[13px] font-medium text-text-primary">{t('remote.editing')}</div>}
           <label className="block text-xs text-text-secondary">
             {t('remote.name')}
             <span className="ml-2 text-text-tertiary">{t('remote.nameHint')}</span>
-            <input className={`${INPUT_CLS} mt-1`} value={form.id}
+            <input className={`${INPUT_CLS} mt-1 disabled:opacity-60`} value={form.id}
+              disabled={!!editingId}
               onChange={(e) => setForm({ ...form, id: e.target.value })} />
+            {editingId && <div className="mt-1 text-[11px] text-text-tertiary">{t('remote.nameLocked')}</div>}
           </label>
           <label className="block text-xs text-text-secondary">
             {t('remote.dest')}
@@ -174,16 +188,37 @@ export function RemoteTab() {
           {formError && <div className="text-xs text-red-500">{formError}</div>}
           <div className="flex gap-2">
             <button className={BTN_CLS} onClick={handleSave}>{t('remote.save')}</button>
-            <button className={BTN_CLS} onClick={() => setForm(null)}>{t('remote.cancel')}</button>
+            <button className={BTN_CLS} onClick={cancelForm}>{t('remote.cancel')}</button>
           </div>
         </div>
-      )}
+  );
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-[13px] font-medium text-text-primary">{t('remote.title')}</h3>
+        <p className="mt-1 text-xs text-text-tertiary">{t('remote.desc')}</p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button className={BTN_CLS} onClick={() => { setEditingId(null); setForm({ ...EMPTY_FORM }); setFormError(''); }}>
+          {t('remote.add')}
+        </button>
+        <button className={BTN_CLS} disabled={isRemoteLoading} onClick={() => fetchRemoteSessions()}>
+          {isRemoteLoading ? t('remote.refreshing') : t('remote.refresh')}
+        </button>
+      </div>
+
+      {form && !editingId && renderForm()}
 
       {hosts.length === 0 && !form && (
         <div className="text-xs text-text-tertiary">{t('remote.noHosts')}</div>
       )}
 
       {hosts.map((host) => {
+        if (editingId === host.id && form) {
+          return <div key={host.id}>{renderForm()}</div>;
+        }
         const result = testResults[host.id];
         const config = configs[host.id];
         return (
@@ -202,6 +237,7 @@ export function RemoteTab() {
                 <button className={BTN_CLS} disabled={readingConfig === host.id} onClick={() => handleReadConfig(host.id)}>
                   {readingConfig === host.id ? t('remote.reading') : t('remote.readConfig')}
                 </button>
+                <button className={BTN_CLS} onClick={() => openEdit(host)}>{t('remote.edit')}</button>
                 <button className={BTN_CLS} onClick={() => handleDelete(host.id)}>{t('remote.delete')}</button>
               </div>
             </div>

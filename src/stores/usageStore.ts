@@ -36,6 +36,8 @@ interface UsageState {
   refreshRemote: (hostId: string, force?: boolean) => Promise<void>;
   /** 读取全部已配置远程主机的用量，并清掉已被删除的主机 */
   refreshAllRemote: (force?: boolean) => Promise<void>;
+  /** 丢弃某台主机的远程用量缓存（主机配置被修改后，旧数据可能来自另一台机器） */
+  clearRemote: (hostId: string) => void;
 }
 
 /** 当前供应商是否支持余额查询（目前仅 DeepSeek 官方主机） */
@@ -106,6 +108,13 @@ export const useUsageStore = create<UsageState>()((set, get) => ({
     }));
     await Promise.allSettled(hosts.map((h) => get().refreshRemote(h.id, force)));
   },
+
+  clearRemote: (hostId) =>
+    set((state) => {
+      const next = { ...state.remote };
+      delete next[hostId];
+      return { remote: next };
+    }),
 
   refreshBalance: async () => {
     const provider = useProviderStore.getState().getActive();
