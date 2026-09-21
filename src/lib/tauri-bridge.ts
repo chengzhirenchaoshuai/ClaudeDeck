@@ -620,14 +620,14 @@ export const bridge = {
 
   // Pinned sessions (persisted to ~/.tokenicode/pinned.json)
   loadPinnedSessions: () =>
-    invoke<string[]>('load_pinned_sessions').catch(() => []),
+    invoke<string[] | null>('load_pinned_sessions').catch(() => null),
 
   savePinnedSessions: (data: string[]) =>
     invoke<void>('save_pinned_sessions', { data }).catch(() => {}),
 
   // Archived sessions (persisted to ~/.tokenicode/archived.json)
   loadArchivedSessions: () =>
-    invoke<string[]>('load_archived_sessions').catch(() => []),
+    invoke<string[] | null>('load_archived_sessions').catch(() => null),
 
   saveArchivedSessions: (data: string[]) =>
     invoke<void>('save_archived_sessions', { data }).catch(() => {}),

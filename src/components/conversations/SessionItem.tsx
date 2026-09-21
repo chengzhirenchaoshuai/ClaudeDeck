@@ -59,7 +59,7 @@ interface SessionItemProps {
   onSelect: (session: SessionListItem) => void;
   onContextMenu: (e: React.MouseEvent, session: SessionListItem) => void;
   onRename: (sessionId: string, newName: string) => void;
-  onArchive?: (session: SessionListItem) => void;
+  onPin?: (session: SessionListItem) => void;
   isUnread?: boolean;
   onToggleCheck?: (sessionId: string, shiftKey?: boolean) => void;
   contentSnippet?: string;
@@ -82,7 +82,7 @@ export const SessionItem = memo(function SessionItem({
   onSelect,
   onContextMenu,
   onRename,
-  onArchive,
+  onPin,
   isUnread,
   contentSnippet,
   matchCount,
@@ -219,30 +219,29 @@ export const SessionItem = memo(function SessionItem({
         <span className="text-[10px] text-text-tertiary flex-shrink-0">
           {formatRelativeTime(session.modifiedAt)}
         </span>
-        {!multiSelect && !isRenaming && onArchive && (
+        {!multiSelect && !isRenaming && onPin && (
           <span
             role="button"
             tabIndex={0}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onArchive(session);
+              onPin(session);
             }}
             onKeyDown={(e) => {
               if (e.key !== 'Enter' && e.key !== ' ') return;
               e.preventDefault();
               e.stopPropagation();
-              onArchive(session);
+              onPin(session);
             }}
             className="flex-shrink-0 p-0.5 rounded text-text-tertiary opacity-0
               group-hover:opacity-100 hover:text-accent hover:bg-accent/10 transition-smooth"
-            title={isArchived ? t('conv.unarchive') : t('conv.archive')}
+            title={isPinned ? t('conv.unpin') : t('conv.pin')}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1.5" y="2.5" width="13" height="3.5" rx="1" />
-              <path d="M2.5 6v6.5a1 1 0 001 1h9a1 1 0 001-1V6" />
-              <path d="M6.5 9h3" />
+              <path d="M9.5 2L14 6.5L8.5 12L6 14L4.5 11.5L2 9.5L4 7.5L9.5 2z" />
+              <path d="M4.5 11.5L1.5 14.5" />
             </svg>
           </span>
         )}

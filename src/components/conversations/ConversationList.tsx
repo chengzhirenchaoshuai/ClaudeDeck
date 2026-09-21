@@ -175,14 +175,22 @@ export function ConversationList() {
 
   // Load pinned/archived from backend on init
   useEffect(() => {
+    // 磁盘文件是权威来源（本地存储只是快速缓存）：文件存在时，即使为空也以它为准，
+    // 这样清空磁盘记录后，界面不会被旧的本地缓存带回去
     bridge.loadPinnedSessions?.()
-      .then((data: string[]) => {
-        if (data?.length) setPinnedSessions(new Set(data));
+      .then((data: string[] | null) => {
+        if (Array.isArray(data)) {
+          setPinnedSessions(new Set(data));
+          localStorage.setItem('tokenicode_pinned_sessions', JSON.stringify(data));
+        }
       })
       .catch(() => {});
     bridge.loadArchivedSessions?.()
-      .then((data: string[]) => {
-        if (data?.length) setArchivedSessions(new Set(data));
+      .then((data: string[] | null) => {
+        if (Array.isArray(data)) {
+          setArchivedSessions(new Set(data));
+          localStorage.setItem('tokenicode_archived_sessions', JSON.stringify(data));
+        }
       })
       .catch(() => {});
   }, []);
@@ -339,17 +347,12 @@ export function ConversationList() {
     return entries;
   }, [filtered, pinnedSessions]);
 
-  // 最近活跃视图：置顶在前，其余按修改时间从新到旧平铺
+  // 最近活跃视图：按修改时间从新到旧平铺。会话置顶只在所属项目内生效（文件夹视图），
+  // 这里不跨项目把置顶会话排到整个列表最前，只在标题前显示图钉
   const recentlyActiveGroups = useMemo(() => {
-    const pinned: SessionListItem[] = [];
-    const others: SessionListItem[] = [];
-    for (const s of filtered) {
-      (pinnedSessions.has(s.id) ? pinned : others).push(s);
-    }
-    pinned.sort((a, b) => b.modifiedAt - a.modifiedAt);
-    others.sort((a, b) => b.modifiedAt - a.modifiedAt);
-    return { pinned, others };
-  }, [filtered, pinnedSessions]);
+    const others = [...filtered].sort((a, b) => b.modifiedAt - a.modifiedAt);
+    return { others };
+  }, [filtered]);
 
   // Content-only matches: sessions hit by content search but NOT by metadata filter
   const contentOnlyMatches = useMemo(() => {
@@ -577,7 +580,6 @@ export function ConversationList() {
   const flatSessionIds = useMemo(() => {
     const ids: string[] = [];
     if (viewMode === 'recent') {
-      for (const s of recentlyActiveGroups.pinned) ids.push(s.id);
       for (const s of recentlyActiveGroups.others) ids.push(s.id);
     } else {
       for (const [project, items] of projectGroups) {
@@ -861,7 +863,7 @@ export function ConversationList() {
               selectedIds={selectedIds}
               onToggleCollapse={toggleCollapse}
               onContextMenu={handleContextMenu}
-              onArchive={handleToggleArchive}
+              onPin={handleTogglePin}
               unreadSessions={unreadSessions}
               isPinned={pinnedSessions.has(`project:${project}`)}
               onProjectContextMenu={handleProjectContextMenu}
@@ -879,44 +881,13 @@ export function ConversationList() {
       ) : (
         /* ---- Recently Active View ---- */
         <>
-          {/* Pinned sessions */}
-          {recentlyActiveGroups.pinned.length > 0 && (
-            <div className="mb-1">
-              {recentlyActiveGroups.pinned.map((session) => (
-                <SessionItem
-                  key={session.id}
-                  session={session}
-                  isSelected={selectedId === session.id}
-                  isRunning={runningSessions.has(session.id)}
-                  isPinned={true}
-                  isArchived={archivedSessions.has(session.id)}
-                  displayName={displayName(session)}
-                  multiSelect={multiSelect}
-                  isChecked={selectedIds.has(session.id)}
-                  onSelect={handleLoadSession}
-                  onContextMenu={handleContextMenu}
-                  onRename={handleRename}
-                  onArchive={handleToggleArchive}
-                  isUnread={unreadSessions.has(session.id)}
-                  onToggleCheck={handleToggleCheck}
-                  triggerRename={renamingSessionId === session.id}
-                  onRenameDone={handleRenameDone}
-                  isHighlighted={highlightedSessionId === session.id}
-                />
-              ))}
-              {recentlyActiveGroups.others.length > 0 && (
-                <div className="my-1 mx-3 border-t border-border-subtle/50" />
-              )}
-            </div>
-          )}
-
           {recentlyActiveGroups.others.map((session) => (
             <SessionItem
               key={session.id}
               session={session}
               isSelected={selectedId === session.id}
               isRunning={runningSessions.has(session.id)}
-              isPinned={false}
+              isPinned={pinnedSessions.has(session.id)}
               isArchived={archivedSessions.has(session.id)}
               displayName={displayName(session)}
               multiSelect={multiSelect}
@@ -924,7 +895,7 @@ export function ConversationList() {
               onSelect={handleLoadSession}
               onContextMenu={handleContextMenu}
               onRename={handleRename}
-              onArchive={handleToggleArchive}
+              onPin={handleTogglePin}
               isUnread={unreadSessions.has(session.id)}
               onToggleCheck={handleToggleCheck}
               triggerRename={renamingSessionId === session.id}
@@ -964,7 +935,7 @@ export function ConversationList() {
                 onSelect={handleLoadSession}
                 onContextMenu={handleContextMenu}
                 onRename={handleRename}
-                onArchive={handleToggleArchive}
+                onPin={handleTogglePin}
                 isUnread={unreadSessions.has(session.id)}
                 onToggleCheck={handleToggleCheck}
                 triggerRename={renamingSessionId === session.id}

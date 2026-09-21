@@ -17,7 +17,7 @@ interface SessionGroupProps {
   selectedIds: Set<string>;
   onToggleCollapse: (project: string) => void;
   onContextMenu: (e: React.MouseEvent, session: SessionListItem) => void;
-  onArchive: (session: SessionListItem) => void;
+  onPin: (session: SessionListItem) => void;
   unreadSessions: Set<string>;
   /** 该项目是否被置顶 */
   isPinned?: boolean;
@@ -45,7 +45,7 @@ export function SessionGroup({
   selectedIds,
   onToggleCollapse,
   onContextMenu,
-  onArchive,
+  onPin,
   unreadSessions,
   isPinned,
   onProjectContextMenu,
@@ -140,7 +140,7 @@ export function SessionGroup({
                   onSelect={onLoadSession}
                   onContextMenu={onContextMenu}
                   onRename={onRename}
-                  onArchive={onArchive}
+                  onPin={onPin}
                   isUnread={unreadSessions.has(session.id)}
                   onToggleCheck={onToggleCheck}
                   triggerRename={renamingSessionId === session.id}
@@ -168,7 +168,7 @@ export function SessionGroup({
               onSelect={onLoadSession}
               onContextMenu={onContextMenu}
               onRename={onRename}
-              onArchive={onArchive}
+              onPin={onPin}
               isUnread={unreadSessions.has(session.id)}
               onToggleCheck={onToggleCheck}
               triggerRename={renamingSessionId === session.id}

@@ -7837,8 +7837,9 @@ fn tokenicode_data_path(filename: &str) -> Result<std::path::PathBuf, String> {
 #[tauri::command]
 async fn load_pinned_sessions() -> Result<Value, String> {
     let path = tokenicode_data_path("pinned.json")?;
+    // 文件不存在时返回 null（区别于“存在但为空”），前端据此决定是否保留本地缓存
     if !path.exists() {
-        return Ok(serde_json::json!([]));
+        return Ok(Value::Null);
     }
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read pinned sessions: {}", e))?;
@@ -7858,8 +7859,9 @@ async fn save_pinned_sessions(data: Value) -> Result<(), String> {
 #[tauri::command]
 async fn load_archived_sessions() -> Result<Value, String> {
     let path = tokenicode_data_path("archived.json")?;
+    // 文件不存在时返回 null（区别于“存在但为空”），前端据此决定是否保留本地缓存
     if !path.exists() {
-        return Ok(serde_json::json!([]));
+        return Ok(Value::Null);
     }
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read archived sessions: {}", e))?;
