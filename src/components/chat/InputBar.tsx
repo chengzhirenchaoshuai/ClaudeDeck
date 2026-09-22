@@ -193,8 +193,12 @@ export function InputBar() {
     textareaRef.current?.setText(text);
   }, [setInput]);
 
-  // Restore input text from store when session switches (restoreFromCache → inputDraft change)
-  const prevInputDraftRef = useRef(inputDraft);
+  // Restore input text from store when session switches (restoreFromCache → inputDraft change).
+  // 初始值故意设为 undefined 而不是 inputDraft 本身：TipTap 编辑器每次创建都是空白的
+  // （ChatPanel 里 InputBar 会随 workingDirectory 变化整体卸载重建），如果这里用
+  // inputDraft 初始化，挂载后第一次 effect 会认为“值没变”而跳过同步，导致编辑器
+  // 一直空着、store 里的草稿从未真正显示出来——用户接着一打字就把旧草稿覆盖没了。
+  const prevInputDraftRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (prevInputDraftRef.current !== inputDraft) {
       // Never call setText during IME composition — it destroys the composing state
