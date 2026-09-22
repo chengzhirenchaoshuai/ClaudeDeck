@@ -114,8 +114,10 @@ export function useRewind() {
   /**
    * Execute rewind with a specific action.
    * All actions restore the user's original input text to the input box.
+   * overrideText：编辑已发送消息时，用修改后的文字替换原文回填到输入框
+   * （其余回退到这条消息之前的逻辑完全一致）。
    */
-  const executeRewind = useCallback(async (turn: Turn, action: RewindAction = 'restore_conversation') => {
+  const executeRewind = useCallback(async (turn: Turn, action: RewindAction = 'restore_conversation', overrideText?: string) => {
     const tid = useSessionStore.getState().selectedSessionId;
     if (!tid) return;
     const state = getActiveTabState();
@@ -157,8 +159,8 @@ export function useRewind() {
       console.warn('[useRewind] Failed to kill process:', err);
     }
 
-    // Grab original text before truncating
-    const originalUserText = state.messages[turn.startMsgIdx]?.content || '';
+    // Grab original text before truncating (or the edited replacement, if provided)
+    const originalUserText = overrideText ?? (state.messages[turn.startMsgIdx]?.content || '');
 
     try {
       switch (action) {

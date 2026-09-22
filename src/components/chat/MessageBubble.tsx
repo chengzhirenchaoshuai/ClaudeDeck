@@ -1,10 +1,11 @@
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { type ChatMessage } from '../../stores/chatStore';
 import { useFileStore } from '../../stores/fileStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useLightboxStore } from '../shared/ImageLightbox';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
+import { useRewind } from '../../hooks/useRewind';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { CommandProcessingCard } from './CommandProcessingCard';
 import { PlanReviewCard } from './PlanReviewCard';
@@ -133,7 +134,12 @@ function renderUserContent(text: string): ReactNode {
 }
 
 function UserMsg({ message }: Props) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const editRef = useRef<HTMLTextAreaElement>(null);
+  const { turns, canRewind, executeRewind } = useRewind();
   const attachments = message.attachments;
   const content = safeContent(message.content);
   const lines = content.split('\n');
@@ -142,8 +148,100 @@ function UserMsg({ message }: Props) {
     ? lines.slice(0, USER_MSG_COLLAPSE_LINES).join('\n')
     : content;
 
+  // 只有这条消息还能定位到对应的回退点（即它确实是某一轮的起始用户消息）才能编辑
+  const turn = turns.find((tn) => tn.userMessageId === message.id);
+  const canEdit = !!turn;
+
+  const startEdit = useCallback(() => {
+    if (!canEdit || !canRewind) return;
+    setEditText(content);
+    setIsEditing(true);
+  }, [canEdit, canRewind, content]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const el = editRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [isEditing]);
+
+  const cancelEdit = useCallback(() => setIsEditing(false), []);
+
+  const confirmEdit = useCallback(() => {
+    const text = editText.trim();
+    if (!text || !turn) return;
+    setIsEditing(false);
+    // 复用回退到这条消息之前的逻辑（撤销之后的对话，代码改动保留），
+    // 只是把回填到输入框的文字换成编辑后的版本，而不是原文。
+    void executeRewind(turn, 'restore_conversation', text);
+  }, [editText, turn, executeRewind]);
+
+  if (isEditing) {
+    return (
+      <div className="flex justify-end gap-2.5 group/user relative">
+        <div className="max-w-[75%] w-full px-3.5 py-2.5 rounded-2xl rounded-br-md
+          bg-bg-user-msg text-text-inverse shadow-md">
+          <textarea
+            ref={editRef}
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                confirmEdit();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelEdit();
+              }
+            }}
+            rows={Math.min(12, Math.max(2, editText.split('\n').length))}
+            className="w-full bg-transparent text-sm leading-relaxed resize-none
+              outline-none placeholder:text-white/50"
+          />
+          <div className="flex justify-end gap-1.5 mt-1.5">
+            <button
+              onClick={cancelEdit}
+              className="px-2.5 py-1 rounded-lg text-xs text-white/70
+                hover:text-white hover:bg-white/10 transition-smooth"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={confirmEdit}
+              disabled={!editText.trim()}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium
+                bg-white/20 hover:bg-white/30 disabled:opacity-40
+                disabled:cursor-not-allowed transition-smooth"
+            >
+              {t('msg.resend')}
+            </button>
+          </div>
+        </div>
+        <UserAvatar size="w-8 h-8 text-xs" className="mt-0.5" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex justify-end gap-2.5 group/user relative">
+      {canEdit && (
+        <button
+          onClick={startEdit}
+          disabled={!canRewind}
+          title={canRewind ? t('msg.edit') : t('msg.editHintRunning')}
+          className="flex-shrink-0 self-center p-1.5 rounded-lg text-text-tertiary
+            opacity-0 group-hover/user:opacity-100 hover:text-accent hover:bg-bg-secondary
+            disabled:hover:text-text-tertiary disabled:hover:bg-transparent
+            disabled:cursor-not-allowed transition-smooth"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 2l3 3-8 8-3.5 1L3 10.5 11 2z" />
+          </svg>
+        </button>
+      )}
       <div className="max-w-[75%] px-3.5 py-2.5 rounded-2xl rounded-br-md
         bg-bg-user-msg text-text-inverse
         text-sm leading-relaxed shadow-md whitespace-pre-wrap">
