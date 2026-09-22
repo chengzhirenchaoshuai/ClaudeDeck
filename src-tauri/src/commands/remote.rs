@@ -6,6 +6,9 @@
 //! - 认证完全交给系统 ssh（密钥、ssh-agent、~/.ssh/config），本应用不保存任何密码。
 //! - 所有远端命令都显式用 `powershell -EncodedCommand <base64>` 调用，不依赖远端账户的默认
 //!   shell 是 cmd.exe 还是 PowerShell（Windows OpenSSH Server 的 DefaultShell 配置项两者都可能）。
+//! - 启动 claude 那条命令更进一步：PowerShell 脚本内部用 System.Diagnostics.Process 直接调
+//!   cmd.exe /c 执行，不用 PowerShell 自己的原生命令调用语法——PowerShell 转发参数给原生
+//!   进程时对内嵌双引号的处理不稳定，会弄坏 --settings 后面那段 JSON。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -111,8 +114,37 @@ pub fn ssh_command(host: &RemoteHost) -> Command {
     cmd
 }
 
-/// 把参数包成 PowerShell 单引号字符串字面量：单引号内没有任何转义/展开语法，
-/// 只需把内部的单引号本身替换成两个单引号，其它字符（含 % & | < > ^ 等 cmd 元字符）都是安全的literal。
+/// 把参数按 Windows 标准命令行规则（CommandLineToArgvW / MSVC 运行库）加双引号转义。
+/// 含有 cmd 元字符时拒绝——这串命令最终交给 cmd.exe 的 /c 解释执行，& | ^ 等字符
+/// 就算被双引号包住，cmd 的分词也不总是能完全豁免它们，保守起见直接拒绝更安全。
+fn quote_cmd_arg(arg: &str) -> Result<String, String> {
+    if arg.chars().any(|c| matches!(c, '%' | '&' | '|' | '<' | '>' | '^' | '\n' | '\r' | '\0')) {
+        return Err(format!("远程会话参数含有不支持的字符: {}", arg));
+    }
+    let mut out = String::from("\"");
+    let mut backslashes = 0usize;
+    for c in arg.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                out.push_str(&"\\".repeat(backslashes * 2 + 1));
+                out.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                out.push_str(&"\\".repeat(backslashes));
+                out.push(c);
+                backslashes = 0;
+            }
+        }
+    }
+    out.push_str(&"\\".repeat(backslashes * 2));
+    out.push('"');
+    Ok(out)
+}
+
+/// 把字符串包成 PowerShell 单引号字面量：单引号内没有任何转义/展开语法，
+/// 只需把内部的单引号替换成两个单引号，其它字符（含双引号、反斜杠）都是安全的字面量。
 fn ps_quote(arg: &str) -> Result<String, String> {
     if arg.contains('\0') {
         return Err(format!("远程会话参数含有不支持的字符: {}", arg));
@@ -120,31 +152,52 @@ fn ps_quote(arg: &str) -> Result<String, String> {
     Ok(format!("'{}'", arg.replace('\'', "''")))
 }
 
-/// 构造在远端执行的 PowerShell 命令：切换目录、设置环境变量后启动 claude。
-/// 之所以用 PowerShell 而不是 cmd 的 `cd /d ... && ...`：远端账户登录后默认使用哪个 shell
-/// 是由 Windows OpenSSH Server 的 DefaultShell 配置决定的，可能是 cmd 也可能是 PowerShell，
-/// 我们没法预先知道。直接显式调用 `powershell -EncodedCommand <base64>` 就不依赖默认 shell，
-/// 不管远端把它交给 cmd 还是 PowerShell 执行，这条命令行本身只有字母、数字和 base64 字符，
-/// 两边都能正确原样传给 powershell.exe。
+/// 构造在远端执行的命令：切换目录、设置环境变量后启动 claude。
 /// 远端 claude 使用远端自己的配置（settings.json、MCP、skills 等）。
+///
+/// 实现上分两层：
+/// 1. 按 cmd.exe 语法拼 `cd /d "..." && set "K=V" && claude "--arg" "value"`——
+///    cmd.exe 认识 claude 在 Windows 上常见的 .cmd 包装（npm 全局安装的典型形式），
+///    直接用 .NET 调 claude.exe 反而可能因为没有 PATHEXT 解析找不到它。
+/// 2. 不依赖 ssh 账户登录后的默认 shell（可能是 cmd 也可能是 PowerShell，两者都见过），
+///    而是显式 `powershell -EncodedCommand` 起一个 PowerShell，在里面用
+///    `System.Diagnostics.Process` 直接调 cmd.exe /c 执行上面那串命令。这样命令行是
+///    通过 ProcessStartInfo.Arguments 原样交给 CreateProcess 的，不会再经过 PowerShell
+///    自身「原生命令参数传递」那套不稳定的重新加引号逻辑——早前正是这一层把
+///    `--settings '{"alwaysThinkingEnabled":true}'` 里的双引号弄丢了，导致 claude 报
+///    “Invalid JSON provided to --settings”。
 pub fn build_remote_claude_command(
     remote_path: &str,
     env: &[(&str, &str)],
     args: &[String],
 ) -> Result<String, String> {
-    if remote_path.contains('\0') {
+    if remote_path.chars().any(|c| matches!(c, '"' | '%' | '\n' | '\r' | '\0')) {
         return Err("远程路径含有不支持的字符".to_string());
     }
     let win_path = remote_path.replace('/', "\\");
-    let mut script = format!("Set-Location -LiteralPath {}\n", ps_quote(&win_path)?);
+    let mut parts = vec![format!("cd /d \"{}\"", win_path)];
     for (key, value) in env {
-        script.push_str(&format!("$env:{} = {}\n", key, ps_quote(value)?));
+        parts.push(format!("set {}", quote_cmd_arg(&format!("{}={}", key, value))?));
     }
-    script.push_str("& claude");
+    let mut claude = String::from("claude");
     for arg in args {
-        script.push(' ');
-        script.push_str(&ps_quote(arg)?);
+        claude.push(' ');
+        claude.push_str(&quote_cmd_arg(arg)?);
     }
+    parts.push(claude);
+    let cmd_line = parts.join(" && ");
+
+    let mut script = String::new();
+    script.push_str("$psi = New-Object System.Diagnostics.ProcessStartInfo\n");
+    script.push_str("$psi.FileName = 'cmd.exe'\n");
+    script.push_str(&format!(
+        "$psi.Arguments = {}\n",
+        ps_quote(&format!("/c \"{}\"", cmd_line))?
+    ));
+    script.push_str("$psi.UseShellExecute = $false\n");
+    script.push_str("$p = [System.Diagnostics.Process]::Start($psi)\n");
+    script.push_str("$p.WaitForExit()\n");
+    script.push_str("exit $p.ExitCode\n");
     Ok(powershell_command(&script))
 }
 
@@ -683,11 +736,19 @@ mod tests {
     }
 
     #[test]
+    fn quote_json_arg() {
+        assert_eq!(
+            quote_cmd_arg(r#"{"a":true}"#).unwrap(),
+            r#""{\"a\":true}""#
+        );
+        assert!(quote_cmd_arg("a&b").is_err());
+    }
+
+    #[test]
     fn quote_ps_arg() {
-        assert_eq!(ps_quote(r#"{"a":true}"#).unwrap(), r#"'{"a":true}'"#);
-        // 单引号字符串里 & | ^ 等 cmd 元字符都是安全的字面量，不需要拒绝
-        assert_eq!(ps_quote("a&b|c^d").unwrap(), "'a&b|c^d'");
         assert_eq!(ps_quote("it's").unwrap(), "'it''s'");
+        // 双引号、反斜杠在单引号字面量里都是安全的普通字符，不需要额外转义
+        assert_eq!(ps_quote(r#"a"b\c"#).unwrap(), r#"'a"b\c'"#);
     }
 
     /// 把 build_remote_claude_command 生成的 `powershell -EncodedCommand <base64>` 解回原始脚本，方便断言内容。
@@ -704,13 +765,17 @@ mod tests {
         let cmd = build_remote_claude_command(
             "C:/Users/me/my proj",
             &[("K", "V")],
-            &["--model".to_string(), "x".to_string()],
+            &["--settings".to_string(), r#"{"alwaysThinkingEnabled":true}"#.to_string()],
         )
         .unwrap();
         assert!(cmd.starts_with("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "));
         let script = decode_encoded_command(&cmd);
-        assert!(script.contains(r"Set-Location -LiteralPath 'C:\Users\me\my proj'"));
-        assert!(script.contains("$env:K = 'V'"));
-        assert!(script.contains("& claude '--model' 'x'"));
+        assert!(script.contains("$psi.FileName = 'cmd.exe'"));
+        assert!(script.contains(r#"cd /d "C:\Users\me\my proj""#));
+        assert!(script.contains(r#"set "K=V""#));
+        // ProcessStartInfo.Arguments 原样交给 CreateProcess，claude 收到的 --settings 值
+        // 必须完整保留内嵌的双引号——这正是之前那个 bug（PowerShell 自身转发原生命令参数时
+        // 把内嵌双引号弄丢，claude 报 "Invalid JSON provided to --settings"）要防住的东西。
+        assert!(script.contains(r#"claude "--settings" "{\"alwaysThinkingEnabled\":true}""#));
     }
 }
