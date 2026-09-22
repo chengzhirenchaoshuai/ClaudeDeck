@@ -8630,6 +8630,8 @@ pub fn run() {
             commands::remote::delete_remote_host,
             commands::remote::list_ssh_config_hosts,
             commands::remote::test_remote_connection,
+            commands::remote::load_remote_custom_previews,
+            commands::remote::save_remote_custom_previews,
             delete_session,
             list_sessions,
             get_profile_stats,

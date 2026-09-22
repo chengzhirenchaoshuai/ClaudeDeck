@@ -196,6 +196,21 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
         isRemoteLoading: false,
         sessions: [...state.sessions.filter((s) => !s.host || s.path === ''), ...remoteSessions],
       }));
+
+      // 远程主机是改名的源端：拉取每台主机自己保存的改名文件，覆盖本地缓存里
+      // 对应会话的名字（远程为准），这样在别处改过的名字也能同步过来。
+      const nameResults = await Promise.allSettled(hosts.map((h) => bridge.loadRemoteCustomPreviews(h.id)));
+      let merged: Record<string, string> | null = null;
+      nameResults.forEach((r) => {
+        if (r.status === 'fulfilled' && Object.keys(r.value).length > 0) {
+          merged = { ...(merged ?? get().customPreviews), ...r.value };
+        }
+      });
+      if (merged) {
+        saveCustomPreviewsLocal(merged);
+        set({ customPreviews: merged });
+        bridge.saveCustomPreviews(merged).catch(() => {});
+      }
     } catch {
       set({ isRemoteLoading: false });
     }
@@ -243,6 +258,17 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     set({ customPreviews: updated });
     // Persist to disk via backend (fire-and-forget)
     bridge.saveCustomPreviews(updated).catch(() => {});
+
+    // 远程会话：改名也要写回远程主机自己的改名文件，让远程主机保持“源端”——
+    // 连到同一台主机的其它客户端下次拉取列表时才能看到这次改的名字。
+    const hostId = get().sessions.find((s) => s.id === sessionId)?.host;
+    if (hostId) {
+      const hostNames: Record<string, string> = {};
+      for (const s of get().sessions) {
+        if (s.host === hostId && updated[s.id]) hostNames[s.id] = updated[s.id];
+      }
+      bridge.saveRemoteCustomPreviews(hostId, hostNames).catch(() => {});
+    }
   },
 
   getDisplayName: (session) => {

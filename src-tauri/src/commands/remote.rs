@@ -349,6 +349,67 @@ pub async fn read_remote_config(host_id: String) -> Result<Value, String> {
     Ok(config)
 }
 
+/// 远端会话改名文件名，和本机 session_names_path() 用的是同一个文件名，
+/// 放在远端自己的 CLAUDE_CONFIG_DIR 下——这样它就是连到这台主机的所有客户端
+/// 共享的、天然的“源端”存档：谁改了名字都写回这里，谁读列表都从这里取。
+const REMOTE_NAMES_FILE: &str = "tokenicode_session_names.json";
+
+/// 读取远端会话改名文件。文件不存在时返回空对象，不算错误。
+#[tauri::command]
+pub async fn load_remote_custom_previews(host_id: String) -> Result<Value, String> {
+    let host = find_host(&host_id)?;
+    let script = format!(
+        "$root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }}; \
+         $p = Join-Path $root '{file}'; \
+         if (Test-Path -LiteralPath $p) {{ Out-AsciiJson (Get-Content -LiteralPath $p -Raw -Encoding UTF8) }} else {{ '{{}}' }}",
+        file = REMOTE_NAMES_FILE,
+    );
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(20)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("读取远端会话名称失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let text = stdout.trim();
+    if text.is_empty() {
+        return Ok(json!({}));
+    }
+    serde_json::from_str(text).map_err(|e| format!("解析远端会话名称失败: {}", e))
+}
+
+/// 把会话改名数据写回远端主机自己的改名文件，让远程主机成为“源端”——
+/// 连到同一台主机的其它客户端下次拉取列表时也能看到最新名字。
+#[tauri::command]
+pub async fn save_remote_custom_previews(host_id: String, data: Value) -> Result<(), String> {
+    let host = find_host(&host_id)?;
+    let content = serde_json::to_string(&data).map_err(|e| format!("序列化会话名称失败: {}", e))?;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let b64 = STANDARD.encode(content.as_bytes());
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; \
+         $root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }}; \
+         if (-not (Test-Path -LiteralPath $root)) {{ New-Item -ItemType Directory -Path $root -Force | Out-Null }}; \
+         $p = Join-Path $root '{file}'; \
+         $json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64}')); \
+         [System.IO.File]::WriteAllText($p, $json, (New-Object System.Text.UTF8Encoding($false)))",
+        file = REMOTE_NAMES_FILE,
+        b64 = b64,
+    );
+    let (_, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(20)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("保存远端会话名称失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    Ok(())
+}
+
 /// 把远端 Windows 路径转为 URI 里的路径部分（反斜杠改为正斜杠）。
 fn to_uri(host_id: &str, path: &str) -> String {
     format!("{}{}/{}", REMOTE_SCHEME, host_id, path.replace('\\', "/"))
