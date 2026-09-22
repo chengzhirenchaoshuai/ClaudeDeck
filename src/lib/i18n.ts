@@ -131,6 +131,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'sidebar.refreshTitle': '刷新：重新读取会话列表和当前会话的最新内容',
     'conv.locateInFolder': '在文件夹视图中定位',
     'conv.openInExplorer': '在资源管理器中打开',
+    'conv.loadAll': '加载全部会话',
+    'conv.loadAllStarted': '开始加载 {count} 个会话…',
+    'conv.loadAllDone': '已加载 {done} 个会话',
+    'conv.loadAllDoneWithErrors': '已加载 {done} 个会话，{failed} 个失败',
     'conv.openInTerminal': '在终端中打开',
     'conv.openInTerminalAdmin': '以管理员身份在终端中打开',
 
@@ -985,6 +989,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'sidebar.refreshTitle': 'Refresh: reload the session list and the current conversation',
     'conv.locateInFolder': 'Locate in Folder',
     'conv.openInExplorer': 'Open in Explorer',
+    'conv.loadAll': 'Load all sessions',
+    'conv.loadAllStarted': 'Loading {count} sessions…',
+    'conv.loadAllDone': 'Loaded {done} sessions',
+    'conv.loadAllDoneWithErrors': 'Loaded {done} sessions, {failed} failed',
     'conv.openInTerminal': 'Open in Terminal',
     'conv.openInTerminalAdmin': 'Open in Terminal as Admin',
 

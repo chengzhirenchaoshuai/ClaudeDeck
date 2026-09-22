@@ -497,6 +497,46 @@ export function ConversationList() {
     fetchSessions();
   }, [deleteAllTarget, executeDelete, fetchSessions]);
 
+  // 远程项目“加载全部”：逐个把会话内容读一遍，让 load_remote_session 的本地增量缓存预热，
+  // 之后逐个点开就是秒开（内容没变时完全不用再传输）。限制并发数，避免同时打开太多 ssh 连接。
+  const [loadingAllProject, setLoadingAllProject] = useState<string | null>(null);
+  const handleLoadAllInProject = useCallback(async (projectKey: string) => {
+    const suffix = projectKey.replace(/^~/, '');
+    const allSessions = useSessionStore.getState().sessions;
+    const targets = allSessions.filter((s) => {
+      const raw = s.project || s.projectDir;
+      return s.host && raw.endsWith(suffix) && s.path;
+    });
+    if (targets.length === 0) return;
+
+    setLoadingAllProject(projectKey);
+    showToast(t('conv.loadAllStarted').replace('{count}', String(targets.length)), 'info');
+    let done = 0;
+    let failed = 0;
+    const queue = [...targets];
+    const worker = async () => {
+      while (queue.length > 0) {
+        const session = queue.shift();
+        if (!session) break;
+        try {
+          await bridge.loadSession(session.path);
+          done++;
+        } catch (err) {
+          failed++;
+          console.warn('[TOKENICODE] preload remote session failed:', session.id, err);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
+    setLoadingAllProject(null);
+    showToast(
+      failed > 0
+        ? t('conv.loadAllDoneWithErrors').replace('{done}', String(done)).replace('{failed}', String(failed))
+        : t('conv.loadAllDone').replace('{done}', String(done)),
+      failed > 0 ? 'error' : 'success',
+    );
+  }, [t]);
+
   // --- Context menu handlers ---
   const handleContextMenu = useCallback((e: React.MouseEvent, session: SessionListItem) => {
     e.preventDefault();
@@ -1003,6 +1043,8 @@ export function ConversationList() {
           onDeleteAll={handleDeleteAllInProject}
           onPin={handleToggleProjectPin}
           onOpenInExplorer={handleOpenInExplorer}
+          onLoadAll={projectMenu.project.startsWith('ssh://') ? handleLoadAllInProject : undefined}
+          isLoadingAll={loadingAllProject === projectMenu.project}
           isPinned={pinnedSessions.has(`project:${projectMenu.project}`)}
           onClose={() => setProjectMenu(null)}
         />

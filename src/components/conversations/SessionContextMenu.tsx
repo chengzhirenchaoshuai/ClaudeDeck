@@ -214,6 +214,8 @@ interface ProjectContextMenuProps {
   onDeleteAll: (project: string) => void;
   onPin?: (project: string) => void;
   onOpenInExplorer?: (project: string) => void;
+  onLoadAll?: (project: string) => void;
+  isLoadingAll?: boolean;
   isPinned?: boolean;
   onClose: () => void;
 }
@@ -226,6 +228,8 @@ export function ProjectContextMenu({
   onDeleteAll,
   onPin,
   onOpenInExplorer,
+  onLoadAll,
+  isLoadingAll,
   isPinned,
   onClose,
 }: ProjectContextMenuProps) {
@@ -299,6 +303,22 @@ export function ProjectContextMenu({
             <path d="M8 11v-3M6 9h4" />
           </svg>
           {t('conv.openInExplorer')}
+        </button>
+      )}
+
+      {onLoadAll && (
+        <button
+          onClick={() => { onClose(); onLoadAll(project); }}
+          disabled={isLoadingAll}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5
+            text-xs text-text-primary hover:bg-bg-secondary transition-smooth disabled:opacity-50"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            className={isLoadingAll ? 'animate-spin' : ''}>
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+          </svg>
+          {t('conv.loadAll')}
         </button>
       )}
 

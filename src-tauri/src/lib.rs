@@ -3220,6 +3220,11 @@ fn extract_session_info(path: &std::path::Path) -> (String, String) {
             if !is_user {
                 continue;
             }
+            // isMeta 消息是 CLI 注入的内部提示（比如本地命令的 caveat 包装），
+            // 不是用户真正输入的内容，跳过避免把这段提示文字当预览显示出来
+            if json["isMeta"].as_bool() == Some(true) {
+                continue;
+            }
 
             // Try to extract text from message.content array
             if let Some(content) = json["message"]["content"].as_array() {

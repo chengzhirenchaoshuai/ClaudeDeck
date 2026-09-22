@@ -222,7 +222,7 @@ if (Test-Path -LiteralPath $proj) {
       foreach ($line in (Get-Content -LiteralPath $f.FullName -TotalCount 100 -Encoding UTF8)) {
         try { $j = $line | ConvertFrom-Json } catch { continue }
         if (-not $cwd -and $j.cwd) { $cwd = [string]$j.cwd }
-        if (-not $prev -and ($j.type -eq 'user' -or $j.type -eq 'human' -or $j.message.role -eq 'user')) {
+        if (-not $prev -and -not $j.isMeta -and ($j.type -eq 'user' -or $j.type -eq 'human' -or $j.message.role -eq 'user')) {
           $c = $j.message.content
           if ($c -is [string]) { $t = $c } else { $t = ($c | Where-Object { $_.text } | Select-Object -First 1).text }
           if ($t) { $prev = ([string]$t).Trim() }
@@ -468,7 +468,32 @@ pub async fn list_remote_sessions(host_id: String) -> Result<Vec<Value>, String>
     Ok(sessions)
 }
 
+/// 本地增量缓存文件所在目录：~/.tokenicode/remote_cache/
+fn remote_cache_dir() -> Result<std::path::PathBuf, String> {
+    let dir = crate::tokenicode_data_path("remote_cache")?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create remote cache dir: {}", e))?;
+    Ok(dir)
+}
+
+/// 每个远程会话对应一个本地缓存文件，内容是远端 jsonl 的逐字节镜像（用于算增量），
+/// 文件名用 URI 整体做（把非文件名安全字符替换掉），避免不同主机同名会话互相覆盖。
+fn remote_cache_path(uri: &str) -> Result<std::path::PathBuf, String> {
+    let dir = remote_cache_dir()?;
+    let safe: String = uri
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '_' })
+        .collect();
+    Ok(dir.join(format!("{}.jsonl", safe)))
+}
+
 /// 读取远端会话 JSONL 并解析为消息列表。只允许读取 .jsonl 文件。
+///
+/// 会话日志是只追加写的（compact、resume 都只会在后面继续追加，不会改写前面的字节，
+/// 应用里别处的同步逻辑也是按这个假设做的），所以本地维护一份逐字节镜像缓存：
+/// - 远端文件长度和缓存一致 → 内容没变，完全不用传输；
+/// - 远端更长 → 只把新增的那一段（从缓存长度处开始）gzip 压缩后传回来，追加到缓存；
+/// - 远端反而更短（文件被替换/重建等极少数情况）→ 放弃增量，整份重新下载覆盖缓存。
+/// 网速差、会话大、反复打开同一会话时收益最明显。
 pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
     let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
     if !path.to_ascii_lowercase().ends_with(".jsonl") {
@@ -478,34 +503,71 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
         return Err("远程路径含有不支持的字符".to_string());
     }
     let host = find_host(&host_id)?;
-    // 会话文件可能有几 MB，网速不好时传输是主要耗时：先在远端用 gzip 压缩再 base64 输出，
-    // JSONL 高度重复、压缩比通常有 5-10 倍，比直接传原始字节快得多；ssh_command 里的 -C
-    // 只能再小幅压缩已经压缩过的数据，两者不冲突
+    let cache_path = remote_cache_path(uri)?;
+    let local_len = std::fs::metadata(&cache_path).map(|m| m.len()).unwrap_or(0);
+
     let win_path = path.replace('/', "\\").replace('\'', "''");
     let script = format!(
         "$ErrorActionPreference = 'Stop'; \
-         $bytes = [System.IO.File]::ReadAllBytes('{}'); \
-         $ms = New-Object System.IO.MemoryStream; \
-         $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress); \
-         $gz.Write($bytes, 0, $bytes.Length); $gz.Close(); \
-         [Convert]::ToBase64String($ms.ToArray())",
-        win_path
+         $fi = Get-Item -LiteralPath '{win_path}'; \
+         $remoteLen = $fi.Length; \
+         $localLen = {local_len}; \
+         if ($remoteLen -eq $localLen) {{ \
+           ConvertTo-Json -Compress -InputObject @{{ mode = 'none'; remoteLength = $remoteLen }} \
+         }} else {{ \
+           $mode = if ($remoteLen -gt $localLen) {{ 'delta' }} else {{ 'full' }}; \
+           $offset = if ($mode -eq 'delta') {{ $localLen }} else {{ 0 }}; \
+           $fs = [System.IO.File]::OpenRead('{win_path}'); \
+           $fs.Seek($offset, [System.IO.SeekOrigin]::Begin) | Out-Null; \
+           $take = $fs.Length - $offset; \
+           $buf = New-Object byte[] $take; \
+           $fs.Read($buf, 0, $take) | Out-Null; \
+           $fs.Close(); \
+           $ms = New-Object System.IO.MemoryStream; \
+           $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress); \
+           $gz.Write($buf, 0, $buf.Length); $gz.Close(); \
+           ConvertTo-Json -Compress -InputObject @{{ mode = $mode; remoteLength = $remoteLen; data = [Convert]::ToBase64String($ms.ToArray()) }} \
+         }}",
+        win_path = win_path,
+        local_len = local_len,
     );
     let (stdout, stderr, code) =
         run_remote(&host, &powershell_command(&script), Duration::from_secs(120)).await?;
     if code != 0 {
         return Err(format!("读取远端会话失败: {}", stderr.trim()));
     }
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let compressed = STANDARD
-        .decode(stdout.trim().as_bytes())
-        .map_err(|e| format!("解码远端会话失败: {}", e))?;
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut flate2::read::GzDecoder::new(std::io::Cursor::new(compressed)),
-        &mut bytes,
-    )
-    .map_err(|e| format!("解压远端会话失败: {}", e))?;
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    let resp: Value = serde_json::from_str(text).map_err(|e| format!("解析远端会话响应失败: {}", e))?;
+    let mode = resp["mode"].as_str().unwrap_or("full");
+
+    if mode != "none" {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let compressed = STANDARD
+            .decode(resp["data"].as_str().unwrap_or("").as_bytes())
+            .map_err(|e| format!("解码远端会话失败: {}", e))?;
+        let mut delta = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::GzDecoder::new(std::io::Cursor::new(compressed)),
+            &mut delta,
+        )
+        .map_err(|e| format!("解压远端会话失败: {}", e))?;
+
+        if mode == "full" {
+            std::fs::write(&cache_path, &delta)
+                .map_err(|e| format!("写入本地会话缓存失败: {}", e))?;
+        } else {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&cache_path)
+                .map_err(|e| format!("写入本地会话缓存失败: {}", e))?;
+            f.write_all(&delta)
+                .map_err(|e| format!("写入本地会话缓存失败: {}", e))?;
+        }
+    }
+
+    let bytes = std::fs::read(&cache_path).map_err(|e| format!("读取本地会话缓存失败: {}", e))?;
     Ok(String::from_utf8_lossy(&bytes)
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
@@ -540,6 +602,10 @@ pub async fn delete_remote_session(uri: &str) -> Result<(), String> {
         } else {
             stderr.trim().to_string()
         });
+    }
+    // 顺带清掉本地的增量缓存镜像，避免残留；缓存文件不存在或删不掉都不影响远端删除已经成功
+    if let Ok(cache_path) = remote_cache_path(uri) {
+        let _ = std::fs::remove_file(&cache_path);
     }
     Ok(())
 }
