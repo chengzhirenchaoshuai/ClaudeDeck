@@ -6,6 +6,7 @@ import { useLightboxStore } from '../shared/ImageLightbox';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
 import { useRewind } from '../../hooks/useRewind';
+import { toSessionFilePath } from '../../lib/remote';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { CommandProcessingCard } from './CommandProcessingCard';
 import { PlanReviewCard } from './PlanReviewCard';
@@ -68,9 +69,9 @@ const KNOWN_EXT_RE = /^[\w][\w.-]*\.(?:md|mdx|ts|tsx|js|jsx|mjs|cjs|json|jsonl|t
 function renderCodeSegment(inner: string, key: number): ReactNode {
   if (FILE_PATH_RE.test(inner) || KNOWN_EXT_RE.test(inner)) {
     const wd = useSettingsStore.getState().workingDirectory || '';
-    const resolved = inner.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(inner)
+    const resolved = toSessionFilePath(inner.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(inner)
       ? inner
-      : wd ? `${wd.replace(/\/$/, '')}/${inner}` : inner;
+      : wd ? `${wd.replace(/\/$/, '')}/${inner}` : inner);
     const fileName = inner.split(/[\\/]/).pop() || inner;
     return (
       <button
@@ -139,7 +140,7 @@ function UserMsg({ message }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const editRef = useRef<HTMLTextAreaElement>(null);
-  const { turns, canRewind, executeRewind } = useRewind();
+  const { turns, executeRewind } = useRewind();
   const attachments = message.attachments;
   const content = safeContent(message.content);
   const lines = content.split('\n');
@@ -148,15 +149,18 @@ function UserMsg({ message }: Props) {
     ? lines.slice(0, USER_MSG_COLLAPSE_LINES).join('\n')
     : content;
 
-  // 只有这条消息还能定位到对应的回退点（即它确实是某一轮的起始用户消息）才能编辑
+  // 只有这条消息还能定位到对应的回退点（即它确实是某一轮的起始用户消息）才能编辑。
+  // 会话运行中也允许编辑——confirmEdit 复用的 executeRewind 本来就会先杀掉当前
+  // 进程再回退，所以"编辑一条已发出、正在处理中的消息"直接等价于"打断 + 改内容重发"，
+  // 不需要等它跑完，这正是打错字不小心发出去时最需要的场景。
   const turn = turns.find((tn) => tn.userMessageId === message.id);
   const canEdit = !!turn;
 
   const startEdit = useCallback(() => {
-    if (!canEdit || !canRewind) return;
+    if (!canEdit) return;
     setEditText(content);
     setIsEditing(true);
-  }, [canEdit, canRewind, content]);
+  }, [canEdit, content]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -229,14 +233,12 @@ function UserMsg({ message }: Props) {
       {canEdit && (
         <button
           onClick={startEdit}
-          disabled={!canRewind}
-          title={canRewind ? t('msg.edit') : t('msg.editHintRunning')}
+          title={t('msg.edit')}
           className="flex-shrink-0 self-center p-1.5 rounded-lg text-text-tertiary
             opacity-0 group-hover/user:opacity-100 hover:text-accent hover:bg-bg-secondary
-            disabled:hover:text-text-tertiary disabled:hover:bg-transparent
-            disabled:cursor-not-allowed transition-smooth"
+            transition-smooth"
         >
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
             stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 2l3 3-8 8-3.5 1L3 10.5 11 2z" />
           </svg>
@@ -685,7 +687,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: Props) {
               if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
                 bridge.openWithDefaultApp(input.file_path);
               } else {
-                useFileStore.getState().selectFile(input.file_path);
+                useFileStore.getState().selectFile(toSessionFilePath(input.file_path));
               }
             }}
             onContextMenu={(e) => {

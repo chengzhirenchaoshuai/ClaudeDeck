@@ -541,24 +541,21 @@ function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, on
         </div>
       </div>
 
-      {/* 只在向上翻离底部较远时显示 */}
+      {/* 只在向上翻离底部较远时显示。固定为和上面圆点导航条一样的圆形图标尺寸
+          （不带文字），这样弹出/消失时不会改变整条竖排工具条的宽度而左右跳动。 */}
       {showScrollBtn && (
         <button
           onClick={onJumpBottom}
-          className={`pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-1.5
-            rounded-full border border-border-subtle bg-bg-card/90 backdrop-blur
-            shadow-lg text-xs transition-smooth
-            ${showScrollBtn
-              ? 'text-accent hover:bg-accent/10'
-              : 'text-text-tertiary hover:text-text-primary hover:bg-bg-secondary'
-            }`}
-          title={t('chat.scrollToBottom')}
+          className="pointer-events-auto flex-shrink-0 w-7 h-7 rounded-full
+            flex items-center justify-center
+            border border-border-subtle bg-bg-card/90 backdrop-blur
+            shadow-lg text-accent hover:bg-accent/10 transition-smooth"
+          title={t('chat.latest')}
         >
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
             <path d="M7 2v10M3 8l4 4 4-4" />
           </svg>
-          <span>{t('chat.latest')}</span>
         </button>
       )}
     </div>

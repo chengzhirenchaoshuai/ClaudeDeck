@@ -902,7 +902,9 @@ export function ConversationList() {
           );
         })
       ) : (
-        /* ---- Recently Active View ---- */
+        /* ---- Recently Active View ----
+           置顶在这个跨项目的平铺视图里不生效（只在文件夹视图内排序），
+           这里不传 isPinned/onPin，不再显示没有实际作用的置顶入口。 */
         <>
           {recentlyActiveGroups.others.map((session) => (
             <SessionItem
@@ -910,7 +912,6 @@ export function ConversationList() {
               session={session}
               isSelected={selectedId === session.id}
               isRunning={runningSessions.has(session.id)}
-              isPinned={pinnedSessions.has(session.id)}
               isArchived={archivedSessions.has(session.id)}
               displayName={displayName(session)}
               multiSelect={multiSelect}
@@ -918,7 +919,6 @@ export function ConversationList() {
               onSelect={handleLoadSession}
               onContextMenu={handleContextMenu}
               onRename={handleRename}
-              onPin={handleTogglePin}
               isUnread={unreadSessions.has(session.id)}
               onToggleCheck={handleToggleCheck}
               triggerRename={renamingSessionId === session.id}
@@ -947,7 +947,6 @@ export function ConversationList() {
                 session={session}
                 isSelected={selectedId === session.id}
                 isRunning={runningSessions.has(session.id)}
-                isPinned={pinnedSessions.has(session.id)}
                 isArchived={archivedSessions.has(session.id)}
                 displayName={displayName(session)}
                 contentSnippet={result?.snippet}
@@ -958,7 +957,6 @@ export function ConversationList() {
                 onSelect={handleLoadSession}
                 onContextMenu={handleContextMenu}
                 onRename={handleRename}
-                onPin={handleTogglePin}
                 isUnread={unreadSessions.has(session.id)}
                 onToggleCheck={handleToggleCheck}
                 triggerRename={renamingSessionId === session.id}
@@ -1033,7 +1031,7 @@ export function ConversationList() {
           onRevealInFinder={handleRevealInFinder}
           onExport={handleExportMarkdown}
           onDelete={handleDeleteSingle}
-          onPin={handleTogglePin}
+          onPin={viewMode === 'recent' ? undefined : handleTogglePin}
           onArchive={handleToggleArchive}
           isPinned={pinnedSessions.has(contextMenu.session.id)}
           isArchived={archivedSessions.has(contextMenu.session.id)}
