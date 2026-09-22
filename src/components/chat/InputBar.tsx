@@ -1599,61 +1599,6 @@ export function InputBar() {
               {t(ctrlEnterToSend ? 'input.shortcutHintCtrlEnter' : 'input.shortcutHint')}
             </span>
           )}
-          {/* Stop button — visible only while running */}
-          {isRunning && (
-            <button
-              onClick={async () => {
-                const stopTabId = useSessionStore.getState().selectedSessionId;
-                const sid = getActiveTabState().sessionMeta.stdinId;
-                // Immediately clear stdinId so no further messages are sent to the dead process
-                if (stopTabId) {
-                  useChatStore.getState().setSessionMeta(stopTabId, { stdinId: undefined });
-                  useChatStore.getState().setSessionStatus(stopTabId, 'completed');
-                  useChatStore.getState().setActivityStatus(stopTabId, { phase: 'completed' });
-                }
-                if (sid) {
-                  await bridge.killSession(sid).catch(() => {});
-                  // Don't unlisten immediately — let process_exit fire naturally to clean up.
-                  // The listener will be replaced when a new session spawns (line ~788).
-                  // As a safety net, force-clean after 3s if process_exit hasn't arrived.
-                  setTimeout(() => {
-                    if ((window as any).__claudeUnlisteners?.[sid]) {
-                      (window as any).__claudeUnlisteners[sid]();
-                      delete (window as any).__claudeUnlisteners[sid];
-                    }
-                  }, 3000);
-                }
-              }}
-              className="flex-shrink-0 self-end w-8 h-8 rounded-[10px]
-                bg-red-500/15 text-red-500
-                flex items-center justify-center
-                hover:bg-red-500/25 transition-smooth"
-              title={t('input.stop')}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16"
-                fill="currentColor">
-                <rect x="3" y="3" width="10" height="10" rx="2" />
-              </svg>
-            </button>
-          )}
-          <button
-            onClick={handleSubmit}
-            disabled={isAwaiting || (!input.trim() && activePrefixes.length === 0)}
-            className={`flex-shrink-0 self-end w-8 h-8 rounded-[10px]
-              flex items-center justify-center transition-smooth
-              disabled:opacity-30 disabled:cursor-not-allowed
-              ${isAwaiting
-                ? 'bg-warning/15 text-warning cursor-not-allowed'
-                : 'bg-accent hover:bg-accent-hover text-text-inverse hover:shadow-glow cursor-pointer'
-              }`}
-            title={isAwaiting ? t('input.awaitingInteraction') : undefined}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16"
-              fill="none" stroke="currentColor" strokeWidth="2"
-              strokeLinecap="round">
-              <path d="M3 8h10M9 4l4 4-4 4" />
-            </svg>
-          </button>
           </div>
         </div>
 
@@ -1718,6 +1663,64 @@ export function InputBar() {
 
           {/* Model selector */}
           <ModelSelector disabled={isRunning} />
+
+          {/* Stop button — visible only while running */}
+          {isRunning && (
+            <button
+              onClick={async () => {
+                const stopTabId = useSessionStore.getState().selectedSessionId;
+                const sid = getActiveTabState().sessionMeta.stdinId;
+                // Immediately clear stdinId so no further messages are sent to the dead process
+                if (stopTabId) {
+                  useChatStore.getState().setSessionMeta(stopTabId, { stdinId: undefined });
+                  useChatStore.getState().setSessionStatus(stopTabId, 'completed');
+                  useChatStore.getState().setActivityStatus(stopTabId, { phase: 'completed' });
+                }
+                if (sid) {
+                  await bridge.killSession(sid).catch(() => {});
+                  // Don't unlisten immediately — let process_exit fire naturally to clean up.
+                  // The listener will be replaced when a new session spawns (line ~788).
+                  // As a safety net, force-clean after 3s if process_exit hasn't arrived.
+                  setTimeout(() => {
+                    if ((window as any).__claudeUnlisteners?.[sid]) {
+                      (window as any).__claudeUnlisteners[sid]();
+                      delete (window as any).__claudeUnlisteners[sid];
+                    }
+                  }, 3000);
+                }
+              }}
+              className="flex-shrink-0 w-7 h-7 rounded-[10px]
+                bg-red-500/15 text-red-500
+                flex items-center justify-center
+                hover:bg-red-500/25 transition-smooth"
+              title={t('input.stop')}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16"
+                fill="currentColor">
+                <rect x="3" y="3" width="10" height="10" rx="2" />
+              </svg>
+            </button>
+          )}
+          {/* Send button — kept outside the text input box so clicks near the edge
+              of the textarea (e.g. placing the cursor) never accidentally trigger it. */}
+          <button
+            onClick={handleSubmit}
+            disabled={isAwaiting || (!input.trim() && activePrefixes.length === 0)}
+            className={`flex-shrink-0 w-7 h-7 rounded-[10px]
+              flex items-center justify-center transition-smooth
+              disabled:opacity-30 disabled:cursor-not-allowed
+              ${isAwaiting
+                ? 'bg-warning/15 text-warning cursor-not-allowed'
+                : 'bg-accent hover:bg-accent-hover text-text-inverse hover:shadow-glow cursor-pointer'
+              }`}
+            title={isAwaiting ? t('input.awaitingInteraction') : undefined}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16"
+              fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round">
+              <path d="M3 8h10M9 4l4 4-4 4" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>

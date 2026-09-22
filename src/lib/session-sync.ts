@@ -4,6 +4,7 @@ import { useChatStore } from '../stores/chatStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useUsageStore } from '../stores/usageStore';
 import { LOCAL_ENV } from './remote';
 
 /** 每个会话上次同步时的 JSONL 记录数，用于跳过没有变化的重复加载 */
@@ -98,16 +99,19 @@ export async function syncSession(
 }
 
 /**
- * 全局刷新：重新拉取会话列表（远程环境下同时刷新远程会话），并强制重新读取当前打开的会话。
- * 供侧边栏顶部的“刷新”按钮调用。
+ * 全局刷新：重新拉取会话列表（远程环境下同时刷新远程会话）、今日用量/余额，
+ * 并强制重新读取当前打开的会话（含上下文占用）。供侧边栏“刷新”按钮调用。
  */
 export async function refreshAll(): Promise<void> {
   const st = useSessionStore.getState();
   const current = st.sessions.find((s) => s.id === st.selectedSessionId);
   const isRemoteEnv = useSettingsStore.getState().activeEnv !== LOCAL_ENV;
+  const usage = useUsageStore.getState();
   await Promise.allSettled([
     st.fetchSessions(),
     isRemoteEnv ? st.fetchRemoteSessions() : Promise.resolve(),
     syncSession(current, { force: true }),
+    usage.refresh(true),
+    usage.refreshBalance(),
   ]);
 }

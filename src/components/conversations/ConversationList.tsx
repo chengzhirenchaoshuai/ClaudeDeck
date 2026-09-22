@@ -249,6 +249,18 @@ export function ConversationList() {
     return () => { unlisten?.(); };
   }, [fetchSessions]);
 
+  // 当前打开的会话短周期轮询：覆盖不了文件系统事件的场景（远程会话、
+  // 由外部终端而非本应用驱动的会话）。syncSession 内部已经做了“未变化跳过”
+  // 和“本应用正在驱动则不覆盖”的保护，这里高频调用成本很低。
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const st = useSessionStore.getState();
+      const current = st.sessions.find((s) => s.id === st.selectedSessionId);
+      void syncSession(current);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Listen for sessions:changed event for instant refresh
   useEffect(() => {
     let unlisten: (() => void) | undefined;

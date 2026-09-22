@@ -202,10 +202,6 @@ export const SessionItem = memo(function SessionItem({
           <div className={`text-xs truncate leading-snug font-normal flex-1 min-w-0
             ${name ? 'text-text-primary' : 'text-text-muted italic'}
             ${titleAnimating ? 'animate-title-update' : ''}`}>
-            {isUnread && (
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent mr-1.5 align-middle"
-                title={t('conv.unread')} />
-            )}
             {isPinned && (
               <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
                 stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
@@ -245,10 +241,13 @@ export const SessionItem = memo(function SessionItem({
             </svg>
           </span>
         )}
+        {isUnread && (
+          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent"
+            title={t('conv.unread')} />
+        )}
         {isRunning && (
-          <span className="flex-shrink-0 w-2 h-2 rounded-full bg-success
-            shadow-[0_0_6px_var(--color-accent-glow)]
-            animate-pulse-soft" />
+          <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full
+            border-[1.5px] border-accent/30 border-t-accent animate-spin" />
         )}
       </div>
       {contentSnippet && (

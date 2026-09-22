@@ -169,15 +169,29 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
       const onStart = () => { composingRef.current = true; };
       const onEnd = () => {
         composingRef.current = false;
-        // Flush the final composed text to the store
+        // 组合结束的瞬间 ProseMirror 可能还没把最后上屏的字符同步进文档，
+        // 延迟到下一帧再读取，避免漏掉刚提交的那个字。
+        requestAnimationFrame(() => {
+          const text = editorToPlainText(editor);
+          onUpdateRef.current?.(text);
+        });
+      };
+      // 失焦时兜底再同步一次：切到别的窗口时，如果正在拼音组合中，
+      // compositionend 可能来不及触发或时机异常，导致未上屏的文字既没进
+      // 文档也没同步到草稿存储，切回来就丢了。这里失焦时强制清空组合状态
+      // 并按当前编辑器内容再 flush 一次。
+      const onBlur = () => {
+        composingRef.current = false;
         const text = editorToPlainText(editor);
         onUpdateRef.current?.(text);
       };
       el.addEventListener('compositionstart', onStart);
       el.addEventListener('compositionend', onEnd);
+      el.addEventListener('blur', onBlur);
       return () => {
         el.removeEventListener('compositionstart', onStart);
         el.removeEventListener('compositionend', onEnd);
+        el.removeEventListener('blur', onBlur);
       };
     }, [editor]);
 
