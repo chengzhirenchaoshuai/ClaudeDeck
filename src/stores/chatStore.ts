@@ -420,9 +420,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         partialText: '',
         partialThinking: '',
         sessionStatus: 'idle',
-        // Preserve sessionMeta (especially sessionId for resume)
+        // Preserve sessionMeta (especially sessionId for resume) and the user's
+        // in-progress draft — clearMessages 只用于重新从磁盘加载消息，不应该
+        // 顺带把用户正在输入、还没发送的内容也清掉。
         activityStatus: { phase: 'idle' },
-        inputDraft: '',
         pendingAttachments: [],
         pendingUserMessages: [],
       }));
@@ -617,8 +618,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (tab.messages.length === 0 && !tab.isStreaming && !tab.partialText) {
       const session = useSessionStore.getState().sessions.find((s) => s.id === tabId);
       if (session?.path) {
+        // 重建为空白 tab，但保留用户还没发送的草稿和待上传附件——
+        // 这里只是判定“消息要从磁盘重新加载”，不代表用户正在输入的内容也作废了。
         const newTabs = new Map(get().tabs);
-        newTabs.delete(tabId);
+        newTabs.set(tabId, {
+          ...createTab(tabId),
+          inputDraft: tab.inputDraft,
+          pendingAttachments: tab.pendingAttachments,
+        });
         set({ tabs: newTabs, sessionCache: newTabs });
         return false;
       }
