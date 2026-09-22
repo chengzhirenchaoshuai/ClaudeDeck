@@ -4,7 +4,8 @@
 //! - 远程项目用 URI 表示：`ssh://<主机别名>/<远端路径>`，例如 `ssh://win-pc/C:/Users/me/proj`。
 //!   这样前端的 cwd、会话分组等逻辑无需感知远程，只需在后端识别该前缀。
 //! - 认证完全交给系统 ssh（密钥、ssh-agent、~/.ssh/config），本应用不保存任何密码。
-//! - 远端默认 shell 需为 cmd.exe（Windows OpenSSH Server 的默认值）。
+//! - 所有远端命令都显式用 `powershell -EncodedCommand <base64>` 调用，不依赖远端账户的默认
+//!   shell 是 cmd.exe 还是 PowerShell（Windows OpenSSH Server 的 DefaultShell 配置项两者都可能）。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -110,56 +111,41 @@ pub fn ssh_command(host: &RemoteHost) -> Command {
     cmd
 }
 
-/// 把参数按 cmd.exe + MSVC 运行库规则加双引号。
-/// 含有 cmd 元字符或会触发变量展开的字符时直接拒绝，避免命令注入。
-fn quote_cmd_arg(arg: &str) -> Result<String, String> {
-    if arg.chars().any(|c| matches!(c, '%' | '&' | '|' | '<' | '>' | '^' | '\n' | '\r' | '\0')) {
+/// 把参数包成 PowerShell 单引号字符串字面量：单引号内没有任何转义/展开语法，
+/// 只需把内部的单引号本身替换成两个单引号，其它字符（含 % & | < > ^ 等 cmd 元字符）都是安全的literal。
+fn ps_quote(arg: &str) -> Result<String, String> {
+    if arg.contains('\0') {
         return Err(format!("远程会话参数含有不支持的字符: {}", arg));
     }
-    let mut out = String::from("\"");
-    let mut backslashes = 0usize;
-    for c in arg.chars() {
-        match c {
-            '\\' => backslashes += 1,
-            '"' => {
-                out.push_str(&"\\".repeat(backslashes * 2 + 1));
-                out.push('"');
-                backslashes = 0;
-            }
-            _ => {
-                out.push_str(&"\\".repeat(backslashes));
-                out.push(c);
-                backslashes = 0;
-            }
-        }
-    }
-    out.push_str(&"\\".repeat(backslashes * 2));
-    out.push('"');
-    Ok(out)
+    Ok(format!("'{}'", arg.replace('\'', "''")))
 }
 
-/// 构造在远端执行的 cmd 命令：切换目录、设置环境变量后启动 claude。
+/// 构造在远端执行的 PowerShell 命令：切换目录、设置环境变量后启动 claude。
+/// 之所以用 PowerShell 而不是 cmd 的 `cd /d ... && ...`：远端账户登录后默认使用哪个 shell
+/// 是由 Windows OpenSSH Server 的 DefaultShell 配置决定的，可能是 cmd 也可能是 PowerShell，
+/// 我们没法预先知道。直接显式调用 `powershell -EncodedCommand <base64>` 就不依赖默认 shell，
+/// 不管远端把它交给 cmd 还是 PowerShell 执行，这条命令行本身只有字母、数字和 base64 字符，
+/// 两边都能正确原样传给 powershell.exe。
 /// 远端 claude 使用远端自己的配置（settings.json、MCP、skills 等）。
 pub fn build_remote_claude_command(
     remote_path: &str,
     env: &[(&str, &str)],
     args: &[String],
 ) -> Result<String, String> {
-    if remote_path.chars().any(|c| matches!(c, '"' | '%' | '\n' | '\r' | '\0')) {
+    if remote_path.contains('\0') {
         return Err("远程路径含有不支持的字符".to_string());
     }
     let win_path = remote_path.replace('/', "\\");
-    let mut parts = vec![format!("cd /d \"{}\"", win_path)];
+    let mut script = format!("Set-Location -LiteralPath {}\n", ps_quote(&win_path)?);
     for (key, value) in env {
-        parts.push(format!("set {}", quote_cmd_arg(&format!("{}={}", key, value))?));
+        script.push_str(&format!("$env:{} = {}\n", key, ps_quote(value)?));
     }
-    let mut claude = String::from("claude");
+    script.push_str("& claude");
     for arg in args {
-        claude.push(' ');
-        claude.push_str(&quote_cmd_arg(arg)?);
+        script.push(' ');
+        script.push_str(&ps_quote(arg)?);
     }
-    parts.push(claude);
-    Ok(parts.join(" && "))
+    Ok(powershell_command(&script))
 }
 
 /// 在远端执行一条命令并等待结束，返回 (stdout, stderr, 退出码)。
@@ -662,18 +648,14 @@ pub async fn list_ssh_config_hosts() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn test_remote_connection(id: String) -> Result<Value, String> {
     let host = find_host(&id)?;
-    // cmd 下 %OS% 会展开为 Windows_NT；若原样输出说明远端默认 shell 不是 cmd
+    // 启动 claude 时已经改成显式调用 powershell -EncodedCommand，不再依赖远端账户的默认 shell
+    // 是 cmd 还是 PowerShell，这里也用同样的方式探测，结果才能真实反映实际能不能连上。
     let (stdout, stderr, code) =
-        run_remote(&host, "echo %OS% && claude --version", Duration::from_secs(30)).await?;
-    let mut lines = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty());
-    let os_line = lines.next().unwrap_or("");
-    let shell_is_cmd = os_line == "Windows_NT";
-    let version = lines.next().unwrap_or("").to_string();
-    let ok = code == 0 && shell_is_cmd && !version.is_empty();
+        run_remote(&host, &powershell_command("& claude --version"), Duration::from_secs(30)).await?;
+    let version = stdout.trim().to_string();
+    let ok = code == 0 && !version.is_empty();
     let message = if ok {
         format!("连接成功，远端 claude 版本：{}", version)
-    } else if !shell_is_cmd && !os_line.is_empty() {
-        "已连接，但远端默认 shell 不是 cmd.exe，暂不支持".to_string()
     } else if !stderr.trim().is_empty() {
         stderr.trim().to_string()
     } else {
@@ -681,7 +663,6 @@ pub async fn test_remote_connection(id: String) -> Result<Value, String> {
     };
     Ok(json!({
         "ok": ok,
-        "shellIsCmd": shell_is_cmd,
         "claudeVersion": version,
         "message": message,
     }))
@@ -702,12 +683,20 @@ mod tests {
     }
 
     #[test]
-    fn quote_json_arg() {
-        assert_eq!(
-            quote_cmd_arg(r#"{"a":true}"#).unwrap(),
-            r#""{\"a\":true}""#
-        );
-        assert!(quote_cmd_arg("a&b").is_err());
+    fn quote_ps_arg() {
+        assert_eq!(ps_quote(r#"{"a":true}"#).unwrap(), r#"'{"a":true}'"#);
+        // 单引号字符串里 & | ^ 等 cmd 元字符都是安全的字面量，不需要拒绝
+        assert_eq!(ps_quote("a&b|c^d").unwrap(), "'a&b|c^d'");
+        assert_eq!(ps_quote("it's").unwrap(), "'it''s'");
+    }
+
+    /// 把 build_remote_claude_command 生成的 `powershell -EncodedCommand <base64>` 解回原始脚本，方便断言内容。
+    fn decode_encoded_command(cmd: &str) -> String {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let b64 = cmd.rsplit(' ').next().unwrap();
+        let bytes = STANDARD.decode(b64).unwrap();
+        let u16s: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        String::from_utf16(&u16s).unwrap()
     }
 
     #[test]
@@ -718,9 +707,10 @@ mod tests {
             &["--model".to_string(), "x".to_string()],
         )
         .unwrap();
-        assert_eq!(
-            cmd,
-            r#"cd /d "C:\Users\me\my proj" && set "K=V" && claude "--model" "x""#
-        );
+        assert!(cmd.starts_with("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "));
+        let script = decode_encoded_command(&cmd);
+        assert!(script.contains(r"Set-Location -LiteralPath 'C:\Users\me\my proj'"));
+        assert!(script.contains("$env:K = 'V'"));
+        assert!(script.contains("& claude '--model' 'x'"));
     }
 }

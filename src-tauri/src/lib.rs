@@ -4091,69 +4091,74 @@ async fn create_directory(path: String) -> Result<(), String> {
 #[tauri::command]
 async fn export_session_markdown(path: String, output_path: String, conversation_only: bool) -> Result<(), String> {
     use std::io::{BufRead, Write};
-    let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
-    let reader = std::io::BufReader::new(file);
+    // 远程会话（ssh:// URI）经 ssh 读取，和 load_session 保持一致
+    let records: Vec<Value> = if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        commands::remote::load_remote_session(&path).await?
+    } else {
+        let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
+        std::io::BufReader::new(file)
+            .lines()
+            .filter_map(|l| l.ok())
+            .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+            .collect()
+    };
 
     let mut md = String::from("# Claude Code Session\n\n");
     md.push_str(&format!("*Exported from: {}*\n\n---\n\n", path));
 
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if let Ok(json) = serde_json::from_str::<Value>(&line) {
-                let msg_type = json["type"].as_str().unwrap_or("");
-                match msg_type {
-                    "user" | "human" => {
-                        let mut text_buf = String::new();
-                        let content = &json["message"]["content"];
-                        if let Some(text) = content.as_str() {
+    for json in &records {
+        let msg_type = json["type"].as_str().unwrap_or("");
+        match msg_type {
+            "user" | "human" => {
+                let mut text_buf = String::new();
+                let content = &json["message"]["content"];
+                if let Some(text) = content.as_str() {
+                    text_buf.push_str(text);
+                    text_buf.push_str("\n\n");
+                } else if let Some(arr) = content.as_array() {
+                    for block in arr {
+                        if let Some(text) = block["text"].as_str() {
                             text_buf.push_str(text);
                             text_buf.push_str("\n\n");
-                        } else if let Some(arr) = content.as_array() {
-                            for block in arr {
-                                if let Some(text) = block["text"].as_str() {
-                                    text_buf.push_str(text);
-                                    text_buf.push_str("\n\n");
-                                }
-                            }
-                        }
-                        if !conversation_only || !text_buf.trim().is_empty() {
-                            md.push_str("## User\n\n");
-                            md.push_str(&text_buf);
                         }
                     }
-                    "assistant" => {
-                        let mut has_text = false;
-                        let mut text_buf = String::new();
-                        if let Some(content) = json["message"]["content"].as_array() {
-                            for block in content {
-                                if block["type"].as_str() == Some("text") {
-                                    if let Some(text) = block["text"].as_str() {
-                                        has_text = true;
-                                        text_buf.push_str(text);
-                                        text_buf.push_str("\n\n");
-                                    }
-                                } else if !conversation_only && block["type"].as_str() == Some("tool_use") {
-                                    let name = block["name"].as_str().unwrap_or("Tool");
-                                    text_buf.push_str(&format!("**Tool: {}**\n\n", name));
-                                    if let Some(input) = block.get("input") {
-                                        text_buf.push_str("```json\n");
-                                        text_buf.push_str(
-                                            &serde_json::to_string_pretty(input)
-                                                .unwrap_or_default(),
-                                        );
-                                        text_buf.push_str("\n```\n\n");
-                                    }
-                                }
-                            }
-                        }
-                        if !conversation_only || has_text {
-                            md.push_str("## Assistant\n\n");
-                            md.push_str(&text_buf);
-                        }
-                    }
-                    _ => {}
+                }
+                if !conversation_only || !text_buf.trim().is_empty() {
+                    md.push_str("## User\n\n");
+                    md.push_str(&text_buf);
                 }
             }
+            "assistant" => {
+                let mut has_text = false;
+                let mut text_buf = String::new();
+                if let Some(content) = json["message"]["content"].as_array() {
+                    for block in content {
+                        if block["type"].as_str() == Some("text") {
+                            if let Some(text) = block["text"].as_str() {
+                                has_text = true;
+                                text_buf.push_str(text);
+                                text_buf.push_str("\n\n");
+                            }
+                        } else if !conversation_only && block["type"].as_str() == Some("tool_use") {
+                            let name = block["name"].as_str().unwrap_or("Tool");
+                            text_buf.push_str(&format!("**Tool: {}**\n\n", name));
+                            if let Some(input) = block.get("input") {
+                                text_buf.push_str("```json\n");
+                                text_buf.push_str(
+                                    &serde_json::to_string_pretty(input)
+                                        .unwrap_or_default(),
+                                );
+                                text_buf.push_str("\n```\n\n");
+                            }
+                        }
+                    }
+                }
+                if !conversation_only || has_text {
+                    md.push_str("## Assistant\n\n");
+                    md.push_str(&text_buf);
+                }
+            }
+            _ => {}
         }
     }
 

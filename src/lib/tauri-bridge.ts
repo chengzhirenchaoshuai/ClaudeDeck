@@ -61,7 +61,6 @@ export interface RemoteHost {
 
 export interface RemoteTestResult {
   ok: boolean;
-  shellIsCmd: boolean;
   claudeVersion: string;
   message: string;
 }

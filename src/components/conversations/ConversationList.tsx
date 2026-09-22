@@ -1042,7 +1042,7 @@ export function ConversationList() {
           onNewSession={handleNewSessionInProject}
           onDeleteAll={handleDeleteAllInProject}
           onPin={handleToggleProjectPin}
-          onOpenInExplorer={handleOpenInExplorer}
+          onOpenInExplorer={projectMenu.project.startsWith('ssh://') ? undefined : handleOpenInExplorer}
           onLoadAll={projectMenu.project.startsWith('ssh://') ? handleLoadAllInProject : undefined}
           isLoadingAll={loadingAllProject === projectMenu.project}
           isPinned={pinnedSessions.has(`project:${projectMenu.project}`)}
