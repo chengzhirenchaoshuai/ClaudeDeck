@@ -3,6 +3,8 @@ import { parseSessionMessages } from './session-loader';
 import { useChatStore } from '../stores/chatStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { LOCAL_ENV } from './remote';
 
 /** 每个会话上次同步时的 JSONL 记录数，用于跳过没有变化的重复加载 */
 const lastRecordCount = new Map<string, number>();
@@ -93,4 +95,19 @@ export async function syncSession(
   } catch (err) {
     console.warn('[TOKENICODE] session sync failed:', err);
   }
+}
+
+/**
+ * 全局刷新：重新拉取会话列表（远程环境下同时刷新远程会话），并强制重新读取当前打开的会话。
+ * 供侧边栏顶部的“刷新”按钮调用。
+ */
+export async function refreshAll(): Promise<void> {
+  const st = useSessionStore.getState();
+  const current = st.sessions.find((s) => s.id === st.selectedSessionId);
+  const isRemoteEnv = useSettingsStore.getState().activeEnv !== LOCAL_ENV;
+  await Promise.allSettled([
+    st.fetchSessions(),
+    isRemoteEnv ? st.fetchRemoteSessions() : Promise.resolve(),
+    syncSession(current, { force: true }),
+  ]);
 }

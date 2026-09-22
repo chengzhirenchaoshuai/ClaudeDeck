@@ -127,7 +127,6 @@ export function ConversationList() {
     } catch { return new Set(); }
   });
   const [showArchived, setShowArchived] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // View mode: 'folder' | 'recent'
   const [viewMode, setViewMode] = useState<'folder' | 'recent'>(() => {
@@ -247,23 +246,6 @@ export function ConversationList() {
       }
     }).then((fn) => { unlisten = fn; }).catch(() => {});
     return () => { unlisten?.(); };
-  }, [fetchSessions]);
-
-  // 手动同步：刷新会话列表（远程环境下同时刷新远程会话），并重新读取当前会话
-  const handleSyncAll = useCallback(async () => {
-    setIsSyncing(true);
-    try {
-      const st = useSessionStore.getState();
-      const current = st.sessions.find((s) => s.id === st.selectedSessionId);
-      const isRemoteEnv = useSettingsStore.getState().activeEnv !== 'local';
-      await Promise.allSettled([
-        fetchSessions(),
-        isRemoteEnv ? st.fetchRemoteSessions() : Promise.resolve(),
-        syncSession(current, { force: true }),
-      ]);
-    } finally {
-      setIsSyncing(false);
-    }
   }, [fetchSessions]);
 
   // Listen for sessions:changed event for instant refresh
@@ -811,19 +793,6 @@ export function ConversationList() {
             </svg>
             {t('conv.viewRecent')}
           </span>
-        </button>
-        <button
-          onClick={handleSyncAll}
-          disabled={isSyncing}
-          className="flex-shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-text-primary
-            hover:bg-bg-secondary transition-smooth disabled:opacity-50"
-          title={t('conv.syncTitle')}
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            className={isSyncing ? 'animate-spin' : ''}>
-            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
-          </svg>
         </button>
       </div>
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -10,10 +10,12 @@ import { IS_ALPHA } from '../../lib/edition';
 import { ProfileStatsModal } from '../profile/ProfileStatsModal';
 import { EnvSwitcher, RemotePathInput } from './EnvSwitcher';
 import { LOCAL_ENV } from '../../lib/remote';
+import { refreshAll } from '../../lib/session-sync';
 
 export function Sidebar() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [remotePathOpen, setRemotePathOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const activeEnv = useSettingsStore((s) => s.activeEnv);
   const isRemoteEnv = activeEnv !== LOCAL_ENV;
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
@@ -54,6 +56,16 @@ export function Sidebar() {
     }
   };
 
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [isRefreshing]);
+
   // Window dragging handled via CSS -webkit-app-region: drag on the top strip
 
   return (
@@ -89,14 +101,25 @@ export function Sidebar() {
             </div>
           )}
         </div>
-        <button onClick={toggleSidebar}
-          className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
-            transition-smooth" title={t('sidebar.hide')}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5">
-            <path d="M10 4L6 8L10 12" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button onClick={handleRefresh} disabled={isRefreshing}
+            className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
+              transition-smooth disabled:opacity-50" title={t('sidebar.refreshTitle')}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+              className={isRefreshing ? 'animate-spin' : ''}>
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+            </svg>
+          </button>
+          <button onClick={toggleSidebar}
+            className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
+              transition-smooth" title={t('sidebar.hide')}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5">
+              <path d="M10 4L6 8L10 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <EnvSwitcher />
