@@ -8632,6 +8632,8 @@ pub fn run() {
             commands::remote::test_remote_connection,
             commands::remote::load_remote_custom_previews,
             commands::remote::save_remote_custom_previews,
+            commands::remote::load_remote_archived_sessions,
+            commands::remote::save_remote_archived_sessions,
             delete_session,
             list_sessions,
             get_profile_stats,

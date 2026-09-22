@@ -656,6 +656,13 @@ export const bridge = {
   saveArchivedSessions: (data: string[]) =>
     invoke<void>('save_archived_sessions', { data }).catch(() => {}),
 
+  /** 读取远程主机自己保存的归档会话 ID 列表——远程主机是归档状态的源端 */
+  loadRemoteArchivedSessions: (hostId: string) =>
+    invoke<string[]>('load_remote_archived_sessions', { hostId }),
+  /** 把归档状态写回远程主机自己的文件，让它保持源端 */
+  saveRemoteArchivedSessions: (hostId: string, data: string[]) =>
+    invoke<void>('save_remote_archived_sessions', { hostId, data }),
+
   // AI title generation (spawns separate CLI process, no channel interference)
   generateSessionTitle: (userMessage: string, assistantMessage: string, providerId?: string) =>
     invoke<string>('generate_session_title', { userMessage, assistantMessage, providerId: providerId || null }),

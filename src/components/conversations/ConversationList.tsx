@@ -94,6 +94,8 @@ export function ConversationList() {
   const isContentSearching = useSessionStore((s) => s.isContentSearching);
   const searchSessionContent = useSessionStore((s) => s.searchSessionContent);
   const clearContentSearch = useSessionStore((s) => s.clearContentSearch);
+  const remoteHosts = useSessionStore((s) => s.remoteHosts);
+  const remoteSessionsList = useSessionStore((s) => s.remoteSessions);
 
   // Context menus
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -172,6 +174,55 @@ export function ConversationList() {
     localStorage.setItem('tokenicode_archived_sessions', JSON.stringify([...next]));
     bridge.saveArchivedSessions([...next]).catch(() => {});
   }, []);
+
+  // 归档和改名一样是 TOKENICODE 自己的概念，claude CLI 没有这个功能，本机只存在
+  // ~/.tokenicode/archived.json 里。远程会话的归档状态额外写一份到远程主机自己的
+  // CLAUDE_CONFIG_DIR 下，让远程主机成为源端：每次远程会话列表刷新（不管是哪里
+  // 触发的，比如侧边栏“刷新”按钮），这里都会重新拉取每台主机自己的归档文件，
+  // 用远程数据覆盖本地对应会话的归档状态（含“远程那边取消归档了”这种减法）。
+  useEffect(() => {
+    if (remoteHosts.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.allSettled(
+        remoteHosts.map((h) => bridge.loadRemoteArchivedSessions(h.id)),
+      );
+      if (cancelled) return;
+      setArchivedSessions((current) => {
+        const next = new Set(current);
+        let changed = false;
+        remoteHosts.forEach((h, i) => {
+          const r = results[i];
+          if (r.status !== 'fulfilled') return;
+          const remoteIds = new Set(r.value);
+          for (const s of remoteSessionsList) {
+            if (s.host !== h.id) continue;
+            const shouldBeArchived = remoteIds.has(s.id);
+            if (shouldBeArchived !== next.has(s.id)) {
+              changed = true;
+              if (shouldBeArchived) next.add(s.id);
+              else next.delete(s.id);
+            }
+          }
+        });
+        if (!changed) return current;
+        localStorage.setItem('tokenicode_archived_sessions', JSON.stringify([...next]));
+        bridge.saveArchivedSessions([...next]).catch(() => {});
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [remoteHosts, remoteSessionsList]);
+
+  // 归档一个远程会话时，把这台主机名下的全部归档 ID 写回它自己的归档文件
+  const pushArchivedToRemote = useCallback((session: SessionListItem, archivedIds: Set<string>) => {
+    if (!session.host) return;
+    const hostId = session.host;
+    const hostArchived = remoteSessionsList
+      .filter((s) => s.host === hostId && archivedIds.has(s.id))
+      .map((s) => s.id);
+    bridge.saveRemoteArchivedSessions(hostId, hostArchived).catch(() => {});
+  }, [remoteSessionsList]);
 
   // Load pinned/archived from backend on init
   useEffect(() => {
@@ -610,7 +661,8 @@ export function ConversationList() {
     if (next.has(session.id)) next.delete(session.id);
     else next.add(session.id);
     persistArchived(next);
-  }, [archivedSessions, persistArchived]);
+    pushArchivedToRemote(session, next);
+  }, [archivedSessions, persistArchived, pushArchivedToRemote]);
 
   // Build flat list of visible session IDs for shift+click range selection
   const flatSessionIds = useMemo(() => {
@@ -682,9 +734,19 @@ export function ConversationList() {
     const next = new Set(archivedSessions);
     for (const id of selectedIds) next.add(id);
     persistArchived(next);
+    // 批量归档里涉及到的每台远程主机，各推一次自己名下的最新归档列表
+    const touchedHosts = new Set(
+      remoteSessionsList.filter((s) => s.host && selectedIds.has(s.id)).map((s) => s.host!),
+    );
+    for (const hostId of touchedHosts) {
+      const hostArchived = remoteSessionsList
+        .filter((s) => s.host === hostId && next.has(s.id))
+        .map((s) => s.id);
+      bridge.saveRemoteArchivedSessions(hostId, hostArchived).catch(() => {});
+    }
     setSelectedIds(new Set());
     setMultiSelect(false);
-  }, [selectedIds, archivedSessions, persistArchived]);
+  }, [selectedIds, archivedSessions, persistArchived, remoteSessionsList]);
 
   const handleRename = useCallback((sessionId: string, newName: string) => {
     setCustomPreview(sessionId, newName);
