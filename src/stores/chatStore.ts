@@ -147,6 +147,11 @@ export interface SessionMeta {
     isUsingOverage?: boolean;
     overageStatus?: string;
     overageDisabledReason?: string;
+    /** 'allowed' | 'allowed_warning' | 'rejected'（CLI 目前没有暴露具体用量百分比，只有这个档位） */
+    status?: string;
+    /** 部分 CLI 版本会附带每个用量窗口的具体使用率（0-1），没有就是 undefined——
+     *  绝不能在这个字段缺失时自己拿本地 token 量凑一个假百分比出来显示。 */
+    unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }>;
   }>;
 }
 

@@ -776,6 +776,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
                 isUsingOverage: bgRli.isUsingOverage,
                 overageStatus: bgRli.overageStatus,
                 overageDisabledReason: bgRli.overageDisabledReason,
+                status: bgRli.status,
+                unifiedWindows: bgRli.unifiedWindows,
               },
             },
           });
@@ -2072,6 +2074,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
               [rli.rateLimitType]: {
                 rateLimitType: rli.rateLimitType,
                 resetsAt: rli.resetsAt,
+                status: rli.status,
+                unifiedWindows: rli.unifiedWindows,
                 isUsingOverage: rli.isUsingOverage,
                 overageStatus: rli.overageStatus,
                 overageDisabledReason: rli.overageDisabledReason,

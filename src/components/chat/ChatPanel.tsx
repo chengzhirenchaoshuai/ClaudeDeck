@@ -442,6 +442,79 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   );
 }
 
+/** 把 unix 秒转成"还剩 Xh Ym" / "还剩 Xd Yh"这样的倒计时文案；已过期返回 null */
+function formatResetCountdown(resetsAtSec: number, t: (k: string) => string): string | null {
+  const ms = resetsAtSec * 1000 - Date.now();
+  if (ms <= 0) return null;
+  const totalMin = Math.ceil(ms / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return `${t('chat.resetsIn')} ${days}${t('chat.days')} ${hours}${t('chat.hours')}`;
+  if (hours > 0) return `${t('chat.resetsIn')} ${hours}${t('chat.hours')} ${mins}${t('chat.minutes')}`;
+  return `${t('chat.resetsIn')} ${mins}${t('chat.minutes')}`;
+}
+
+/** 一个用量窗口（5 小时 / 7 天）的小段：有真实使用率（CLI 部分版本才会带）就画进度条，
+ *  没有就只显示状态点 + 重置倒计时——CLI 的 rate_limit_event 本身不一定带百分比，
+ *  绝不能在缺失时拿本地 token 量凑一个假数字出来显示。 */
+function RateLimitWindow({ label, windowKey, entry, t }: {
+  label: string;
+  windowKey: 'five_hour' | 'seven_day';
+  entry?: { resetsAt: number; status?: string; unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }> };
+  t: (k: string) => string;
+}) {
+  if (!entry) return null;
+  // 优先用 unifiedWindows 里对应窗口自己的 utilization/resetsAt（部分 CLI 版本才有）
+  const windowData = entry.unifiedWindows?.[windowKey];
+  const utilization = windowData?.utilization;
+  const resetsAt = windowData?.resetsAt ?? entry.resetsAt;
+  const hasPercent = typeof utilization === 'number' && Number.isFinite(utilization);
+  const percent = hasPercent ? Math.min(100, Math.round(utilization! * 100)) : null;
+  const isWarning = entry.status === 'allowed_warning' || (percent !== null && percent >= 80);
+  const isRejected = entry.status === 'rejected';
+  const colorClass = isRejected ? 'text-error' : isWarning ? 'text-warning' : 'text-text-tertiary';
+  const countdown = formatResetCountdown(resetsAt, t);
+
+  return (
+    <div className="flex items-center gap-1" title={countdown ?? undefined}>
+      <span className="font-medium text-text-muted">{label}</span>
+      {hasPercent ? (
+        <>
+          <div className="w-10 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
+            <div
+              className={`h-full rounded-full ${isRejected ? 'bg-error' : isWarning ? 'bg-warning' : 'bg-accent'}`}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <span className={colorClass}>{percent}%</span>
+        </>
+      ) : (
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0
+          ${isRejected ? 'bg-error' : isWarning ? 'bg-warning' : 'bg-success'}`} />
+      )}
+      {countdown && !hasPercent && <span className="text-text-tertiary">{countdown}</span>}
+    </div>
+  );
+}
+
+/** 5 小时 / 7 天用量窗口状态条。数据只在当前进程存活期间从 CLI 的 rate_limit_event
+ *  流式事件里收集，历史会话/还没发过消息的新会话看不到（CLI 不会补发），此时不渲染。 */
+function UsageStatusBar({ sessionMeta }: { sessionMeta: SessionMeta }) {
+  const t = useT();
+  const fiveHour = sessionMeta.rateLimits?.five_hour;
+  const sevenDay = sessionMeta.rateLimits?.seven_day;
+  if (!fiveHour && !sevenDay) return null;
+
+  return (
+    <div className="hidden md:flex items-center gap-3 px-2 py-1 rounded-lg
+      bg-bg-secondary/60 border border-border-subtle text-[10px]">
+      <RateLimitWindow label="5h" windowKey="five_hour" entry={fiveHour} t={t} />
+      <RateLimitWindow label={t('chat.weekly')} windowKey="seven_day" entry={sevenDay} t={t} />
+    </div>
+  );
+}
+
 function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, onJumped, onJumpBottom }: {
   turns: Turn[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -847,6 +920,7 @@ export function ChatPanel() {
 
         {/* Spacer + right-side actions */}
         <div className="ml-auto flex items-center" />
+        <UsageStatusBar sessionMeta={sessionMeta} />
         <UsageChip />
         <UpdateButton />
         <ExportMenu sessionPath={currentSessionPath} />
