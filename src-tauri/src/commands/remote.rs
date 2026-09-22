@@ -6,9 +6,15 @@
 //! - 认证完全交给系统 ssh（密钥、ssh-agent、~/.ssh/config），本应用不保存任何密码。
 //! - 所有远端命令都显式用 `powershell -EncodedCommand <base64>` 调用，不依赖远端账户的默认
 //!   shell 是 cmd.exe 还是 PowerShell（Windows OpenSSH Server 的 DefaultShell 配置项两者都可能）。
-//! - 启动 claude 那条命令更进一步：PowerShell 脚本内部用 System.Diagnostics.Process 直接调
-//!   cmd.exe /c 执行，不用 PowerShell 自己的原生命令调用语法——PowerShell 转发参数给原生
-//!   进程时对内嵌双引号的处理不稳定，会弄坏 --settings 后面那段 JSON。
+//! - 启动 claude 那条命令更进一步：用 `cmd /c --% <命令行>` 调用 cmd.exe——`--%`
+//!   （stop-parsing symbol）让 PowerShell 把后面的文本原样传给原生命令，不再用自己那套
+//!   「原生命令参数传递」逻辑重新加引号，从而保留内嵌双引号（直接用 PowerShell 原生调用语法
+//!   转发参数时，内嵌双引号会被弄坏，claude 报 "Invalid JSON provided to --settings"）。
+//!   这里刻意不用 System.Diagnostics.Process 手动起子进程：那条路径需要自己管理句柄继承，
+//!   在 ssh 的非 pty 通道上不稳定，实际起会话时会抛出异常，而 PowerShell 在没有控制台时
+//!   把异常序列化成不可读的 CLIXML。`cmd /c --%` 走的是 PowerShell 原生命令调用那条
+//!   已经验证过能正确透传 stdin/stdout 的路径（`test_remote_connection` 用的
+//!   `& claude --version` 就是同一条路）。
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -143,15 +149,6 @@ fn quote_cmd_arg(arg: &str) -> Result<String, String> {
     Ok(out)
 }
 
-/// 把字符串包成 PowerShell 单引号字面量：单引号内没有任何转义/展开语法，
-/// 只需把内部的单引号替换成两个单引号，其它字符（含双引号、反斜杠）都是安全的字面量。
-fn ps_quote(arg: &str) -> Result<String, String> {
-    if arg.contains('\0') {
-        return Err(format!("远程会话参数含有不支持的字符: {}", arg));
-    }
-    Ok(format!("'{}'", arg.replace('\'', "''")))
-}
-
 /// 构造在远端执行的命令：切换目录、设置环境变量后启动 claude。
 /// 远端 claude 使用远端自己的配置（settings.json、MCP、skills 等）。
 ///
@@ -161,11 +158,17 @@ fn ps_quote(arg: &str) -> Result<String, String> {
 ///    直接用 .NET 调 claude.exe 反而可能因为没有 PATHEXT 解析找不到它。
 /// 2. 不依赖 ssh 账户登录后的默认 shell（可能是 cmd 也可能是 PowerShell，两者都见过），
 ///    而是显式 `powershell -EncodedCommand` 起一个 PowerShell，在里面用
-///    `System.Diagnostics.Process` 直接调 cmd.exe /c 执行上面那串命令。这样命令行是
-///    通过 ProcessStartInfo.Arguments 原样交给 CreateProcess 的，不会再经过 PowerShell
-///    自身「原生命令参数传递」那套不稳定的重新加引号逻辑——早前正是这一层把
+///    `cmd /c --% <上面那串命令>` 调用 cmd.exe——`--%`（stop-parsing symbol）让
+///    PowerShell 把它后面的文本原样当作命令行传给 cmd.exe，不再用自己那套「原生命令参数
+///    传递」重新加引号，从而保留内嵌双引号（早前正是这一层把
 ///    `--settings '{"alwaysThinkingEnabled":true}'` 里的双引号弄丢了，导致 claude 报
-///    “Invalid JSON provided to --settings”。
+///    “Invalid JSON provided to --settings”）。
+///    之前用 `System.Diagnostics.Process` 手动起 cmd.exe 并同步 WaitForExit 的做法虽然
+///    也能避开引号问题，但没有走 PowerShell 原生命令调用那条早已验证过能正确透传
+///    stdin/stdout 的路径（`test_remote_connection` 用的 `& claude --version` 走的就是
+///    这条路），手动管理的子进程在 ssh 的非 pty 通道上继承句柄不稳定，实际起会话时会
+///    抛出终止性异常——PowerShell 在没有控制台时把这类异常序列化成 CLIXML，导致用户
+///    看到的错误只有一串 `#< CLIXML` 乱码。改回原生调用后这个问题随之消失。
 pub fn build_remote_claude_command(
     remote_path: &str,
     env: &[(&str, &str)],
@@ -188,16 +191,8 @@ pub fn build_remote_claude_command(
     let cmd_line = parts.join(" && ");
 
     let mut script = String::new();
-    script.push_str("$psi = New-Object System.Diagnostics.ProcessStartInfo\n");
-    script.push_str("$psi.FileName = 'cmd.exe'\n");
-    script.push_str(&format!(
-        "$psi.Arguments = {}\n",
-        ps_quote(&format!("/c \"{}\"", cmd_line))?
-    ));
-    script.push_str("$psi.UseShellExecute = $false\n");
-    script.push_str("$p = [System.Diagnostics.Process]::Start($psi)\n");
-    script.push_str("$p.WaitForExit()\n");
-    script.push_str("exit $p.ExitCode\n");
+    script.push_str(&format!("cmd /c --% {}\n", cmd_line));
+    script.push_str("exit $LASTEXITCODE\n");
     Ok(powershell_command(&script))
 }
 
@@ -744,13 +739,6 @@ mod tests {
         assert!(quote_cmd_arg("a&b").is_err());
     }
 
-    #[test]
-    fn quote_ps_arg() {
-        assert_eq!(ps_quote("it's").unwrap(), "'it''s'");
-        // 双引号、反斜杠在单引号字面量里都是安全的普通字符，不需要额外转义
-        assert_eq!(ps_quote(r#"a"b\c"#).unwrap(), r#"'a"b\c'"#);
-    }
-
     /// 把 build_remote_claude_command 生成的 `powershell -EncodedCommand <base64>` 解回原始脚本，方便断言内容。
     fn decode_encoded_command(cmd: &str) -> String {
         use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -770,12 +758,12 @@ mod tests {
         .unwrap();
         assert!(cmd.starts_with("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "));
         let script = decode_encoded_command(&cmd);
-        assert!(script.contains("$psi.FileName = 'cmd.exe'"));
-        assert!(script.contains(r#"cd /d "C:\Users\me\my proj""#));
+        assert!(script.contains("cmd /c --% cd /d \"C:\\Users\\me\\my proj\""));
         assert!(script.contains(r#"set "K=V""#));
-        // ProcessStartInfo.Arguments 原样交给 CreateProcess，claude 收到的 --settings 值
-        // 必须完整保留内嵌的双引号——这正是之前那个 bug（PowerShell 自身转发原生命令参数时
+        // `--%` 之后 PowerShell 不再重新加引号，claude 收到的 --settings 值必须完整
+        // 保留内嵌的双引号——这正是之前那个 bug（PowerShell 自身转发原生命令参数时
         // 把内嵌双引号弄丢，claude 报 "Invalid JSON provided to --settings"）要防住的东西。
         assert!(script.contains(r#"claude "--settings" "{\"alwaysThinkingEnabled\":true}""#));
+        assert!(script.contains("exit $LASTEXITCODE"));
     }
 }
