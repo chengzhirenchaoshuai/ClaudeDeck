@@ -823,6 +823,19 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             content: formatErrorForUser(msg.message || msg.error || 'System error'),
             timestamp: Date.now(),
           });
+        } else if (msg.subtype === 'compact_boundary') {
+          // 后台标签页同样需要刷新压缩后的 token 数，逻辑与前台一致
+          const postTokens = msg.compactMetadata?.postTokens;
+          if (typeof postTokens === 'number') {
+            store.setSessionMeta(tabId, {
+              inputTokens: postTokens,
+              outputTokens: 0,
+              contextInputTokens: postTokens,
+              contextOutputTokens: 0,
+            });
+            const boundaryMeta = store.getTab(tabId)?.sessionMeta;
+            if (boundaryMeta) _persistTokenState(tabId, boundaryMeta);
+          }
         }
         break;
     }
@@ -1213,6 +1226,20 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         } else if (msg.subtype === 'status') {
           // Session status updates (e.g. "requesting") — informational, silently tracked
           // We don't surface these as user-visible messages; they're internal CLI state
+        } else if (msg.subtype === 'compact_boundary') {
+          // 压缩完成：CLI 会用这条事件给出压缩后的真实 token 数，
+          // 不处理的话右上角的上下文占用会一直停留在压缩前的旧数值，直到下一轮真实对话才刷新
+          const postTokens = msg.compactMetadata?.postTokens;
+          if (typeof postTokens === 'number') {
+            setSessionMeta({
+              inputTokens: postTokens,
+              outputTokens: 0,
+              contextInputTokens: postTokens,
+              contextOutputTokens: 0,
+            });
+            const boundaryMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
+            if (boundaryMeta) _persistTokenState(tabId, boundaryMeta);
+          }
         } else {
           // FI-3: Log unknown subtypes so we know what we're missing
           console.warn('[TOKENICODE] Unhandled system subtype:', msg.subtype, msg);
