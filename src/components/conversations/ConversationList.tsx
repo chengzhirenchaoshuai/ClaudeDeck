@@ -129,15 +129,15 @@ export function ConversationList() {
       return new Set(data ? JSON.parse(data) : []);
     } catch { return new Set(); }
   });
-  const [showArchived, setShowArchived] = useState(false);
-
-  // View mode: 'folder' | 'recent'
-  const [viewMode, setViewMode] = useState<'folder' | 'recent'>(() => {
+  // View mode: 'folder' | 'recent' | 'archived'——“归档”和“按文件夹”一样按项目分组，
+  // 只是数据源换成已归档的会话，showArchived 直接从这里派生，不再单独维护一份状态。
+  const [viewMode, setViewMode] = useState<'folder' | 'recent' | 'archived'>(() => {
     try {
       const saved = localStorage.getItem('tokenicode_conversation_view_mode');
-      return saved === 'recent' ? 'recent' : 'folder';
+      return saved === 'recent' || saved === 'archived' ? saved : 'folder';
     } catch { return 'folder'; }
   });
+  const showArchived = viewMode === 'archived';
 
   // Highlight a session (for "Locate in Folder" flash)
   const [highlightedSessionId, setHighlightedSessionId] = useState<string | null>(null);
@@ -854,24 +854,6 @@ export function ConversationList() {
               </button>
             )}
           </div>
-
-          {/* Archive toggle */}
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className={`flex-shrink-0 p-2 rounded-lg transition-smooth
-              ${showArchived
-                ? 'bg-accent/10 text-accent'
-                : 'text-text-tertiary hover:bg-bg-secondary hover:text-text-primary'
-              }`}
-            title={t('conv.showArchived')}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1" y="2" width="14" height="3" rx="1" />
-              <path d="M2 5v7a1 1 0 001 1h10a1 1 0 001-1V5" />
-              <path d="M6 8h4" />
-            </svg>
-          </button>
         </div>
       </div>
 
@@ -910,6 +892,24 @@ export function ConversationList() {
             {t('conv.viewRecent')}
           </span>
         </button>
+        <button
+          onClick={() => setViewMode('archived')}
+          className={`flex-1 py-1 text-[11px] rounded-lg transition-smooth
+            ${viewMode === 'archived'
+              ? 'bg-accent/10 text-accent font-medium'
+              : 'text-text-tertiary hover:text-text-primary hover:bg-bg-secondary'
+            }`}
+        >
+          <span className="flex items-center justify-center gap-1">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1" y="2" width="14" height="3" rx="1" />
+              <path d="M2 5v7a1 1 0 001 1h10a1 1 0 001-1V5" />
+              <path d="M6 8h4" />
+            </svg>
+            {t('conv.viewArchived')}
+          </span>
+        </button>
       </div>
 
       {/* Loading */}
@@ -920,9 +920,9 @@ export function ConversationList() {
         </div>
       )}
 
-      {/* Session listing — folder view or recent view */}
-      {viewMode === 'folder' ? (
-        /* ---- Folder View ---- */
+      {/* Session listing — folder/archived view (grouped by project) or recent view (flat) */}
+      {viewMode !== 'recent' ? (
+        /* ---- Folder View (also used for the "归档" tab — same grouping, filtered data source) ---- */
         projectGroups.map(([project, items]) => {
           const baseName = projectLabel(project);
           const isDuplicate = projectGroups.filter(([k]) => projectLabel(k) === baseName).length > 1;

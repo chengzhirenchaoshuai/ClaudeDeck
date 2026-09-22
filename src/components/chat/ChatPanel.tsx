@@ -319,7 +319,10 @@ function ActivityIndicator({ activityStatus, sessionMeta }: {
   );
 }
 
-function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
+/** 上下文占用进度条 + 压缩按钮。现在渲染在 InputBar 工具行里、紧挨模型选择框左侧
+ *  （原先在 ChatPanel 顶部标题栏），组件定义留在这里、导出给 InputBar 用，
+ *  避免拆成单独文件时把一堆内部状态和依赖也拆散。 */
+export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   sessionMeta: SessionMeta;
   tabId: string | null;
   sessionStatus?: string;
@@ -396,7 +399,7 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   };
 
   return (
-    <div className="hidden md:flex items-center gap-2 ml-2 px-2 py-1 rounded-lg
+    <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary"
       title={t('chat.contextTooltip')
         .replace('{model}', displayProviderModelName(modelForContext))
@@ -844,11 +847,6 @@ export function ChatPanel() {
 
         {/* Spacer + right-side actions */}
         <div className="ml-auto flex items-center" />
-        <ContextMeter
-          sessionMeta={sessionMeta}
-          tabId={selectedSessionId}
-          sessionStatus={sessionStatus}
-        />
         <UsageChip />
         <UpdateButton />
         <ExportMenu sessionPath={currentSessionPath} />

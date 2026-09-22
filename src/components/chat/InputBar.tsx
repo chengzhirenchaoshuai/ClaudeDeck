@@ -27,7 +27,7 @@ import { PROVIDER_PRESETS } from '../../lib/provider-presets';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
 import { stripAnsi } from '../../lib/strip-ansi';
-import { usePlanPanelStore } from './ChatPanel';
+import { usePlanPanelStore, ContextMeter } from './ChatPanel';
 import { PlanReviewCard } from './PlanReviewCard';
 import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
@@ -216,6 +216,7 @@ export function InputBar() {
   }, [inputDraft]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionStatus = useActiveTab((t) => t.sessionStatus);
+  const sessionMetaLive = useActiveTab((t) => t.sessionMeta);
   const activityPhase = useActiveTab((t) => t.activityStatus.phase);
   const addMessage = useChatStore((s) => s.addMessage);
   const setSessionStatus = useChatStore((s) => s.setSessionStatus);
@@ -1664,6 +1665,13 @@ export function InputBar() {
 
           {/* Plan view button */}
           <PlanToggleButton />
+
+          {/* 上下文占用进度条 + 压缩按钮，紧挨模型选择框左侧 */}
+          <ContextMeter
+            sessionMeta={sessionMetaLive}
+            tabId={selectedSessionId}
+            sessionStatus={sessionStatus}
+          />
 
           {/* Model selector */}
           <ModelSelector disabled={isRunning} />

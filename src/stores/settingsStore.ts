@@ -95,6 +95,8 @@ interface SettingsState {
   settingsOpen: boolean;
   /** 用量面板是否打开（不持久化） */
   usageOpen: boolean;
+  /** 用量面板打开时默认停在哪个 Tab（不持久化） */
+  usageModalTab: 'usage' | 'activity';
   /** 用户自定义的模型价格（键为归一化的模型名）；覆盖内置的官方标价 */
   customModelPrices: Record<string, ModelPrice>;
   workingDirectory: string;
@@ -207,7 +209,10 @@ interface SettingsState {
   toggleCtrlEnterToSend: () => void;
   toggleMinimizeOnClose: () => void;
   toggleEnableMcp: () => void;
-  toggleUsage: () => void;
+  /** 打开/关闭用量面板；传入 tab 时同时切到该 Tab（仅在从关闭状态打开时生效） */
+  toggleUsage: (tab?: 'usage' | 'activity') => void;
+  /** 面板打开时手动切换 Tab */
+  setUsageModalTab: (tab: 'usage' | 'activity') => void;
   setCustomModelPrice: (model: string, price: ModelPrice | null) => void;
   toggleCtrlClickOpenExternally: () => void;
   toggleShowImageThumbnails: () => void;
@@ -245,6 +250,7 @@ export const useSettingsStore = create<SettingsState>()(
       secondaryPanelWidth: 300,
       settingsOpen: false,
       usageOpen: false,
+      usageModalTab: 'usage',
       customModelPrices: {},
       agentPanelOpen: false,
       workingDirectory: '',
@@ -409,7 +415,11 @@ export const useSettingsStore = create<SettingsState>()(
       toggleEnableMcp: () =>
         set((state) => ({ enableMcp: !state.enableMcp })),
 
-      toggleUsage: () => set((state) => ({ usageOpen: !state.usageOpen })),
+      toggleUsage: (tab) => set((state) => ({
+        usageOpen: !state.usageOpen,
+        usageModalTab: !state.usageOpen && tab ? tab : state.usageModalTab,
+      })),
+      setUsageModalTab: (tab) => set({ usageModalTab: tab }),
 
       setCustomModelPrice: (model, price) =>
         set((state) => {

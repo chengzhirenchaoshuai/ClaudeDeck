@@ -41,7 +41,7 @@ export function UsageChip() {
 
   return (
     <button
-      onClick={toggleUsage}
+      onClick={() => toggleUsage('usage')}
       className="hidden lg:inline-flex items-center gap-1.5 ml-2 px-2 py-1 rounded-lg
         bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary
         hover:text-text-primary hover:bg-bg-secondary transition-smooth"

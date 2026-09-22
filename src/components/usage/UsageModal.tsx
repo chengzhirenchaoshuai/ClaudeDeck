@@ -4,6 +4,7 @@ import { useUsageStore, activeProviderSupportsBalance } from '../../stores/usage
 import { useSessionStore } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
 import { displayProviderModelName } from '../../lib/deepseek-models';
+import { ActivityTab } from './ActivityTab';
 import {
   summarize,
   totalTokens,
@@ -149,6 +150,8 @@ function BreakdownTable({ items, title, withPricing, limit }: {
 export function UsageModal() {
   const t = useT();
   const toggleUsage = useSettingsStore((s) => s.toggleUsage);
+  const tab = useSettingsStore((s) => s.usageModalTab);
+  const setTab = useSettingsStore((s) => s.setUsageModalTab);
   const custom = useSettingsStore((s) => s.customModelPrices);
   const { stats, remote, loading, error, balance, balanceError, balanceLoading, refresh, refreshBalance, refreshRemote, refreshAllRemote } = useUsageStore();
   const remoteHosts = useSessionStore((s) => s.remoteHosts);
@@ -186,9 +189,23 @@ export function UsageModal() {
       <div className="relative w-[min(92vw,860px)] max-h-[88vh] rounded-2xl bg-bg-card border border-border-subtle
         shadow-2xl overflow-hidden animate-fade-in flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle flex-shrink-0">
-          <h2 className="text-lg font-semibold text-text-primary">{t('usage.title')}</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-text-primary">{t('usage.title')}</h2>
+            <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
+              <button onClick={() => setTab('usage')}
+                className={`px-3 py-1 text-xs font-medium transition-smooth
+                  ${tab === 'usage' ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-bg-secondary'}`}>
+                {t('usage.tabUsage')}
+              </button>
+              <button onClick={() => setTab('activity')}
+                className={`px-3 py-1 text-xs font-medium border-l border-border-subtle transition-smooth
+                  ${tab === 'activity' ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-bg-secondary'}`}>
+                {t('usage.tabActivity')}
+              </button>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            {remoteHosts.length > 0 && (
+            {tab === 'usage' && remoteHosts.length > 0 && (
               <select
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
@@ -199,20 +216,24 @@ export function UsageModal() {
                 {remoteHosts.map((h) => <option key={h.id} value={h.id}>{h.id}</option>)}
               </select>
             )}
-            <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
-              {PERIODS.map((p) => (
-                <button key={p} onClick={() => setPeriod(p)}
-                  className={`px-3 py-1 text-xs font-medium border-r border-border-subtle last:border-r-0 transition-smooth
-                    ${period === p ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-bg-secondary'}`}>
-                  {t(`usage.period.${p}`)}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => { void refresh(true); void refreshBalance(); }} disabled={loading}
-              className="px-2.5 py-1 rounded-lg border border-border-subtle text-xs text-text-muted hover:bg-bg-secondary disabled:opacity-50">
-              {loading ? t('usage.loading') : t('usage.refresh')}
-            </button>
-            <button onClick={toggleUsage} className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary">
+            {tab === 'usage' && (
+              <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
+                {PERIODS.map((p) => (
+                  <button key={p} onClick={() => setPeriod(p)}
+                    className={`px-3 py-1 text-xs font-medium border-r border-border-subtle last:border-r-0 transition-smooth
+                      ${period === p ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-bg-secondary'}`}>
+                    {t(`usage.period.${p}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {tab === 'usage' && (
+              <button onClick={() => { void refresh(true); void refreshBalance(); }} disabled={loading}
+                className="px-2.5 py-1 rounded-lg border border-border-subtle text-xs text-text-muted hover:bg-bg-secondary disabled:opacity-50">
+                {loading ? t('usage.loading') : t('usage.refresh')}
+              </button>
+            )}
+            <button onClick={() => toggleUsage()} className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M4 4l8 8M12 4l-8 8" />
               </svg>
@@ -220,7 +241,11 @@ export function UsageModal() {
           </div>
         </div>
 
-        <div className="overflow-y-auto px-6 py-5 space-y-6">
+        <div className="overflow-y-auto px-6 py-5">
+        {tab === 'activity' ? (
+          <ActivityTab />
+        ) : (
+        <div className="space-y-6">
           {remoteHosts.length > 0 && (
             <div className="px-3 py-2 rounded-lg border border-border-subtle bg-bg-secondary/40 space-y-1">
               <div className="text-[13px] font-medium text-text-primary">{t('usage.remote')}</div>
@@ -322,6 +347,8 @@ export function UsageModal() {
             </>
           )}
           {!summary && !error && <div className="text-xs text-text-tertiary">{t('usage.loading')}</div>}
+        </div>
+        )}
         </div>
       </div>
     </div>

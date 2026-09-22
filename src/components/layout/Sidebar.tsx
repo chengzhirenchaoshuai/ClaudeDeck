@@ -7,13 +7,11 @@ import { ConversationList } from '../conversations/ConversationList';
 import { useT } from '../../lib/i18n';
 import { useAgentStore } from '../../stores/agentStore';
 import { IS_ALPHA } from '../../lib/edition';
-import { ProfileStatsModal } from '../profile/ProfileStatsModal';
 import { EnvSwitcher, RemotePathInput } from './EnvSwitcher';
 import { LOCAL_ENV } from '../../lib/remote';
 import { refreshAll } from '../../lib/session-sync';
 
 export function Sidebar() {
-  const [profileOpen, setProfileOpen] = useState(false);
   const [remotePathOpen, setRemotePathOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const activeEnv = useSettingsStore((s) => s.activeEnv);
@@ -77,7 +75,7 @@ export function Sidebar() {
           {IS_ALPHA ? (
             <>
               <span className="text-[14px] font-bold tracking-tight text-text-primary">
-                TC<span style={{color: 'var(--color-accent)'}}>/</span>Alpha
+                CD<span style={{color: 'var(--color-accent)'}}>/</span>Alpha
               </span>
               <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase
                 bg-accent/15 text-accent leading-none">
@@ -85,17 +83,17 @@ export function Sidebar() {
               </span>
             </>
           ) : (
-            /* Text logo — TOKEN/CODE, slash uses theme accent */
+            /* Text logo — Claude/Deck, slash uses theme accent */
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setProfileOpen(true)}
+                onClick={() => toggleUsage('activity')}
                 className="rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
-                title="个人资料"
+                title="活动记录"
               >
                 <img src="/app-icon.png" alt="" className="w-8 h-8 rounded-lg shadow-sm" />
               </button>
               <span className="text-[18px] font-bold tracking-wide text-text-primary">
-                TOKEN<span className="text-accent">/</span>CODE
+                Claude<span className="text-accent">/</span>Deck
               </span>
               <span className="text-[16px] text-success">♧</span>
             </div>
@@ -178,7 +176,7 @@ export function Sidebar() {
           </svg>
           {isRefreshing ? t('sidebar.refreshing') : t('sidebar.refresh')}
         </button>
-        <button onClick={toggleUsage}
+        <button onClick={() => toggleUsage('usage')}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
             text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary
             transition-smooth">
@@ -206,7 +204,6 @@ export function Sidebar() {
           {t('settings.title')}
         </button>
       </div>
-      <ProfileStatsModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }
