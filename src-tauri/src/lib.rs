@@ -2713,7 +2713,7 @@ fn start_sessions_watcher(app: AppHandle) {
 #[tauri::command]
 async fn delete_session(_session_id: String, session_path: String) -> Result<(), String> {
     if session_path.starts_with(commands::remote::REMOTE_SCHEME) {
-        return Err("远程会话暂不支持在本应用中删除".to_string());
+        return commands::remote::delete_remote_session(&session_path).await;
     }
     // 仅允许删除 CLI projects 目录内的 jsonl（P0-1 fix）
     if !session_path.is_empty() {

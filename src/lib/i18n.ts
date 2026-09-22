@@ -35,6 +35,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'chat.latest': '最新',
     'chat.welcome': `欢迎使用 ${APP_NAME}`,
     'chat.welcomeWithProject': '开始与当前模型协作，CLI 会话在后台运行。',
+    'chat.loadingSession': '正在加载会话内容…',
     'chat.welcomeNoProject': '选择一个项目文件夹以开始。',
 
     // InputBar
@@ -88,6 +89,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'conv.hAgo': '小时前',
     'conv.dAgo': '天前',
     'conv.loadFailed': '加载任务失败',
+    'conv.deleteFailed': '删除失败',
     'conv.delete': '删除任务',
     'conv.rename': '重命名',
     'conv.revealInFinder': '在 {fileManager} 中显示',
@@ -887,6 +889,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'chat.latest': 'Latest',
     'chat.welcome': `Welcome to ${APP_NAME}`,
     'chat.welcomeWithProject': 'Start working with the selected model. The CLI session runs in the background.',
+    'chat.loadingSession': 'Loading conversation…',
     'chat.welcomeNoProject': 'Select a project folder to get started.',
 
     // InputBar
@@ -940,6 +943,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'conv.hAgo': 'h ago',
     'conv.dAgo': 'd ago',
     'conv.loadFailed': 'Failed to load task',
+    'conv.deleteFailed': 'Failed to delete',
     'conv.delete': 'Delete',
     'conv.rename': 'Rename',
     'conv.revealInFinder': 'Reveal in {fileManagerEn}',

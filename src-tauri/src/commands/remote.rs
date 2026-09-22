@@ -90,6 +90,8 @@ pub fn parse_remote_uri(uri: &str) -> Option<(String, String)> {
 pub fn ssh_command(host: &RemoteHost) -> Command {
     let mut cmd = Command::new("ssh");
     cmd.arg("-T")
+        .arg("-C") // 开启 ssh 压缩：会话列表、用量统计等脚本输出的都是高度可压缩的文本/JSON，
+                   // 网速较慢时能明显缩短等待时间，对已经是二进制的部分（如登录握手）影响可忽略
         .args(["-o", "BatchMode=yes"])
         .args(["-o", "ConnectTimeout=15"])
         .args(["-o", "ServerAliveInterval=30"])
@@ -476,10 +478,17 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
         return Err("远程路径含有不支持的字符".to_string());
     }
     let host = find_host(&host_id)?;
-    // 用 PowerShell 读取文件字节并以 base64 输出（纯 ASCII），避免控制台编码影响中文内容
+    // 会话文件可能有几 MB，网速不好时传输是主要耗时：先在远端用 gzip 压缩再 base64 输出，
+    // JSONL 高度重复、压缩比通常有 5-10 倍，比直接传原始字节快得多；ssh_command 里的 -C
+    // 只能再小幅压缩已经压缩过的数据，两者不冲突
     let win_path = path.replace('/', "\\").replace('\'', "''");
     let script = format!(
-        "$ErrorActionPreference = 'Stop'; [Convert]::ToBase64String([System.IO.File]::ReadAllBytes('{}'))",
+        "$ErrorActionPreference = 'Stop'; \
+         $bytes = [System.IO.File]::ReadAllBytes('{}'); \
+         $ms = New-Object System.IO.MemoryStream; \
+         $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress); \
+         $gz.Write($bytes, 0, $bytes.Length); $gz.Close(); \
+         [Convert]::ToBase64String($ms.ToArray())",
         win_path
     );
     let (stdout, stderr, code) =
@@ -488,13 +497,51 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
         return Err(format!("读取远端会话失败: {}", stderr.trim()));
     }
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let bytes = STANDARD
+    let compressed = STANDARD
         .decode(stdout.trim().as_bytes())
         .map_err(|e| format!("解码远端会话失败: {}", e))?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut flate2::read::GzDecoder::new(std::io::Cursor::new(compressed)),
+        &mut bytes,
+    )
+    .map_err(|e| format!("解压远端会话失败: {}", e))?;
     Ok(String::from_utf8_lossy(&bytes)
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .collect())
+}
+
+/// 删除远端会话：只允许删除 CLI projects 目录内的 .jsonl 文件，和本机 delete_session 的白名单逻辑一致。
+pub async fn delete_remote_session(uri: &str) -> Result<(), String> {
+    let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
+    if !path.to_ascii_lowercase().ends_with(".jsonl") {
+        return Err("只能删除 .jsonl 会话文件".to_string());
+    }
+    if path.chars().any(|c| matches!(c, '"' | '%' | '\n' | '\r' | '\0')) {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    let host = find_host(&host_id)?;
+    let win_path = path.replace('/', "\\").replace('\'', "''");
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; \
+         $root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }}; \
+         $proj = (Resolve-Path -LiteralPath (Join-Path $root 'projects')).Path; \
+         $target = (Resolve-Path -LiteralPath '{}').Path; \
+         if (-not $target.StartsWith($proj, [System.StringComparison]::OrdinalIgnoreCase)) {{ throw '拒绝删除 projects 目录之外的文件' }}; \
+         Remove-Item -LiteralPath $target -Force",
+        win_path
+    );
+    let (_, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(30)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("删除远端会话失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]

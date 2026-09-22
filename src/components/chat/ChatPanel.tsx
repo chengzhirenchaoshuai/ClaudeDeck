@@ -872,6 +872,8 @@ export function ChatPanel() {
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-5 py-6 selectable chat-scroll-container">
         {!workingDirectory && messages.length === 0 && !isStreaming ? (
           <WelcomeScreen />
+        ) : messages.length === 0 && !isStreaming && sessionStatus === 'running' ? (
+          <LoadingSessionState />
         ) : messages.length === 0 && !isStreaming ? (
           <EmptyReadyState />
         ) : (
@@ -1268,6 +1270,17 @@ function WelcomeScreen() {
 }
 
 /** Empty state shown when project is selected but no messages yet */
+/** 从磁盘（含远程 ssh）加载会话内容期间显示，避免看起来和“空的新会话”一样 */
+function LoadingSessionState() {
+  const t = useT();
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center">
+      <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin mb-4" />
+      <p className="text-sm text-text-muted">{t('chat.loadingSession')}</p>
+    </div>
+  );
+}
+
 function EmptyReadyState() {
   const t = useT();
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);

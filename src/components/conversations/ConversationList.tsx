@@ -13,6 +13,7 @@ import { SessionGroup } from './SessionGroup';
 import { SessionItem } from './SessionItem';
 import { SessionContextMenu, ProjectContextMenu } from './SessionContextMenu';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { showToast } from '../shared/Toast';
 
 // --- Path utilities ---
 
@@ -460,8 +461,9 @@ export function ConversationList() {
       fetchSessions();
     } catch (err) {
       console.error('Failed to delete session:', err);
+      showToast(`${t('conv.deleteFailed')}: ${err}`, 'error');
     }
-  }, [selectedId, setSelected, fetchSessions]);
+  }, [selectedId, setSelected, fetchSessions, t]);
 
   // Single delete → confirm dialog
   const handleDeleteSingle = useCallback((session: SessionListItem) => {
