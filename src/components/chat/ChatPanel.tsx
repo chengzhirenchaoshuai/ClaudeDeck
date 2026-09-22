@@ -30,6 +30,7 @@ import { SetupWizard } from '../setup/SetupWizard';
 import { AiAvatar } from '../shared/AiAvatar';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { parseTurns, type Turn } from '../../lib/turns';
+import { ConfirmDialog } from '../shared/ConfirmDialog';
 
 /** Shared plan panel toggle — used by ChatPanel (panel) and InputBar (button) */
 export const usePlanPanelStore = create<{
@@ -341,6 +342,7 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   const thresholdPercent = Math.min(100, Math.round((compactThreshold / contextWindow) * 100));
   const isBusy = sessionStatus === 'running';
   const hasLiveProcess = Boolean(sessionMeta.stdinId);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // 没有运行中的进程时（历史会话），只要是有内容的真实会话，也可以压缩：
   // 点击后由输入框把 /compact 作为第一条消息发给 CLI，续接会话并压缩
   const canResumeAndCompact = Boolean(
@@ -352,7 +354,13 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
     ? t('chat.compactNow')
     : isBusy || isCompacting ? t('chat.compactBusy') : t('chat.compactEmpty');
 
+  const handleCompactClick = () => {
+    if (!canCompact) return;
+    setConfirmOpen(true);
+  };
+
   const handleCompact = async () => {
+    setConfirmOpen(false);
     if (!canCompact || !tabId) return;
     if (!hasLiveProcess) {
       window.dispatchEvent(new CustomEvent('tokenicode:compact-now'));
@@ -408,7 +416,7 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
       </span>
       <span>{t('chat.contextFree').replace('{n}', formatTokens(available))}</span>
       <button
-        onClick={handleCompact}
+        onClick={handleCompactClick}
         disabled={!canCompact}
         className="px-2 py-0.5 rounded border border-border-subtle bg-bg-card
           text-text-primary font-medium cursor-pointer transition-smooth
@@ -419,6 +427,14 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
       >
         {t('chat.compact')}
       </button>
+      <ConfirmDialog
+        open={confirmOpen}
+        title={t('chat.compactConfirmTitle')}
+        message={t('chat.compactConfirmMessage')}
+        confirmLabel={t('chat.compact')}
+        onConfirm={handleCompact}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

@@ -826,6 +826,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         } else if (msg.subtype === 'compact_boundary') {
           // 后台标签页同样需要刷新压缩后的 token 数，逻辑与前台一致
           const postTokens = msg.compactMetadata?.postTokens;
+          const preTokens = msg.compactMetadata?.preTokens;
           if (typeof postTokens === 'number') {
             store.setSessionMeta(tabId, {
               inputTokens: postTokens,
@@ -835,6 +836,20 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             });
             const boundaryMeta = store.getTab(tabId)?.sessionMeta;
             if (boundaryMeta) _persistTokenState(tabId, boundaryMeta);
+
+            const boundaryCmdMsgId = boundaryMeta?.pendingCommandMsgId;
+            if (boundaryCmdMsgId) {
+              const boundaryCmdMsg = (store.getTab(tabId)?.messages ?? [])
+                .find((m) => m.id === boundaryCmdMsgId);
+              if (boundaryCmdMsg) {
+                store.updateMessage(tabId, boundaryCmdMsgId, {
+                  commandData: {
+                    ...boundaryCmdMsg.commandData,
+                    compactSummary: { preTokens, postTokens },
+                  },
+                });
+              }
+            }
           }
         }
         break;
@@ -1230,6 +1245,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           // 压缩完成：CLI 会用这条事件给出压缩后的真实 token 数，
           // 不处理的话右上角的上下文占用会一直停留在压缩前的旧数值，直到下一轮真实对话才刷新
           const postTokens = msg.compactMetadata?.postTokens;
+          const preTokens = msg.compactMetadata?.preTokens;
           if (typeof postTokens === 'number') {
             setSessionMeta({
               inputTokens: postTokens,
@@ -1239,6 +1255,21 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             });
             const boundaryMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
             if (boundaryMeta) _persistTokenState(tabId, boundaryMeta);
+
+            // 把压缩前后的 token 数写进处理卡片，让用户知道这次压缩大概做了什么
+            const boundaryCmdMsgId = boundaryMeta?.pendingCommandMsgId;
+            if (boundaryCmdMsgId) {
+              const boundaryCmdMsg = (useChatStore.getState().getTab(tabId)?.messages ?? [])
+                .find((m) => m.id === boundaryCmdMsgId);
+              if (boundaryCmdMsg) {
+                useChatStore.getState().updateMessage(tabId, boundaryCmdMsgId, {
+                  commandData: {
+                    ...boundaryCmdMsg.commandData,
+                    compactSummary: { preTokens, postTokens },
+                  },
+                });
+              }
+            }
           }
         } else {
           // FI-3: Log unknown subtypes so we know what we're missing

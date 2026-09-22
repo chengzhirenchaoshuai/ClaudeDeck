@@ -205,27 +205,13 @@ export function GeneralTab() {
           </p>
         </div>
 
-        {/* 窗口行为：关闭时最小化到任务栏 */}
+        {/* 窗口行为：开机启动、关闭时最小化到任务栏 */}
         <div>
           <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.window')}</h3>
           <button
-            onClick={toggleMinimizeOnClose}
-            className="inline-flex items-center gap-2 text-[12px] text-text-secondary
-              hover:text-text-primary transition-smooth"
-          >
-            <span className={`relative w-8 h-4 rounded-full transition-smooth border
-              ${minimizeOnClose ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
-            >
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
-                ${minimizeOnClose ? 'right-0.5' : 'left-0.5'}`}
-              />
-            </span>
-            {t('settings.minimizeOnClose')}
-          </button>
-          <button
             onClick={toggleAutostart}
             disabled={autostart === null}
-            className="mt-2 inline-flex items-center gap-2 text-[12px] text-text-secondary
+            className="w-full inline-flex items-center gap-2 text-[12px] text-text-secondary
               hover:text-text-primary transition-smooth disabled:opacity-50"
           >
             <span className={`relative w-8 h-4 rounded-full transition-smooth border
@@ -241,6 +227,20 @@ export function GeneralTab() {
             {t('settings.autostartHint')}
           </p>
           {autostartError && <p className="mt-1 text-[11px] text-red-500">{autostartError}</p>}
+          <button
+            onClick={toggleMinimizeOnClose}
+            className="mt-3 w-full inline-flex items-center gap-2 text-[12px] text-text-secondary
+              hover:text-text-primary transition-smooth"
+          >
+            <span className={`relative w-8 h-4 rounded-full transition-smooth border
+              ${minimizeOnClose ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
+            >
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+                ${minimizeOnClose ? 'right-0.5' : 'left-0.5'}`}
+              />
+            </span>
+            {t('settings.minimizeOnClose')}
+          </button>
         </div>
 
         {/* Ctrl+Click to open externally */}

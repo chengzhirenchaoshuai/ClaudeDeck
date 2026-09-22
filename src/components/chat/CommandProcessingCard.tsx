@@ -29,6 +29,7 @@ export function CommandProcessingCard({ message }: Props) {
   const isCompleted = message.commandCompleted === true;
   const startTime = message.commandStartTime || message.timestamp;
   const costSummary = data.costSummary as { cost: string; duration: string; turns: string; input: string; output: string } | undefined;
+  const compactSummary = data.compactSummary as { preTokens?: number; postTokens?: number } | undefined;
 
   // Live elapsed timer (only ticks while processing)
   const [now, setNow] = useState(Date.now());
@@ -94,6 +95,20 @@ export function CommandProcessingCard({ message }: Props) {
         {!isCompleted && (
           <div className="h-[2px] bg-accent/10 overflow-hidden">
             <div className="h-full w-1/4 bg-accent/40 rounded-full animate-progress" />
+          </div>
+        )}
+
+        {/* Compact result (injected from compact_boundary event, may arrive before completion) */}
+        {compactSummary && typeof compactSummary.postTokens === 'number' && (
+          <div className="px-4 py-2 border-t border-border-subtle/50 text-[11px] text-text-tertiary">
+            {typeof compactSummary.preTokens === 'number'
+              ? t('cmd.compactSummary')
+                  .replace('{pre}', compactSummary.preTokens.toLocaleString())
+                  .replace('{post}', compactSummary.postTokens.toLocaleString())
+                  .replace('{percent}', compactSummary.preTokens > 0
+                    ? (((compactSummary.preTokens - compactSummary.postTokens) / compactSummary.preTokens) * 100).toFixed(1)
+                    : '0')
+              : t('cmd.compactSummaryShort').replace('{post}', compactSummary.postTokens.toLocaleString())}
           </div>
         )}
 

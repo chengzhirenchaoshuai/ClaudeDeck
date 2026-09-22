@@ -681,6 +681,8 @@ export function InputBar() {
     // like handlePlanApprove (setInput + rAF) always see the latest value.
     const rawInput = getActiveTabState().inputDraft || textareaRef.current?.getText() || '';
     let text = rawInput.trim();
+    // /compact 在没有运行中的进程时（历史会话），走处理卡片而不是普通用户气泡，见下方赋值处
+    let compactWithoutProcess = false;
 
     // Plan approval shortcut: empty Enter triggers approve & execute flow
     const tabState = getActiveTabState();
@@ -775,7 +777,7 @@ export function InputBar() {
         );
         // /compact 在没有运行中的进程时（如刚打开的历史会话），不走“需要活动会话”的拦截，
         // 而是作为这个会话的第一条消息发给 CLI：会续接该会话并执行压缩
-        const compactWithoutProcess = cmdPart === '/compact'
+        compactWithoutProcess = cmdPart === '/compact'
           && !getActiveTabState().sessionMeta.stdinId
           && !!getActiveTabState().sessionMeta.sessionId;
         if (match && !compactWithoutProcess) {
@@ -828,6 +830,22 @@ export function InputBar() {
     // Silent restart: skip user message bubble (Code mode ExitPlanMode auto-recovery)
     if (silentRestartRef.current) {
       silentRestartRef.current = false;
+    } else if (compactWithoutProcess) {
+      // 历史会话续接压缩：显示处理卡片而不是普通的“/compact”用户气泡，
+      // 完成状态和压缩摘要由 useStreamProcessor 里的 result / compact_boundary 处理写入
+      const compactCardId = generateMessageId();
+      addMessage(tabId, {
+        id: compactCardId,
+        role: 'system',
+        type: 'text',
+        content: '',
+        commandType: 'processing',
+        commandData: { command: '/compact' },
+        commandStartTime: Date.now(),
+        commandCompleted: false,
+        timestamp: Date.now(),
+      });
+      setSessionMeta(tabId, { pendingCommandMsgId: compactCardId });
     } else {
       // Add user message (show original text, not with prefix)
       addMessage(tabId, {

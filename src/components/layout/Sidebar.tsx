@@ -101,25 +101,14 @@ export function Sidebar() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-0.5">
-          <button onClick={handleRefresh} disabled={isRefreshing}
-            className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
-              transition-smooth disabled:opacity-50" title={t('sidebar.refreshTitle')}>
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-              className={isRefreshing ? 'animate-spin' : ''}>
-              <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
-            </svg>
-          </button>
-          <button onClick={toggleSidebar}
-            className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
-              transition-smooth" title={t('sidebar.hide')}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5">
-              <path d="M10 4L6 8L10 12" />
-            </svg>
-          </button>
-        </div>
+        <button onClick={toggleSidebar}
+          className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
+            transition-smooth" title={t('sidebar.hide')}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5">
+            <path d="M10 4L6 8L10 12" />
+          </svg>
+        </button>
       </div>
 
       <EnvSwitcher />
@@ -178,6 +167,17 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="pt-3 mt-3 border-t border-border-subtle px-3">
+        <button onClick={handleRefresh} disabled={isRefreshing} title={t('sidebar.refreshTitle')}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
+            text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary
+            transition-smooth disabled:opacity-50">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            className={isRefreshing ? 'animate-spin' : ''}>
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+          </svg>
+          {isRefreshing ? t('sidebar.refreshing') : t('sidebar.refresh')}
+        </button>
         <button onClick={toggleUsage}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
             text-sm text-text-muted hover:bg-bg-secondary hover:text-text-primary
