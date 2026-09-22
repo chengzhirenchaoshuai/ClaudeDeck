@@ -241,14 +241,14 @@ export const SessionItem = memo(function SessionItem({
             </svg>
           </span>
         )}
-        {isUnread && (
-          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent"
-            title={t('conv.unread')} />
-        )}
-        {isRunning && (
-          <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full
-            border-[1.5px] border-accent/30 border-t-accent animate-spin" />
-        )}
+        <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent
+          ${isUnread ? '' : 'invisible'}`}
+          title={t('conv.unread')} />
+        {/* 固定占位：始终占用同一块空间，只切换可见性，避免发消息时
+            进行中图标忽隐忽现把左边的标题挤得左右乱飘 */}
+        <span className={`flex-shrink-0 w-2.5 h-2.5 rounded-full
+          border-[1.5px] border-accent/30 border-t-accent animate-spin
+          ${isRunning ? '' : 'invisible'}`} />
       </div>
       {contentSnippet && (
         <div className="flex gap-1 mt-0.5 text-[10px] text-text-muted leading-relaxed">
