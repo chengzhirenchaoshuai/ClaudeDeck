@@ -241,6 +241,9 @@ export function GeneralTab() {
             </span>
             {t('settings.minimizeOnClose')}
           </button>
+          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
+            {t('settings.minimizeOnCloseHint')}
+          </p>
         </div>
 
         {/* Ctrl+Click to open externally */}
