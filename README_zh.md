@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="public/app-icon.png" alt="TOKENICODE Logo" width="120" />
+<img src="public/app-icon.png" alt="ClaudeDeck Logo" width="120" />
 
-# TOKENICODE
+# ClaudeDeck
+
+> 个人自用分支（原名 TOKENICODE DeepSeek Alpha，衍生自下方的 TOKENICODE），不再跟随上游更新。以下内容保留自上游原始 README，仅作参考。
 
 ### Claude Code 精美桌面客户端
 

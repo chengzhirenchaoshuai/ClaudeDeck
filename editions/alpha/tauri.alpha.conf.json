@@ -1,10 +1,10 @@
 {
-  "productName": "TOKENICODE DeepSeek Alpha",
-  "identifier": "com.tinyzhuang.tcalpha",
+  "productName": "ClaudeDeck Alpha",
+  "identifier": "com.chengzhiren66.claudedeck.alpha",
   "app": {
     "windows": [
       {
-        "title": "TOKENICODE DeepSeek Alpha",
+        "title": "ClaudeDeck Alpha",
         "width": 1280,
         "height": 800,
         "minWidth": 900,

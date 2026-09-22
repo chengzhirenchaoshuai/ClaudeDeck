@@ -2,9 +2,9 @@
 //!
 //! When launched with `--permission-prompt-tool stdio`, the CLI sends structured
 //! `control_request` messages on stdout instead of interactive permission prompts
-//! on stderr. TOKENICODE responds via stdin with `control_response` messages.
+//! on stderr. ClaudeDeck responds via stdin with `control_response` messages.
 //!
-//! Note: Permission responses (TOKENICODE → CLI) are built as raw `serde_json::json!`
+//! Note: Permission responses (ClaudeDeck → CLI) are built as raw `serde_json::json!`
 //! in lib.rs for precise field control. The typed structs below are kept only for
 //! unit tests that validate protocol wire format.
 //!
@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// ─── CLI → TOKENICODE (stdout) ──────────────────────────────────────────────
+// ─── CLI → ClaudeDeck (stdout) ──────────────────────────────────────────────
 
 /// Top-level discriminator for stdout NDJSON lines (used in unit tests for protocol validation).
 /// Production code uses Value-based parsing for robustness against field name variations.
@@ -66,7 +66,7 @@ pub enum ControlRequestPayload {
     Unknown,
 }
 
-// ─── TOKENICODE → CLI: SDK control requests (stdin) ─────────────────────────
+// ─── ClaudeDeck → CLI: SDK control requests (stdin) ─────────────────────────
 
 /// Control request envelope for runtime commands sent to CLI stdin.
 #[derive(Debug, Serialize)]
@@ -76,7 +76,7 @@ pub struct ControlRequest {
     pub request: SdkControlRequestPayload,
 }
 
-/// SDK control request subtypes that TOKENICODE can send to CLI.
+/// SDK control request subtypes that ClaudeDeck can send to CLI.
 #[derive(Debug, Serialize)]
 #[serde(tag = "subtype")]
 pub enum SdkControlRequestPayload {

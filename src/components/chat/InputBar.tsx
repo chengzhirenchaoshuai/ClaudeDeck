@@ -372,7 +372,7 @@ export function InputBar() {
     return () => window.removeEventListener('tokenicode:rewind', handler);
   }, [canRewind, t]);
 
-  // Double-Esc rewind shortcut disabled (#36 / #71) — rewind feature is hidden in TOKENICODE
+  // Double-Esc rewind shortcut disabled (#36 / #71) — rewind feature is hidden in ClaudeDeck
 
   // Drag state (file drop)
   const [isDragging, setIsDragging] = useState(false);
@@ -618,7 +618,7 @@ export function InputBar() {
 
 
       // --- All CLI commands: pass through to active session via stdin ---
-      // TOKENICODE is a GUI wrapper — all slash commands are handled by Claude Code CLI.
+      // ClaudeDeck is a GUI wrapper — all slash commands are handled by Claude Code CLI.
       default: {
         const stdinId = getActiveTabState().sessionMeta.stdinId;
         if (stdinId && tabId) {
@@ -803,7 +803,7 @@ export function InputBar() {
           text,
         );
       } catch (error) {
-        console.error('[TOKENICODE:skills] failed to read selected skill:', error);
+        console.error('[ClaudeDeck:skills] failed to read selected skill:', error);
         addMessage(tabId, {
           id: generateMessageId(),
           role: 'system',
@@ -947,7 +947,7 @@ export function InputBar() {
         const currentFp = envFingerprint();
         const sessionFp = getActiveTabState().sessionMeta.envFingerprint;
         if (currentFp !== sessionFp) {
-          console.warn('[TOKENICODE] API provider config changed, killing stale session');
+          console.warn('[ClaudeDeck] API provider config changed, killing stale session');
           bridge.killSession(stdinId).catch(() => {});
           if ((window as any).__claudeUnlisteners?.[stdinId]) {
             (window as any).__claudeUnlisteners[stdinId]();
@@ -962,7 +962,7 @@ export function InputBar() {
           const currentMode = useSettingsStore.getState().sessionMode;
           const spawnedMode = getActiveTabState().sessionMeta.snapshotMode;
           if (spawnedMode && currentMode !== spawnedMode) {
-            console.warn(`[TOKENICODE] Permission mode changed (${spawnedMode} -> ${currentMode}), killing stale session`);
+            console.warn(`[ClaudeDeck] Permission mode changed (${spawnedMode} -> ${currentMode}), killing stale session`);
             bridge.killSession(stdinId).catch(() => {});
             if ((window as any).__claudeUnlisteners?.[stdinId]) {
               (window as any).__claudeUnlisteners[stdinId]();
@@ -974,7 +974,7 @@ export function InputBar() {
           const currentContextMode = useSettingsStore.getState().contextWindowMode;
           const spawnedContextMode = getActiveTabState().sessionMeta.snapshotContextWindowMode ?? 'default';
           if (currentContextMode !== spawnedContextMode) {
-            console.warn(`[TOKENICODE] Context window mode changed (${spawnedContextMode} -> ${currentContextMode}), killing stale session`);
+            console.warn(`[ClaudeDeck] Context window mode changed (${spawnedContextMode} -> ${currentContextMode}), killing stale session`);
             bridge.killSession(stdinId).catch(() => {});
             if ((window as any).__claudeUnlisteners?.[stdinId]) {
               (window as any).__claudeUnlisteners[stdinId]();
@@ -990,7 +990,7 @@ export function InputBar() {
           if (spawnedModel && currentModel !== spawnedModel) {
             const oldShort = MODEL_OPTIONS.find((m) => m.id === spawnedModel)?.short ?? displayProviderModelName(spawnedModel);
             const newShort = MODEL_OPTIONS.find((m) => m.id === currentModel)?.short ?? displayProviderModelName(currentModel);
-            console.warn(`[TOKENICODE] Model changed (${oldShort} → ${newShort}), killing stale session`);
+            console.warn(`[ClaudeDeck] Model changed (${oldShort} → ${newShort}), killing stale session`);
             bridge.killSession(stdinId).catch(() => {});
             if ((window as any).__claudeUnlisteners?.[stdinId]) {
               (window as any).__claudeUnlisteners[stdinId]();
@@ -1024,7 +1024,7 @@ export function InputBar() {
           } catch (stdinErr) {
             // stdin write failed (broken pipe — process already exited).
             // Clean up dead listeners (P0-5 fix) and fall through to spawn a new process.
-            console.warn('[TOKENICODE] sendStdin failed, spawning new process:', stdinErr);
+            console.warn('[ClaudeDeck] sendStdin failed, spawning new process:', stdinErr);
             if ((window as any).__claudeUnlisteners?.[stdinId]) {
               (window as any).__claudeUnlisteners[stdinId]();
               delete (window as any).__claudeUnlisteners[stdinId];
@@ -1190,7 +1190,7 @@ export function InputBar() {
         const liveProviderId = useProviderStore.getState().activeProviderId || null;
         const liveResolvedModel = resolveModelForProvider(selectedModel);
         const liveContextWindow = getContextWindowForModel(liveResolvedModel, liveContextWindowMode);
-        console.log('[TOKENICODE:session] starting session', { cwd, stdinId: preGeneratedId, mode: liveSessionMode, provider: liveProviderId });
+        console.log('[ClaudeDeck:session] starting session', { cwd, stdinId: preGeneratedId, mode: liveSessionMode, provider: liveProviderId });
         const session = await bridge.startSession({
           prompt: text,
           cwd,
@@ -1208,7 +1208,7 @@ export function InputBar() {
           permission_mode: mapSessionModeToPermissionMode(liveSessionMode),
           enable_mcp: useSettingsStore.getState().enableMcp,
         });
-        console.log('[TOKENICODE:session] started successfully', { sessionId: session.session_id, pid: session.pid, cli: session.cli_path });
+        console.log('[ClaudeDeck:session] started successfully', { sessionId: session.session_id, pid: session.pid, cli: session.cli_path });
 
         // Store both: session_id for tracking, stdinId (preGeneratedId) for stdin communication
         const rewoundFromSessionId = getActiveTabState().sessionMeta.rewoundFromSessionId;
@@ -1239,7 +1239,7 @@ export function InputBar() {
           }
           useSessionStore.getState().promoteDraft(tabId, session.session_id);
           bridge.hideSession(rewoundFromSessionId).catch((error) => {
-            console.warn('[TOKENICODE:rewind] failed to hide superseded session:', error);
+            console.warn('[ClaudeDeck:rewind] failed to hide superseded session:', error);
           });
           tabId = session.session_id;
         }
@@ -1297,7 +1297,7 @@ export function InputBar() {
 
     // Strip ANSI escape codes so regex matching works on raw text
     const clean = stripAnsi(line).trim();
-    console.log('[TOKENICODE:stderr]', clean);
+    console.log('[ClaudeDeck:stderr]', clean);
 
     // Track last non-trivial stderr line for error reporting on unexpected exit
     if (clean && !/^\s*$/.test(clean)) {
@@ -1362,7 +1362,7 @@ export function InputBar() {
     // Drain any events that were queued while handler was unavailable
     const queue: any[] = (window as any).__claudeStreamQueue;
     if (queue && queue.length > 0) {
-      console.warn(`[TOKENICODE] draining ${queue.length} queued stream events on handler mount`);
+      console.warn(`[ClaudeDeck] draining ${queue.length} queued stream events on handler mount`);
       const pending = queue.splice(0);
       for (const msg of pending) handleStreamMessage(msg);
     }

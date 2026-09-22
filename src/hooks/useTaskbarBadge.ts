@@ -81,7 +81,7 @@ async function updateTray(count: number): Promise<void> {
   if (!tray) return;
   const icon = await renderTrayIcon(count);
   if (icon) await tray.setIcon(icon);
-  await tray.setTooltip(count > 0 ? `TOKENICODE · ${count} 个未读会话` : 'TOKENICODE');
+  await tray.setTooltip(count > 0 ? `ClaudeDeck · ${count} 个未读会话` : 'ClaudeDeck');
 }
 
 /** 未读会话总数：只统计仍在会话列表里的未读会话（已删除的会话不再计入） */
@@ -119,12 +119,12 @@ export function useTaskbarBadge(): void {
           if (icon) await win.setOverlayIcon(icon);
         }
       } catch (err) {
-        console.warn('[TOKENICODE] failed to update taskbar badge:', err);
+        console.warn('[ClaudeDeck] failed to update taskbar badge:', err);
       }
       try {
         await updateTray(count);
       } catch (err) {
-        console.warn('[TOKENICODE] failed to update tray badge:', err);
+        console.warn('[ClaudeDeck] failed to update tray badge:', err);
       }
     };
 

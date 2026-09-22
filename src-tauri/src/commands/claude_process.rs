@@ -87,7 +87,7 @@ impl ProcessManager {
             let mut managed = proc.lock().await;
             if let Err(e) = managed.child.kill().await {
                 eprintln!(
-                    "[TOKENICODE] Failed to kill process for session {}: {}",
+                    "[ClaudeDeck] Failed to kill process for session {}: {}",
                     id, e
                 );
             }
@@ -105,7 +105,7 @@ impl ProcessManager {
             let mut managed = proc.lock().await;
             if tokio::time::timeout(grace, managed.child.wait()).await.is_err() {
                 if let Err(e) = managed.child.kill().await {
-                    eprintln!("[TOKENICODE] Failed to kill process for session {}: {}", id, e);
+                    eprintln!("[ClaudeDeck] Failed to kill process for session {}: {}", id, e);
                 }
             }
         });

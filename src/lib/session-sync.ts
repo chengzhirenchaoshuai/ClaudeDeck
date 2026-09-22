@@ -94,7 +94,7 @@ export async function syncSession(
   try {
     await applyDiskSession(session.id, session.path, { skipIfUnchanged: !opts.force });
   } catch (err) {
-    console.warn('[TOKENICODE] session sync failed:', err);
+    console.warn('[ClaudeDeck] session sync failed:', err);
   }
 }
 

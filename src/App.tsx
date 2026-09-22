@@ -219,13 +219,13 @@ function App() {
         const tabId = stdinToTab[stdinId];
         if (!tabId) {
           // Orphaned: no frontend mapping — kill it
-          console.log('[TOKENICODE:cleanup] killing orphaned process:', stdinId);
+          console.log('[ClaudeDeck:cleanup] killing orphaned process:', stdinId);
           bridge.killSession(stdinId).catch(() => {});
           continue;
         }
 
         // Reconnect: the session has a valid tab mapping
-        console.log('[TOKENICODE:reconnect] reconnecting to:', stdinId, '→ tab:', tabId);
+        console.log('[ClaudeDeck:reconnect] reconnecting to:', stdinId, '→ tab:', tabId);
 
         // Ensure tab exists before setting state (tab may not exist yet at startup)
         chatState.ensureTab(tabId);
@@ -602,7 +602,7 @@ function App() {
     const normalizedHome = homeDirRef.current.replace(/\\/g, '/').replace(/\/$/, '');
     const normalizedWorkdir = workingDirectory.replace(/\\/g, '/').replace(/\/$/, '');
     if (normalizedWorkdir === normalizedHome) {
-      console.log('[TOKENICODE] Skipping file watch on home directory:', workingDirectory);
+      console.log('[ClaudeDeck] Skipping file watch on home directory:', workingDirectory);
       return;
     }
 

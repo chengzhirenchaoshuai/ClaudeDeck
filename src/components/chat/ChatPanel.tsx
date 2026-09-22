@@ -389,7 +389,7 @@ function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
     } catch (e) {
       store.setSessionMeta(tabId, { pendingCommandMsgId: undefined });
       store.setSessionStatus(tabId, 'error');
-      console.warn('[TOKENICODE] manual compact failed:', e);
+      console.warn('[ClaudeDeck] manual compact failed:', e);
     } finally {
       setIsCompacting(false);
     }
@@ -1085,7 +1085,7 @@ async function startDraftSession(folderPath: string) {
         // Replay any events that arrived while handler was briefly null (React effect cycle)
         const queue: any[] = (window as any).__claudeStreamQueue;
         if (queue && queue.length > 0) {
-          console.warn(`[TOKENICODE] replaying ${queue.length} queued pre-warm events`);
+          console.warn(`[ClaudeDeck] replaying ${queue.length} queued pre-warm events`);
           const pending = queue.splice(0);
           for (const queued of pending) handler(queued);
         }
@@ -1094,12 +1094,12 @@ async function startDraftSession(folderPath: string) {
         // Handler not yet available (InputBar not mounted or React effect cycle) — queue the event
         if (!(window as any).__claudeStreamQueue) (window as any).__claudeStreamQueue = [];
         (window as any).__claudeStreamQueue.push(msg);
-        console.warn('[TOKENICODE] pre-warm event queued (handler not ready):', msg.type);
+        console.warn('[ClaudeDeck] pre-warm event queued (handler not ready):', msg.type);
       }
     });
     const unlistenStderr = await onClaudeStderr(preWarmId, (line: string) => {
       // Log pre-warm stderr for debugging (errors here explain why CLI may fail)
-      console.warn('[TOKENICODE] pre-warm stderr:', line);
+      console.warn('[ClaudeDeck] pre-warm stderr:', line);
     });
 
     // Store unlisten per stdinId for multi-session support

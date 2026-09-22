@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-TOKENICODE is a native desktop GUI for Claude Code (Anthropic's CLI), built with **Tauri 2 + React 19 + TypeScript + Tailwind CSS 4 + Zustand 5**. It wraps the Claude CLI in a rich interface with multi-session tabs, file exploration, rewind/checkpoint restore, slash commands, a command palette, MCP server management, and a multi-provider API configuration system.
+ClaudeDeck (个人自用分支，fork 自 TOKENICODE，不再合并上游 main) is a native desktop GUI for Claude Code (Anthropic's CLI), built with **Tauri 2 + React 19 + TypeScript + Tailwind CSS 4 + Zustand 5**. It wraps the Claude CLI in a rich interface with multi-session tabs, file exploration, rewind/checkpoint restore, slash commands, a command palette, MCP server management, and a multi-provider API configuration system.
 
 **Version**: 0.8.0
 **Package manager**: pnpm
@@ -70,10 +70,10 @@ React UI  -->  src/lib/tauri-bridge.ts  -->  Tauri invoke()  -->  src-tauri/src/
 
 ### SDK Control Protocol
 
-TOKENICODE uses the Claude CLI's SDK control protocol (`--permission-prompt-tool stdio`) for structured bidirectional communication:
+ClaudeDeck uses the Claude CLI's SDK control protocol (`--permission-prompt-tool stdio`) for structured bidirectional communication:
 
-- **CLI -> TOKENICODE**: Permission requests (`can_use_tool`), hook callbacks — parsed in `lib.rs`, emitted as Tauri events
-- **TOKENICODE -> CLI**: Permission responses, runtime commands (`set_permission_mode`, `set_model`, `interrupt`, `rewind_files`) — sent via stdin pipe
+- **CLI -> ClaudeDeck**: Permission requests (`can_use_tool`), hook callbacks — parsed in `lib.rs`, emitted as Tauri events
+- **ClaudeDeck -> CLI**: Permission responses, runtime commands (`set_permission_mode`, `set_model`, `interrupt`, `rewind_files`) — sent via stdin pipe
 - Protocol types defined in `src-tauri/src/protocol.rs`
 
 ### Claude CLI Integration
@@ -234,11 +234,11 @@ src/
 
 ## 调试开发 UI（重要）
 
-当**用户正在使用旧版 TOKENICODE 作为当前 Claude Code 的 UI** 时，调试新版 TOKENICODE 需要特别注意避免干扰用户的当前会话。
+当**用户正在使用旧版 ClaudeDeck 作为当前 Claude Code 的 UI** 时，调试新版 ClaudeDeck 需要特别注意避免干扰用户的当前会话。
 
 ### 核心原则
 
-1. **绝不杀掉用户的旧 UI 进程**：旧版 TOKENICODE 的进程是用户当前正在使用的，杀死它会导致用户丢失会话
+1. **绝不杀掉用户的旧 UI 进程**：旧版 ClaudeDeck 的进程是用户当前正在使用的，杀死它会导致用户丢失会话
 2. **开发版需要使用不同的 identifier**：WebView2 用户数据目录基于 app identifier，两个实例共用同一个 identifier 会导致开发版窗口无法渲染
 
 ### 正确启动开发版的步骤
@@ -246,20 +246,20 @@ src/
 ```bash
 # 第 1 步：临时修改 identifier（必须！避免 WebView2 冲突）
 # 编辑 src-tauri/tauri.conf.json:
-#   "identifier": "com.tinyzhuang.tokenicode"  →  "com.tinyzhuang.tokenicode-dev"
+#   "identifier": "com.chengzhiren66.claudedeck"  →  "com.chengzhiren66.claudedeck-dev"
 
 # 第 2 步：杀掉旧的开发版进程（但保留用户的主 UI！）
-# 用户主 UI 的 PID 通常是最早启动的那个 tokenicode.exe
-# 使用 PowerShell 查看：Get-Process -Name tokenicode | Select-Object Id,StartTime
+# 用户主 UI 的 PID 通常是最早启动的那个 claudedeck.exe
+# 使用 PowerShell 查看：Get-Process -Name claudedeck | Select-Object Id,StartTime
 
 # 第 3 步：启动 Vite 开发服务器（后台运行）
 npm run dev &
 
 # 第 4 步：启动 Tauri 开发版（直接运行二进制，避免 pnpm tauri dev 的生命周期问题）
-./src-tauri/target/debug/tokenicode.exe &
+./src-tauri/target/debug/claudedeck.exe &
 
 # 第 5 步：验证两个进程都在运行
-# 预期结果：2 个 tokenicode.exe 进程（旧 UI + 开发版）
+# 预期结果：2 个 claudedeck.exe 进程（旧 UI + 开发版）
 ```
 
 ### 为什么不用 `pnpm tauri dev`？
@@ -268,11 +268,11 @@ npm run dev &
 
 ### 提交前务必还原 identifier
 
-`tauri.conf.json` 中的 identifier 改动**仅用于调试**，提交前必须还原为 `"com.tinyzhuang.tokenicode"`。
+`tauri.conf.json` 中的 identifier 改动**仅用于调试**，提交前必须还原为 `"com.chengzhiren66.claudedeck"`。
 
 ### 清理开发版进程
 
 ```bash
 # 杀掉开发版但保留用户主 UI（替换 <MAIN_PID> 为用户主 UI 的实际 PID）
-powershell -Command "Get-Process tokenicode | Where-Object { \$_.Id -ne <MAIN_PID> } | Stop-Process -Force"
+powershell -Command "Get-Process claudedeck | Where-Object { \$_.Id -ne <MAIN_PID> } | Stop-Process -Force"
 ```

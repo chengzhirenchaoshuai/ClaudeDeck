@@ -960,7 +960,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         '修复中文输入法偶发丢失焦点',
         '新增/导入 API 后自动生效，无需手动选择',
         'VPN 关闭后 API 自动切换直连，无需手动操作',
-        '双版本体系 — 一套代码支持 TCAlpha 内测版和 TOKENICODE 稳定版',
+        '双版本体系 — 一套代码支持 TCAlpha 内测版和 ClaudeDeck 稳定版',
       ],
       en: [
         'Fix long conversation freeze — Streaming no longer stalls after 5+ turns, major performance improvement',
@@ -970,7 +970,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         'Fix CJK IME occasionally losing focus',
         'New/imported API providers auto-activate',
         'Auto-switch to direct connection when VPN is off',
-        'Dual-edition system — One codebase supports TCAlpha and TOKENICODE',
+        'Dual-edition system — One codebase supports TCAlpha and ClaudeDeck',
       ],
     },
   },
@@ -1631,12 +1631,12 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2025-12-01',
     highlights: {
       zh: [
-        'TOKENICODE 首发 — Claude Code 桌面 GUI 客户端',
+        'ClaudeDeck 首发 — Claude Code 桌面 GUI 客户端',
         'NDJSON 流式聊天 + 文件浏览器 + 会话管理 + 快照回退',
         '中英双语界面 + macOS 透明标题栏原生集成',
       ],
       en: [
-        'TOKENICODE initial release — Desktop GUI for Claude Code',
+        'ClaudeDeck initial release — Desktop GUI for Claude Code',
         'NDJSON streaming chat + file explorer + session management + snapshot/rewind',
         'Chinese/English bilingual UI + macOS transparent titlebar integration',
       ],

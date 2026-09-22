@@ -1,13 +1,13 @@
 [package]
-name = "tokenicode"
+name = "claudedeck"
 version = "1.0.8"
-description = "TOKENICODE DeepSeek Alpha - self-use build, based on TOKENICODE by TinyZ"
-authors = ["chengzhiren66", "TinyZ (original author of TOKENICODE)"]
+description = "ClaudeDeck - personal Claude Code desktop client, forked from TOKENICODE by TinyZ"
+authors = ["chengzhiren66"]
 license = "Apache-2.0"
 edition = "2021"
 
 [lib]
-name = "tokenicode_lib"
+name = "claudedeck_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

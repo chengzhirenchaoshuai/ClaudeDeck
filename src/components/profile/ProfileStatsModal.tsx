@@ -163,7 +163,7 @@ export function ProfileStatsModal({ open, onClose }: Props) {
               )}
             </div>
             <h2 className="mt-4 text-[28px] font-semibold text-text-primary">{displayName}</h2>
-            <p className="mt-1 text-sm text-text-muted">本机 TOKENICODE 使用汇总</p>
+            <p className="mt-1 text-sm text-text-muted">本机 ClaudeDeck 使用汇总</p>
           </div>
 
           {loading && (

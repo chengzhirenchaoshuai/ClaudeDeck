@@ -175,7 +175,7 @@ export function ConversationList() {
     bridge.saveArchivedSessions([...next]).catch(() => {});
   }, []);
 
-  // 归档和改名一样是 TOKENICODE 自己的概念，claude CLI 没有这个功能，本机只存在
+  // 归档和改名一样是 ClaudeDeck 自己的概念，claude CLI 没有这个功能，本机只存在
   // ~/.tokenicode/archived.json 里。远程会话的归档状态额外写一份到远程主机自己的
   // CLAUDE_CONFIG_DIR 下，让远程主机成为源端：每次远程会话列表刷新（不管是哪里
   // 触发的，比如侧边栏“刷新”按钮），这里都会重新拉取每台主机自己的归档文件，
@@ -586,7 +586,7 @@ export function ConversationList() {
           done++;
         } catch (err) {
           failed++;
-          console.warn('[TOKENICODE] preload remote session failed:', session.id, err);
+          console.warn('[ClaudeDeck] preload remote session failed:', session.id, err);
         }
       }
     };

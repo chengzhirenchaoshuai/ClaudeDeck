@@ -279,7 +279,7 @@ async function loadRemarkPlugins(): Promise<RemarkPlugin[]> {
   if (!supportsRemarkGfmRegex()) {
     if (!warnedAboutGfmFallback) {
       warnedAboutGfmFallback = true;
-      console.warn('[TOKENICODE] remark-gfm disabled: current JS runtime does not support its regex syntax');
+      console.warn('[ClaudeDeck] remark-gfm disabled: current JS runtime does not support its regex syntax');
     }
     cachedRemarkPlugins = EMPTY_REMARK_PLUGINS;
     return cachedRemarkPlugins;
@@ -296,7 +296,7 @@ async function loadRemarkPlugins(): Promise<RemarkPlugin[]> {
         return cachedRemarkPlugins;
       })
       .catch((error) => {
-        console.warn('[TOKENICODE] failed to load remark plugins, falling back to basic markdown', error);
+        console.warn('[ClaudeDeck] failed to load remark plugins, falling back to basic markdown', error);
         cachedRemarkPlugins = EMPTY_REMARK_PLUGINS;
         return cachedRemarkPlugins;
       });

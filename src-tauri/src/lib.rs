@@ -150,9 +150,11 @@ async fn preview_forward(app: AppHandle) -> Result<(), String> {
     emit_preview_command(&app, PreviewCommand::Forward)
 }
 
-/// Shared app data directory name — all editions (TOKENICODE / TCAlpha) use the same
+/// Shared app data directory name — all editions (ClaudeDeck / TCAlpha) use the same
 /// directory so they share a single CLI installation and settings.
-const APP_DATA_DIR_NAME: &str = "com.tinyzhuang.tokenicode";
+/// 改名后这个目录名也跟着换了：本地已下载的 CLI / 便携版 git 会在下次启动时因为
+/// "找不到" 而重新下载一次，不是数据丢失，只是一次性的重新下载。
+const APP_DATA_DIR_NAME: &str = "com.chengzhiren66.claudedeck";
 
 /// GCS bucket for Claude Code releases.
 const CLI_GCS_BASE: &str = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases";
@@ -191,7 +193,7 @@ fn get_local_git_bash() -> Option<String> {
 /// Returns the path to bash.exe if found.
 #[cfg(target_os = "windows")]
 pub(crate) fn find_git_bash() -> Option<String> {
-    // 1. Check app-local PortableGit first (auto-installed by TOKENICODE)
+    // 1. Check app-local PortableGit first (auto-installed by ClaudeDeck)
     if let Some(local) = get_local_git_bash() {
         return Some(local);
     }
@@ -374,7 +376,7 @@ fn system_proxy_url() -> Option<String> {
 
 /// Probe common local proxy ports and return the first reachable one.
 /// Re-probes every call (fast: ~100ms worst case) so proxy tools started after
-/// TOKENICODE are still detected. Covers Clash, Surge, common SOCKS.
+/// ClaudeDeck are still detected. Covers Clash, Surge, common SOCKS.
 fn probe_local_proxy() -> Option<String> {
     let ports: &[(u16, &str)] = &[
         (7890, "http"),   // Clash default
@@ -792,7 +794,7 @@ pub(crate) fn build_enriched_path() -> String {
 
 // --- Credential storage (TK-303) ---
 
-/// Directory for TOKENICODE app data (may be wiped by NSIS installer on Windows)
+/// Directory for ClaudeDeck app data (may be wiped by NSIS installer on Windows)
 fn app_data_dir() -> Result<std::path::PathBuf, String> {
     dirs::data_local_dir()
         .map(|d| d.join(APP_DATA_DIR_NAME))
@@ -1574,7 +1576,7 @@ async fn start_claude_session(
                 declared_context_window.to_string(),
             );
             eprintln!(
-                "[TOKENICODE] Set CLAUDE_CODE_AUTO_COMPACT_WINDOW={} for model {:?}",
+                "[ClaudeDeck] Set CLAUDE_CODE_AUTO_COMPACT_WINDOW={} for model {:?}",
                 declared_context_window,
                 params.model
             );
@@ -1718,7 +1720,7 @@ async fn start_claude_session(
                     .current_dir(&params.cwd)
                     .env("PATH", &enriched_path)
                     // Clear CLAUDECODE env var so the CLI doesn't refuse to start
-                    // when TOKENICODE itself is launched from within a Claude Code session.
+                    // when ClaudeDeck itself is launched from within a Claude Code session.
                     .env_remove("CLAUDECODE");
                 // Clear inherited ANTHROPIC_* env vars that conflict with our overrides
                 for key in &inherited_keys_to_remove {
@@ -1810,17 +1812,17 @@ async fn start_claude_session(
 
     let pid = child.id().unwrap_or(0);
     eprintln!(
-        "[TOKENICODE] CLI spawned: pid={}, bin={}, permission_mode={}",
+        "[ClaudeDeck] CLI spawned: pid={}, bin={}, permission_mode={}",
         pid, claude_bin, permission_mode
     );
     // Never log subprocess arguments, PATH, or environment values: provider
     // API keys and proxy credentials may be present in those values.
     eprintln!(
-        "[TOKENICODE] runtime config: args={}, env_keys={}",
+        "[ClaudeDeck] runtime config: args={}, env_keys={}",
         args.len(),
         env_count
     );
-    eprintln!("[TOKENICODE] cwd: {}", &params.cwd);
+    eprintln!("[ClaudeDeck] cwd: {}", &params.cwd);
 
     // Capture stdin and store in StdinManager for sending follow-up messages
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
@@ -1872,7 +1874,7 @@ async fn start_claude_session(
                 Ok(Some(line)) => line,
                 Ok(None) => break,  // normal EOF
                 Err(e) => {
-                    eprintln!("[TOKENICODE:CRITICAL] stdout read error after {} lines: {}", line_count, e);
+                    eprintln!("[ClaudeDeck:CRITICAL] stdout read error after {} lines: {}", line_count, e);
                     break;
                 }
             };
@@ -1886,7 +1888,7 @@ async fn start_claude_session(
             // thinking text, tool input, or other user data in application logs.
             if line_count <= 10 {
                 eprintln!(
-                    "[TOKENICODE:stdout] #{} @{}ms type={} subtype={} bytes={}",
+                    "[ClaudeDeck:stdout] #{} @{}ms type={} subtype={} bytes={}",
                     line_count,
                     spawn_time.elapsed().as_millis(),
                     json.get("type").and_then(|v| v.as_str()).unwrap_or("?"),
@@ -1965,7 +1967,7 @@ async fn start_claude_session(
                                 .map(String::from);
 
                             eprintln!(
-                                "[TOKENICODE] permission request: tool={} request_id={}",
+                                "[ClaudeDeck] permission request: tool={} request_id={}",
                                 tool_name, request_id
                             );
 
@@ -1982,7 +1984,7 @@ async fn start_claude_session(
                             continue; // Don't forward to stream as normal msg
                         }
                         "hook_callback" => {
-                            // Auto-allow hook callbacks (TOKENICODE doesn't manage hooks)
+                            // Auto-allow hook callbacks (ClaudeDeck doesn't manage hooks)
                             let auto_resp = serde_json::json!({
                                 "type": "control_response",
                                 "response": {
@@ -1996,13 +1998,13 @@ async fn start_claude_session(
                         }
                         other => {
                             // Unknown control request subtype — deny by default (P0-4 fix)
-                            eprintln!("[TOKENICODE] control_request/{}: denying unknown subtype (request_id={})", other, request_id);
+                            eprintln!("[ClaudeDeck] control_request/{}: denying unknown subtype (request_id={})", other, request_id);
                             let deny_resp = serde_json::json!({
                                 "type": "control_response",
                                 "response": {
                                     "subtype": "success",
                                     "request_id": request_id,
-                                    "response": { "behavior": "deny", "message": format!("Unknown permission type '{}' denied by TOKENICODE", other) }
+                                    "response": { "behavior": "deny", "message": format!("Unknown permission type '{}' denied by ClaudeDeck", other) }
                                 }
                             });
                             let _ = stdin_clone.send(&sid_clone, &deny_resp.to_string()).await;
@@ -2011,7 +2013,7 @@ async fn start_claude_session(
                     }
                 } else {
                     eprintln!(
-                        "[TOKENICODE] control_request missing 'request' field: {}",
+                        "[ClaudeDeck] control_request missing 'request' field: {}",
                         &line[..line.len().min(200)]
                     );
                     // Auto-allow to avoid blocking CLI
@@ -2054,11 +2056,11 @@ async fn start_claude_session(
             };
             if let Err(e) = emit_to_frontend(&app_clone, &stream_event, json_to_emit) {
                 emit_fail_count += 1;
-                eprintln!("[TOKENICODE] emit_to_frontend failed (#{emit_fail_count}): {e}");
+                eprintln!("[ClaudeDeck] emit_to_frontend failed (#{emit_fail_count}): {e}");
                 // If emit fails repeatedly, the frontend is likely unreachable.
                 // Break the loop to trigger process_exit cleanup (#64).
                 if emit_fail_count >= 10 {
-                    eprintln!("[TOKENICODE:CRITICAL] {} consecutive emit failures — frontend unreachable, stopping stream", emit_fail_count);
+                    eprintln!("[ClaudeDeck:CRITICAL] {} consecutive emit failures — frontend unreachable, stopping stream", emit_fail_count);
                     break;
                 }
             } else {
@@ -2527,14 +2529,14 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let show = MenuItem::with_id(app, "tray-show", "显示 TOKENICODE", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "tray-show", "显示 ClaudeDeck", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .tooltip("TOKENICODE")
+        .tooltip("ClaudeDeck")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -2685,12 +2687,12 @@ fn start_sessions_watcher(app: AppHandle) {
         }) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("[TOKENICODE] Failed to create sessions watcher: {}", e);
+                eprintln!("[ClaudeDeck] Failed to create sessions watcher: {}", e);
                 return;
             }
         };
         if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
-            eprintln!("[TOKENICODE] Failed to watch {:?}: {}", dir, e);
+            eprintln!("[ClaudeDeck] Failed to watch {:?}: {}", dir, e);
             return;
         }
 
@@ -5754,7 +5756,7 @@ async fn toggle_skill_enabled(path: String, enabled: bool) -> Result<(), String>
 ///
 /// **Why this exists**: macOS ships `/usr/bin/git` as a shim. When Xcode Command Line Tools
 /// (CLT) are not installed, running `/usr/bin/git` spawns a **GUI dialog** asking the user to
-/// install CLT. TOKENICODE calls git for snapshot/rewind on every message, so this popup
+/// install CLT. ClaudeDeck calls git for snapshot/rewind on every message, so this popup
 /// would appear repeatedly.
 ///
 /// Strategy:
@@ -7031,7 +7033,7 @@ fn inject_unix_shell_path(dir: &str) {
         None => return,
     };
     let export_line = format!("export PATH=\"{}:$PATH\"", dir);
-    let marker = "# Added by TOKENICODE";
+    let marker = "# Added by ClaudeDeck";
     let block = format!("\n{}\n{}\n", marker, export_line);
 
     let profiles = [

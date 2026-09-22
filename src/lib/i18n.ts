@@ -10,8 +10,8 @@ const messages: Record<Locale, Record<string, string>> = {
     // Common
     'common.cancel': '取消',
     'common.confirm': '确认',
-    'confirm.exit': '确定要退出 TOKENICODE 吗？正在运行的任务将被终止。',
-    'confirm.exitRunning': '有 {n} 个任务正在运行（{detail}）。退出将中断这些任务，确定要退出 TOKENICODE 吗？',
+    'confirm.exit': '确定要退出 ClaudeDeck 吗？正在运行的任务将被终止。',
+    'confirm.exitRunning': '有 {n} 个任务正在运行（{detail}）。退出将中断这些任务，确定要退出 ClaudeDeck 吗？',
     'confirm.exitLocal': '本地 {n} 个',
     'confirm.exitRemote': '远程 {host} {n} 个',
 
@@ -869,8 +869,8 @@ const messages: Record<Locale, Record<string, string>> = {
     // Common
     'common.cancel': 'Cancel',
     'common.confirm': 'Confirm',
-    'confirm.exit': 'Are you sure you want to quit TOKENICODE? Running tasks will be terminated.',
-    'confirm.exitRunning': '{n} task(s) are running ({detail}). Quitting will interrupt them. Quit TOKENICODE?',
+    'confirm.exit': 'Are you sure you want to quit ClaudeDeck? Running tasks will be terminated.',
+    'confirm.exitRunning': '{n} task(s) are running ({detail}). Quitting will interrupt them. Quit ClaudeDeck?',
     'confirm.exitLocal': '{n} local',
     'confirm.exitRemote': '{n} on {host}',
 

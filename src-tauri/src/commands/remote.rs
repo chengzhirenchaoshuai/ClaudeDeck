@@ -354,7 +354,7 @@ pub async fn read_remote_config(host_id: String) -> Result<Value, String> {
 /// 共享的、天然的“源端”存档：谁改了名字都写回这里，谁读列表都从这里取。
 const REMOTE_NAMES_FILE: &str = "tokenicode_session_names.json";
 
-/// 归档同样是 TOKENICODE 自己的概念（claude CLI 没有“归档”），本机存在
+/// 归档同样是 ClaudeDeck 自己的概念（claude CLI 没有“归档”），本机存在
 /// ~/.tokenicode/archived.json 里，和改名一样只存在本地，不跨设备/远程同步。
 /// 用和改名相同的办法在远端主机自己的 CLAUDE_CONFIG_DIR 下也存一份，让它同样有源端。
 const REMOTE_ARCHIVED_FILE: &str = "tokenicode_archived_sessions.json";
