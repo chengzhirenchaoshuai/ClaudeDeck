@@ -663,6 +663,14 @@ export const bridge = {
   saveRemoteArchivedSessions: (hostId: string, data: string[]) =>
     invoke<void>('save_remote_archived_sessions', { hostId, data }),
 
+  /** 读取 claude CLI statusLine 钩子写下的 5 小时/7 天用量数据（只有本机会话、
+   *  claude.ai Pro/Max 账户才可能有；没有就是 null，不代表出错）。 */
+  getSessionRateLimits: (sessionId: string) =>
+    invoke<{ five_hour?: { used_percentage: number; resets_at: number };
+      seven_day?: { used_percentage: number; resets_at: number } } | null>(
+      'get_session_rate_limits', { sessionId },
+    ).catch(() => null),
+
   // AI title generation (spawns separate CLI process, no channel interference)
   generateSessionTitle: (userMessage: string, assistantMessage: string, providerId?: string) =>
     invoke<string>('generate_session_title', { userMessage, assistantMessage, providerId: providerId || null }),

@@ -1465,20 +1465,38 @@ async fn start_claude_session(
     args.push("--permission-prompt-tool".to_string());
     args.push("stdio".to_string());
 
-    // Extended thinking + effort level
-    let thinking_level = params.thinking_level.as_deref().unwrap_or("high");
-    if thinking_level == "off" {
-        // Explicitly disable thinking — CLI defaults to enabled, so we must pass false
-        args.push("--settings".to_string());
-        args.push(r#"{"alwaysThinkingEnabled":false}"#.to_string());
-    } else {
-        args.push("--settings".to_string());
-        args.push(r#"{"alwaysThinkingEnabled":true}"#.to_string());
-    }
-
     // 远程项目（cwd 为 ssh://<主机>/<路径>）：经 ssh 在远端运行 claude，使用远端自己的配置。
     // 不注入本机 Provider 环境变量与模型映射，也不需要本机的 claude / git-bash。
+    // 挪到 --settings 构造之前：下面要根据是不是远程决定要不要加 statusLine 钩子
+    // （钩子指向本机的 claudedeck.exe 路径，对远程主机毫无意义，不能带过去）。
     let remote_target = commands::remote::parse_remote_uri(&params.cwd);
+
+    // Extended thinking + effort level
+    let thinking_level = params.thinking_level.as_deref().unwrap_or("high");
+    let mut settings_obj = serde_json::json!({
+        "alwaysThinkingEnabled": thinking_level != "off",
+    });
+    // 5 小时 / 7 天用量只有 claude.ai Pro/Max 账户才有，CLI 不会主动通过
+    // stream-json 的 rate_limit_event 可靠地带上具体百分比（不同版本字段不一样，
+    // 部分版本干脆没有）。官方文档里唯一稳定带百分比的渠道是 statusLine 钩子：
+    // CLI 每次助手回复后会调用这个命令，把包含 rate_limits.five_hour/seven_day
+    // .used_percentage 的完整会话状态 JSON 喂给它。这里让 claudedeck.exe 自己
+    // 兼任这个钩子（--statusline-write，见 main.rs），把摘出来的 rate_limits
+    // 写到本地文件，前端再通过 get_session_rate_limits 读取。只对本机会话生效——
+    // 远程主机上没有这个可执行文件，钩子指过去也跑不起来。
+    if remote_target.is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            // Windows 路径本身不含双引号，直接原样包一层双引号就是合法的带空格路径
+            // 引用写法（cmd.exe / PowerShell 都认）；用 {:?} 的 Debug 格式反而会把
+            // 反斜杠转义成两个，路径就解析错了。
+            settings_obj["statusLine"] = serde_json::json!({
+                "type": "command",
+                "command": format!("\"{}\" --statusline-write", exe.display()),
+            });
+        }
+    }
+    args.push("--settings".to_string());
+    args.push(settings_obj.to_string());
     let (mut child, claude_bin, env_count) = if let Some((host_id, remote_path)) = remote_target {
         let host = commands::remote::find_host(&host_id)?;
         // 去掉本机专用的参数：--strict-mcp-config（远端沿用自己的 MCP 配置）、
@@ -8253,6 +8271,54 @@ fn tokenicode_data_path(filename: &str) -> Result<std::path::PathBuf, String> {
     Ok(dir.join(filename))
 }
 
+/// 存放 statusLine 钩子写下来的用量文件的目录（按 CLI 会话 id 分文件）。
+fn statusline_dir() -> Option<std::path::PathBuf> {
+    let dir = dirs::home_dir()?.join(".tokenicode").join("statusline");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// claude CLI 的 statusLine 钩子入口（main.rs 里 `--statusline-write` 参数触发）。
+/// 每次助手回复后被调用一次：从 stdin 读取完整的会话状态 JSON，把里面的
+/// rate_limits（5 小时 / 7 天用量百分比，claude.ai Pro/Max 账户才有）摘出来，
+/// 按 session_id 存成一个文件，供 get_session_rate_limits 读取。
+///
+/// 不启动 Tauri、不做任何耗时操作——这条调用会临时挡住 claude 处理下一条消息，
+/// 必须尽快退出；任何解析失败都直接放弃，不影响 claude 本身的运行。
+pub fn statusline_write_hook() {
+    use std::io::Read;
+    let mut input = String::new();
+    if std::io::stdin().read_to_string(&mut input).is_err() {
+        return;
+    }
+    let Ok(data) = serde_json::from_str::<Value>(&input) else { return };
+    let Some(session_id) = data.get("session_id").and_then(|v| v.as_str()) else { return };
+    // 防御性校验：CLI 给的应该总是 UUID，但既然要拼文件名就不信任它
+    if session_id.is_empty()
+        || !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return;
+    }
+    let Some(rate_limits) = data.get("rate_limits") else { return };
+    let Some(dir) = statusline_dir() else { return };
+    let _ = std::fs::write(dir.join(format!("{}.json", session_id)), rate_limits.to_string());
+}
+
+/// 读取某个 CLI 会话最近一次 statusLine 钩子写下的 5 小时 / 7 天用量数据。
+/// 没有（还没收到过、账户不是 Pro/Max、或者钩子没起作用）就返回 null，
+/// 前端据此决定要不要显示这块状态条——不在这里编造数据。
+#[tauri::command]
+async fn get_session_rate_limits(session_id: String) -> Option<Value> {
+    let dir = statusline_dir()?;
+    if session_id.is_empty()
+        || !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return None;
+    }
+    let content = std::fs::read_to_string(dir.join(format!("{}.json", session_id))).ok()?;
+    serde_json::from_str::<Value>(&content).ok()
+}
+
 /// Load pinned session IDs from disk.
 #[tauri::command]
 async fn load_pinned_sessions() -> Result<Value, String> {
@@ -8733,6 +8799,7 @@ pub fn run() {
             save_pinned_sessions,
             load_archived_sessions,
             save_archived_sessions,
+            get_session_rate_limits,
             generate_session_title,
             load_providers,
             save_providers,
