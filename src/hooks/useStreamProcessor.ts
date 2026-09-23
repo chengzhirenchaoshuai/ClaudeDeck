@@ -1308,11 +1308,25 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         // Some commands (e.g. /compact) may not emit a 'result' event.
         const pendingCmd = useChatStore.getState().getTab(tabId)?.sessionMeta.pendingCommandMsgId;
         if (pendingCmd) {
+          const pendingCmdData = (useChatStore.getState().getTab(tabId)?.messages ?? [])
+            .find((m) => m.id === pendingCmd)?.commandData;
+          // /compact 的 compact_boundary 事件里 postTokens 时有时无（同 5h/7d 用量数据
+          // 一样，是 CLI 那边不稳定的附加字段）；这里兜底用当前已经算出来的真实上下文
+          // 占用量补上，不然只有 preTokens、没有对比数字，看起来像“压缩完成了但读不到
+          // 压缩率”。
+          const needsPostFallback = pendingCmdData?.command === '/compact'
+            && pendingCmdData?.compactSummary?.postTokens === undefined;
           useChatStore.getState().updateMessage(tabId, pendingCmd, {
             commandCompleted: true,
             commandData: {
-              ...(useChatStore.getState().getTab(tabId)?.messages ?? []).find((m) => m.id === pendingCmd)?.commandData,
+              ...pendingCmdData,
               completedAt: Date.now(),
+              ...(needsPostFallback ? {
+                compactSummary: {
+                  ...pendingCmdData?.compactSummary,
+                  postTokens: getContextUsedTokens(useChatStore.getState().getTab(tabId)?.sessionMeta ?? {}),
+                },
+              } : {}),
             },
           });
           useChatStore.getState().setSessionMeta(tabId, { pendingCommandMsgId: undefined });
@@ -1828,12 +1842,23 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         const pendingCmdMsgId = useChatStore.getState().getTab(tabId)?.sessionMeta.pendingCommandMsgId;
         if (pendingCmdMsgId) {
           const resultOutput = typeof msg.result === 'string' ? msg.result : '';
+          const pendingResultCmdData = (useChatStore.getState().getTab(tabId)?.messages ?? [])
+            .find((m) => m.id === pendingCmdMsgId)?.commandData;
+          // 同前台 assistant 分支：postTokens 兜底，理由一样
+          const needsPostFallback2 = pendingResultCmdData?.command === '/compact'
+            && pendingResultCmdData?.compactSummary?.postTokens === undefined;
           useChatStore.getState().updateMessage(tabId, pendingCmdMsgId, {
             commandCompleted: true,
             commandData: {
-              ...(useChatStore.getState().getTab(tabId)?.messages ?? []).find((m) => m.id === pendingCmdMsgId)?.commandData,
+              ...pendingResultCmdData,
               output: resultOutput,
               completedAt: Date.now(),
+              ...(needsPostFallback2 ? {
+                compactSummary: {
+                  ...pendingResultCmdData?.compactSummary,
+                  postTokens: getContextUsedTokens(useChatStore.getState().getTab(tabId)?.sessionMeta ?? {}),
+                },
+              } : {}),
             },
           });
           useChatStore.getState().setSessionMeta(tabId, { pendingCommandMsgId: undefined });
@@ -1987,7 +2012,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             type: 'text',
             content: t('chat.autoCompacting'),
             commandType: 'processing',
-            commandData: { command: '/compact' },
+            commandData: { command: '/compact', compactSummary: { preTokens: resultContextTokens } },
             commandStartTime: Date.now(),
             commandCompleted: false,
             timestamp: Date.now(),

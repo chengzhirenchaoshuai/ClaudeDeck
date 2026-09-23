@@ -373,13 +373,16 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
     setIsCompacting(true);
     const processingMsgId = generateMessageId();
     const store = useChatStore.getState();
+    // 压缩前的 token 数自己先记下来，不等 CLI 的 compact_boundary 事件——
+    // 那个事件里的 compactMetadata 时有时无（和 5h/7d 用量数据一样是 CLI 那边
+    // 不太稳定的附加字段），等不到就会一直显示"压缩中"没有前后对比数字。
     store.addMessage(tabId, {
       id: processingMsgId,
       role: 'system',
       type: 'text',
       content: '',
       commandType: 'processing',
-      commandData: { command: '/compact' },
+      commandData: { command: '/compact', compactSummary: { preTokens: used } },
       commandStartTime: Date.now(),
       commandCompleted: false,
       timestamp: Date.now(),

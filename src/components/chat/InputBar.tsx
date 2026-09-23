@@ -27,6 +27,7 @@ import { PROVIDER_PRESETS } from '../../lib/provider-presets';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
 import { stripAnsi } from '../../lib/strip-ansi';
+import { getContextUsedTokens } from '../../lib/context-usage';
 import { usePlanPanelStore, ContextMeter } from './ChatPanel';
 import { PlanReviewCard } from './PlanReviewCard';
 import { PermissionCard } from './PermissionCard';
@@ -625,13 +626,19 @@ export function InputBar() {
         if (stdinId && tabId) {
           // Emit a processing card immediately so user sees feedback
           const processingMsgId = generateMessageId();
+          // /compact 手动输入触发这条路径时，也提前记一下压缩前的 token 数（原因同
+          // ChatPanel 里 ContextMeter 的 handleCompact：不等 CLI 那个时有时无的
+          // compact_boundary 事件）。
+          const compactSummary = cmd === 'compact'
+            ? { compactSummary: { preTokens: getContextUsedTokens(getActiveTabState().sessionMeta) } }
+            : {};
           addMessage(tabId, {
             id: processingMsgId,
             role: 'system',
             type: 'text',
             content: '',
             commandType: 'processing',
-            commandData: { command: `/${cmd}${args ? ' ' + args : ''}` },
+            commandData: { command: `/${cmd}${args ? ' ' + args : ''}`, ...compactSummary },
             commandStartTime: Date.now(),
             commandCompleted: false,
             timestamp: Date.now(),
@@ -837,7 +844,8 @@ export function InputBar() {
       silentRestartRef.current = false;
     } else if (compactWithoutProcess) {
       // 历史会话续接压缩：显示处理卡片而不是普通的“/compact”用户气泡，
-      // 完成状态和压缩摘要由 useStreamProcessor 里的 result / compact_boundary 处理写入
+      // 完成状态和压缩摘要由 useStreamProcessor 里的 result / compact_boundary 处理写入。
+      // 压缩前 token 数用刚从磁盘恢复的历史会话上下文快照，不等 CLI 事件。
       const compactCardId = generateMessageId();
       addMessage(tabId, {
         id: compactCardId,
@@ -845,7 +853,10 @@ export function InputBar() {
         type: 'text',
         content: '',
         commandType: 'processing',
-        commandData: { command: '/compact' },
+        commandData: {
+          command: '/compact',
+          compactSummary: { preTokens: getContextUsedTokens(getActiveTabState().sessionMeta) },
+        },
         commandStartTime: Date.now(),
         commandCompleted: false,
         timestamp: Date.now(),
@@ -1608,8 +1619,14 @@ export function InputBar() {
         </div>
 
         {/* Tool row: upload, mode, model。所有按钮都 flex-shrink-0 + whitespace-nowrap，
-            宽度实在不够时整行横向滚动，而不是把某个按钮内部的文字挤到换行。 */}
-        <div className="flex items-center gap-2 mt-2 px-1 overflow-x-auto scrollbar-none">
+            不会再把文字挤到换行。刻意不加 overflow-x-auto——这行里好几个按钮
+            （模式/思考等级/模型选择）的下拉菜单都是 absolute bottom-full 往上弹出的，
+            只要给这一行设置了非 visible 的 overflow-x，浏览器会把 overflow-y 也一起
+            隐式转成非 visible（CSS 的一条老规则：两个轴只要有一个不是 visible，
+            另一个也会被强制转成 auto），下拉菜单会被直接裁掉——点了跟没点一样，
+            正是模型切换点了没反应的原因。现在输入区已经加宽到 max-w-5xl、默认窗口
+            也宽到 1600px，正常宽度下这行不会挤不下，真挤不下就让它溢出而不是裁切。 */}
+        <div className="flex items-center gap-2 mt-2 px-1">
           {/* Upload button */}
           <button
             onClick={() => fileInputRef.current?.click()}
