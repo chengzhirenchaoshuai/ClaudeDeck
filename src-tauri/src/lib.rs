@@ -1864,15 +1864,23 @@ async fn start_claude_session(
         // Use a large buffer (1MB) to efficiently read large NDJSON lines from Claude CLI.
         // Default 8KB buffer causes thousands of syscalls for large outputs (e.g. 24.8MB PDF),
         // which stalls on Windows pipes. 1MB buffer reduces syscalls by ~125x.
-        let reader = BufReader::with_capacity(1024 * 1024, stdout);
-        let mut lines = reader.lines();
+        let mut reader = BufReader::with_capacity(1024 * 1024, stdout);
         let mut line_count: u64 = 0;
         let mut emit_fail_count: u32 = 0;
         let spawn_time = std::time::Instant::now();
         loop {
-            let line = match lines.next_line().await {
-                Ok(Some(line)) => line,
-                Ok(None) => break,  // normal EOF
+            // 按字节读、lossy 转换，理由同 stderr 读取那边：不能因为某一行不是合法
+            // UTF-8（理论上不该发生，但防御性地保证一次坏数据不会让整条流从此死掉）
+            // 就让 .lines() 直接报错终止，之后所有正常输出也读不到了。
+            let mut buf: Vec<u8> = Vec::new();
+            let line = match reader.read_until(b'\n', &mut buf).await {
+                Ok(0) => break,  // normal EOF
+                Ok(_) => {
+                    while matches!(buf.last(), Some(b'\n') | Some(b'\r')) {
+                        buf.pop();
+                    }
+                    String::from_utf8_lossy(&buf).into_owned()
+                }
                 Err(e) => {
                     eprintln!("[ClaudeDeck:CRITICAL] stdout read error after {} lines: {}", line_count, e);
                     break;
@@ -2088,14 +2096,33 @@ async fn start_claude_session(
     let app_clone2 = app.clone();
     let sid_clone2 = sid.clone();
     tokio::spawn(async move {
-        let reader = BufReader::with_capacity(256 * 1024, stderr);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = emit_to_frontend(
-                &app_clone2,
-                &format!("claude:stderr:{}", sid_clone2),
-                serde_json::json!(line),
-            );
+        // 不用 .lines()：它按 UTF-8 解码，一旦某一行不是合法 UTF-8（远程主机是中文
+        // Windows 时，PowerShell 在没有控制台的情况下常常用系统 OEM 代码页而不是
+        // UTF-8 输出错误信息）next_line() 就会返回 Err，这个 while-let 循环会直接
+        // 静默退出、后面的内容再也读不到——用户看到的错误就会诡异地卡在第一行
+        // （比如只有一句 "#< CLIXML" 没有下文）。改成按字节读到 \n，用 lossy 转换
+        // （非法字节替换成 �），保证不管编码是否正确都能把内容读完整。
+        let mut reader = BufReader::with_capacity(256 * 1024, stderr);
+        loop {
+            let mut buf: Vec<u8> = Vec::new();
+            match reader.read_until(b'\n', &mut buf).await {
+                Ok(0) => break,
+                Ok(_) => {
+                    while matches!(buf.last(), Some(b'\n') | Some(b'\r')) {
+                        buf.pop();
+                    }
+                    let line = String::from_utf8_lossy(&buf).into_owned();
+                    let _ = emit_to_frontend(
+                        &app_clone2,
+                        &format!("claude:stderr:{}", sid_clone2),
+                        serde_json::json!(line),
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[ClaudeDeck:CRITICAL] stderr read error: {}", e);
+                    break;
+                }
+            }
         }
     });
 
