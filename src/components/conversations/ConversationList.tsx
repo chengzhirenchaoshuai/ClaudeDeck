@@ -381,14 +381,20 @@ export function ConversationList() {
     for (const items of map.values()) {
       items.sort((a, b) => b.modifiedAt - a.modifiedAt);
     }
+    // 项目在列表里的排序位置，只看这个项目下"已经落盘"的真实会话，不算草稿——
+    // 新建会话时草稿的 modifiedAt 是创建时刻（Date.now()），如果拿它参与排序，
+    // 项目会先跳到最上面，等草稿后来被清理/落盘又跳回去，位置来回乱动。
+    // 项目下全是草稿（刚新建的项目，还没有任何历史会话）时才退回用草稿的时间。
+    const sortKey = (items: SessionListItem[]) => {
+      const real = items.find((s) => s.path !== '');
+      return (real ?? items[0])?.modifiedAt || 0;
+    };
     const entries = Array.from(map.entries());
     entries.sort((a, b) => {
       const pa = pinnedSessions.has(`project:${a[0]}`) ? 1 : 0;
       const pb = pinnedSessions.has(`project:${b[0]}`) ? 1 : 0;
       if (pa !== pb) return pb - pa;
-      const ta = a[1][0]?.modifiedAt || 0;
-      const tb = b[1][0]?.modifiedAt || 0;
-      return tb - ta;
+      return sortKey(b[1]) - sortKey(a[1]);
     });
     return entries;
   }, [filtered, pinnedSessions]);
