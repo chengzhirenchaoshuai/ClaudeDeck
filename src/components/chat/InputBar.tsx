@@ -73,10 +73,10 @@ function ThinkLevelSelector({ disabled = false }: { disabled?: boolean }) {
   const current = THINK_LEVELS.find((l) => l.id === thinkingLevel) || THINK_LEVELS[3];
 
   return (
-    <div ref={ref} className={`relative ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+    <div ref={ref} className={`relative flex-shrink-0 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       <button
         onClick={() => setOpen(!open)}
-        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs whitespace-nowrap
           border transition-smooth cursor-pointer
           ${isOff
             ? 'border-border-subtle bg-bg-secondary/50 text-text-muted hover:text-text-primary hover:bg-bg-secondary'
@@ -150,7 +150,7 @@ function PlanToggleButton() {
   return (
     <button
       onClick={toggle}
-      className={`p-1.5 rounded-lg transition-smooth flex items-center gap-1
+      className={`flex-shrink-0 p-1.5 rounded-lg transition-smooth flex items-center gap-1 whitespace-nowrap
         ${isOpen
           ? 'bg-accent/10 text-accent'
           : 'text-text-tertiary hover:text-text-primary hover:bg-bg-secondary'
@@ -1501,7 +1501,7 @@ export function InputBar() {
 
   return (
     <div className="p-4 relative">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         {/* Rewind Panel — positioned above the input area */}
         {showRewindPanel && (
           <RewindPanel key={selectedSessionId || 'new'} onClose={() => setShowRewindPanel(false)} />
@@ -1607,12 +1607,13 @@ export function InputBar() {
           </div>
         </div>
 
-        {/* Tool row: upload, mode, model */}
-        <div className="flex items-center gap-2 mt-2 px-1">
+        {/* Tool row: upload, mode, model。所有按钮都 flex-shrink-0 + whitespace-nowrap，
+            宽度实在不够时整行横向滚动，而不是把某个按钮内部的文字挤到换行。 */}
+        <div className="flex items-center gap-2 mt-2 px-1 overflow-x-auto scrollbar-none">
           {/* Upload button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-1.5 rounded-lg text-text-tertiary
+            className="flex-shrink-0 p-1.5 rounded-lg text-text-tertiary
               hover:text-text-primary hover:bg-bg-secondary
               transition-smooth"
             title={t('input.attachFiles')}
@@ -1642,7 +1643,7 @@ export function InputBar() {
             <button
               onClick={() => { if (canRewind) setShowRewindPanel(!showRewindPanel); }}
               disabled={!canRewind}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-smooth
+              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-xs whitespace-nowrap transition-smooth
                 ${canRewind
                   ? 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary cursor-pointer'
                   : 'text-text-muted cursor-not-allowed opacity-50'

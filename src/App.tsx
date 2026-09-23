@@ -7,7 +7,6 @@ import { CommandPalette } from './components/commands/CommandPalette';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { UsageModal } from './components/usage/UsageModal';
 import { ImageLightbox } from './components/shared/ImageLightbox';
-import { ChangelogModal } from './components/shared/ChangelogModal';
 import { Toast } from './components/shared/Toast';
 import { useSettingsStore } from './stores/settingsStore';
 import { useProviderStore } from './stores/providerStore';
@@ -136,8 +135,6 @@ function App() {
   const settingsOpen = useSettingsStore((s) => s.settingsOpen);
   const usageOpen = useSettingsStore((s) => s.usageOpen);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
-  const lastSeenVersion = useSettingsStore((s) => s.lastSeenVersion);
-  const setLastSeenVersion = useSettingsStore((s) => s.setLastSeenVersion);
   const selectedSessionId = useSessionStore((s) => s.selectedSessionId);
   const loadTree = useFileStore((s) => s.loadTree);
   const refreshTree = useFileStore((s) => s.refreshTree);
@@ -404,27 +401,6 @@ function App() {
     // Notification permission is requested lazily on first need (see useStreamProcessor.ts)
   }, []);
 
-  // Changelog modal state
-  const [showChangelog, setShowChangelog] = useState(false);
-  const [currentAppVersion, setCurrentAppVersion] = useState('');
-
-  useEffect(() => {
-    import('@tauri-apps/api/app').then(({ getVersion }) =>
-      getVersion().then((version) => {
-        setCurrentAppVersion(version);
-        if (version && version !== lastSeenVersion) {
-          import('./lib/changelog').then(({ getChangelog }) => {
-            if (getChangelog(version)) {
-              setShowChangelog(true);
-            } else {
-              setLastSeenVersion(version);
-            }
-          });
-        }
-      }).catch(() => {})
-    );
-  }, []);
-
   // Disable browser context menu globally (native app feel)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -675,15 +651,6 @@ function App() {
       {settingsOpen && <SettingsPanel />}
       {usageOpen && <UsageModal />}
       <ImageLightbox />
-      {showChangelog && currentAppVersion && (
-        <ChangelogModal
-          version={currentAppVersion}
-          onClose={() => {
-            setShowChangelog(false);
-            setLastSeenVersion(currentAppVersion);
-          }}
-        />
-      )}
       {showPermDialog && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-bg-primary rounded-2xl border border-border-subtle shadow-2xl

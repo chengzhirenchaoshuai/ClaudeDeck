@@ -106,11 +106,11 @@ export function ModeSelector({ disabled = false }: { disabled?: boolean }) {
   };
 
   return (
-    <div ref={ref} className={`relative ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+    <div ref={ref} className={`relative flex-shrink-0 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       {/* Trigger button — shows current mode */}
       <button
         onClick={() => setOpen(!open)}
-        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs whitespace-nowrap
           border transition-smooth cursor-pointer
           ${isBypass
             ? 'border-warning/30 bg-warning/10 text-warning'

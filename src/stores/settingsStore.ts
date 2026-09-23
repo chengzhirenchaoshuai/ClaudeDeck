@@ -132,8 +132,6 @@ interface SettingsState {
   updateVersion: string;
   /** Whether the update has been downloaded and is ready for restart (transient, not persisted) */
   updateDownloaded: boolean;
-  /** Last app version the user has seen the changelog for */
-  lastSeenVersion: string;
   /** Custom AI avatar image (data URL or empty string for default </> icon) */
   aiAvatarUrl: string;
   /** Custom user avatar image (data URL or empty string for default initials) */
@@ -201,7 +199,6 @@ interface SettingsState {
   setAutoCompactThresholdTokens: (tokens: number | null) => void;
   setUpdateAvailable: (available: boolean, version?: string) => void;
   setUpdateDownloaded: (downloaded: boolean) => void;
-  setLastSeenVersion: (version: string) => void;
   setAiAvatarUrl: (url: string) => void;
   setUserAvatarUrl: (url: string) => void;
   setUserDisplayName: (name: string) => void;
@@ -271,7 +268,6 @@ export const useSettingsStore = create<SettingsState>()(
       cliUpdateAvailable: false,
       cliLatestVersion: '',
       updateDownloaded: false,
-      lastSeenVersion: '',
       aiAvatarUrl: '',
       userAvatarUrl: '',
       userDisplayName: '',
@@ -386,9 +382,6 @@ export const useSettingsStore = create<SettingsState>()(
       setUpdateDownloaded: (downloaded) =>
         set(() => ({ updateDownloaded: downloaded })),
 
-      setLastSeenVersion: (version) =>
-        set(() => ({ lastSeenVersion: version })),
-
       setAiAvatarUrl: (url) =>
         set(() => ({ aiAvatarUrl: url })),
 
@@ -461,7 +454,6 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 2) {
           persisted.updateAvailable = false;
           persisted.updateVersion = '';
-          persisted.lastSeenVersion = '';
         }
         if (version < 3) {
           persisted.apiProviderMode = 'inherit';
@@ -551,7 +543,6 @@ export const useSettingsStore = create<SettingsState>()(
         autoCompactThresholdTokens: state.autoCompactThresholdTokens,
         updateAvailable: state.updateAvailable,
         updateVersion: state.updateVersion,
-        lastSeenVersion: state.lastSeenVersion,
         aiAvatarUrl: state.aiAvatarUrl,
         userAvatarUrl: state.userAvatarUrl,
         userDisplayName: state.userDisplayName,

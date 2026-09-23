@@ -87,12 +87,12 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
   const current = displayOptions.find((m) => m.id === selectedModel) || fallbackOption;
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative flex-shrink-0">
       <button
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg
-          text-xs text-text-muted hover:text-text-primary
+          text-xs text-text-muted hover:text-text-primary whitespace-nowrap
           hover:bg-bg-secondary transition-smooth
           disabled:opacity-40 disabled:cursor-not-allowed"
       >

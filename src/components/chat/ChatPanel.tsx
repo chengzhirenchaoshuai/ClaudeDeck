@@ -399,8 +399,8 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   };
 
   return (
-    <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg
-      bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary"
+    <div className="hidden md:flex flex-shrink-0 items-center gap-2 px-2 py-1 rounded-lg
+      bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary whitespace-nowrap"
       title={t('chat.contextTooltip')
         .replace('{model}', displayProviderModelName(modelForContext))
         .replace('{used}', used.toLocaleString())
@@ -408,7 +408,7 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
         .replace('{free}', available.toLocaleString())
         .replace('{threshold}', compactThreshold.toLocaleString())}>
       <span className="font-medium text-text-muted">{t('chat.contextLabel')}</span>
-      <div className="w-20 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
+      <div className="w-20 h-1.5 rounded-full bg-bg-tertiary overflow-hidden flex-shrink-0">
         <div
           className={`h-full rounded-full ${percent >= thresholdPercent ? 'bg-warning' : 'bg-accent'}`}
           style={{ width: `${percent}%` }}
@@ -421,7 +421,7 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
       <button
         onClick={handleCompactClick}
         disabled={!canCompact}
-        className="px-2 py-0.5 rounded border border-border-subtle bg-bg-card
+        className="flex-shrink-0 px-2 py-0.5 rounded border border-border-subtle bg-bg-card
           text-text-primary font-medium cursor-pointer transition-smooth
           hover:bg-accent/10 hover:text-accent hover:border-accent/30
           disabled:opacity-40 disabled:cursor-not-allowed
@@ -946,7 +946,7 @@ export function ChatPanel() {
         ) : messages.length === 0 && !isStreaming ? (
           <EmptyReadyState />
         ) : (
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-5xl mx-auto">
             {displayItems.map((item, displayIdx) => {
               // Determine spacing based on item type
               const isCompact = item.kind === 'tool_group'

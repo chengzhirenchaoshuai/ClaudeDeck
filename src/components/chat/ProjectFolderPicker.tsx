@@ -87,7 +87,7 @@ export function ProjectFolderPicker({ disabled = false }: { disabled?: boolean }
   const label = workingDirectory ? folderName(workingDirectory) : t('input.projectFolder');
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative flex-shrink-0">
       <button
         onClick={() => setOpen((v) => !v)}
         disabled={locked}
