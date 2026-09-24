@@ -8424,6 +8424,7 @@ async fn generate_session_title(
     user_message: String,
     assistant_message: String,
     provider_id: Option<String>,
+    cwd: Option<String>,
 ) -> Result<String, String> {
     // Safe UTF-8 truncation (don't slice mid-character)
     fn safe_truncate(s: &str, max_bytes: usize) -> &str {
@@ -8494,6 +8495,17 @@ async fn generate_session_title(
         .env_remove("CLAUDE_CODE_ENTRY") // Remove any other nesting guards
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+
+    // 之前没设置 cwd 时，子进程会继承 ClaudeDeck 自己的进程工作目录（打包后经常是
+    // release 目录），导致 claude CLI 把这次一次性标题生成调用记成了一个新项目
+    // （比如侧边栏莫名多出一个叫 "release" 的项目）。改成用真实会话所在的项目目录，
+    // 目录不存在时退回用户主目录，绝不能再落到 ClaudeDeck 自己的安装目录下。
+    let title_gen_cwd = cwd
+        .filter(|p| !p.is_empty() && std::path::Path::new(p).is_dir())
+        .or_else(|| dirs::home_dir().map(|p| p.display().to_string()));
+    if let Some(dir) = title_gen_cwd {
+        cmd.current_dir(dir);
+    }
 
     // Disable MSYS2 auto path conversion on Windows (Chinese path fix)
     #[cfg(target_os = "windows")]

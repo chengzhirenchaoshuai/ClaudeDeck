@@ -747,7 +747,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             if (bgUserMsgs.length >= 3 && bgAssistantMsgs.length >= 3) {
               const userMsg = bgUserMsgs.map((m) => m.content).join('\n').slice(0, 500);
               const assistantMsg = bgAssistantMsgs.map((m) => m.content).join('\n').slice(0, 500);
-              bridge.generateSessionTitle(userMsg, assistantMsg, useProviderStore.getState().activeProviderId || undefined)
+              const bgTitleGenCwd = useSessionStore.getState().sessions.find((s) => s.id === tabId)?.project;
+              bridge.generateSessionTitle(userMsg, assistantMsg, useProviderStore.getState().activeProviderId || undefined, bgTitleGenCwd)
                 .then((title) => {
                   if (title) {
                     useSessionStore.getState().setCustomPreview(tabId, title);
@@ -1947,7 +1948,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
                 if (assistantTextMsgs.length >= 3) {
                   const userMsg = userTextMsgs.map((m) => m.content).join('\n').slice(0, 500);
                   const assistantMsg = assistantTextMsgs.map((m) => m.content).join('\n').slice(0, 500);
-                  bridge.generateSessionTitle(userMsg, assistantMsg, useProviderStore.getState().activeProviderId || undefined)
+                  const titleGenCwd = useSessionStore.getState().sessions.find((s) => s.id === tabId)?.project;
+                  bridge.generateSessionTitle(userMsg, assistantMsg, useProviderStore.getState().activeProviderId || undefined, titleGenCwd)
                     .then((title) => {
                       if (title) {
                         useSessionStore.getState().setCustomPreview(sessionId, title);

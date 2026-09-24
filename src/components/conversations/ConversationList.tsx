@@ -112,8 +112,7 @@ export function ConversationList() {
   // Shift+click multi-select: track last clicked index
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
 
-  // Smart collapse (Phase 2)
-  const [manualExpanded, setManualExpanded] = useState<Set<string>>(new Set());
+  // 项目分组的展开/收起：只记录用户手动收起过的项目，默认都是展开的
   const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(new Set());
 
   // Pinned & archived (Phase 3)
@@ -420,27 +419,17 @@ export function ConversationList() {
     });
   }, [sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions]);
 
-  // Smart expand: expand if contains selected, or manually expanded
+  // 默认全部展开，只有用户手动点了收起才收起——不再因为选中了别的项目的会话
+  // 就把当前项目自动收起（之前那种“只展开选中项所在项目”的智能收起会导致
+  // 点别的项目时，原本展开的项目页签被莫名其妙收起）
   const isExpanded = useCallback((key: string) => {
-    if (manualCollapsed.has(key)) return false;
-    if (manualExpanded.has(key)) return true;
-    // Default: expand if contains selected session
-    if (!selectedId) return true; // expand all if nothing selected
-    const raw = sessions.find((s) => s.id === selectedId);
-    if (!raw) return false;
-    const selectedKey = normalizeProjectKey(raw.project || raw.projectDir);
-    return selectedKey === key;
-  }, [manualCollapsed, manualExpanded, selectedId, sessions]);
+    return !manualCollapsed.has(key);
+  }, [manualCollapsed]);
 
   const toggleCollapse = useCallback((project: string) => {
-    const expanded = isExpanded(project);
-    if (expanded) {
-      // Collapse it
+    if (isExpanded(project)) {
       setManualCollapsed((prev) => { const next = new Set(prev); next.add(project); return next; });
-      setManualExpanded((prev) => { const next = new Set(prev); next.delete(project); return next; });
     } else {
-      // Expand it
-      setManualExpanded((prev) => { const next = new Set(prev); next.add(project); return next; });
       setManualCollapsed((prev) => { const next = new Set(prev); next.delete(project); return next; });
     }
   }, [isExpanded]);
@@ -807,7 +796,6 @@ export function ConversationList() {
     const projectKey = normalizeProjectKey(raw);
     // Switch to folder view and expand the group
     setViewMode('folder');
-    setManualExpanded((prev) => { const next = new Set(prev); next.add(projectKey); return next; });
     setManualCollapsed((prev) => { const next = new Set(prev); next.delete(projectKey); return next; });
     setHighlightedSessionId(session.id);
     // Scroll to the project group after render
