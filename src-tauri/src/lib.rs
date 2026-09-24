@@ -8463,10 +8463,12 @@ async fn generate_session_title(
             None => return Err("SKIP: no haiku mapping for provider".to_string()),
         }
     } else {
+        // 没配置 provider 时走的是真实的 Anthropic 直连账号，deepseek-v4-flash 这个
+        // 模型名对这类账号根本不存在，用真实存在的 Haiku 模型兜底
         (
             HashMap::new(),
             vec![],
-            "deepseek-v4-flash".to_string(),
+            "claude-haiku-4-5-20251001".to_string(),
         )
     };
 
@@ -8475,7 +8477,11 @@ async fn generate_session_title(
 
     let enriched_path = build_enriched_path();
 
-    // Spawn a one-shot CLI process: -p for single prompt, --output-format json for structured output
+    // Spawn a one-shot CLI process: -p for single prompt, --output-format json for structured output.
+    // --no-session-persistence：这只是问一句要标题，不该在磁盘上留下一个真实会话——
+    // 不加这个的话，就算 cwd 指对了项目，claude CLI 还是会把这次一次性调用当成
+    // 一次完整会话记下来，项目会话列表里就会莫名多出一条内容是这段 prompt 拼接文本
+    // 的"对话"。
     let args = vec![
         "-p".to_string(),
         prompt,
@@ -8486,6 +8492,7 @@ async fn generate_session_title(
         "--max-turns".to_string(),
         "1".to_string(),
         "--dangerously-skip-permissions".to_string(),
+        "--no-session-persistence".to_string(),
     ];
 
     let mut cmd = tokio::process::Command::new(&claude_bin);
