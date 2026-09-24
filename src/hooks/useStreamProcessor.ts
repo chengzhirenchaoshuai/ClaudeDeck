@@ -762,28 +762,6 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         }
         break;
       }
-      case 'rate_limit_event': {
-        const bgRli = msg.rate_limit_info;
-        if (bgRli && bgRli.rateLimitType) {
-          const bgTab = store.getTab(tabId);
-          const prevLimits = bgTab?.sessionMeta?.rateLimits || {};
-          store.setSessionMeta(tabId, {
-            rateLimits: {
-              ...prevLimits,
-              [bgRli.rateLimitType]: {
-                rateLimitType: bgRli.rateLimitType,
-                resetsAt: bgRli.resetsAt,
-                isUsingOverage: bgRli.isUsingOverage,
-                overageStatus: bgRli.overageStatus,
-                overageDisabledReason: bgRli.overageDisabledReason,
-                status: bgRli.status,
-                unifiedWindows: bgRli.unifiedWindows,
-              },
-            },
-          });
-        }
-        break;
-      }
       case 'process_exit': {
         // Preserve delta-only replies before status cleanup clears partialText.
         commitPartialText(tabId, msg.__stdinId);
@@ -2086,28 +2064,6 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           }
         }
 
-        break;
-      }
-
-      case 'rate_limit_event': {
-        const rli = msg.rate_limit_info;
-        if (rli && rli.rateLimitType) {
-          const prev = useChatStore.getState().getTab(tabId)?.sessionMeta.rateLimits || {};
-          setSessionMeta({
-            rateLimits: {
-              ...prev,
-              [rli.rateLimitType]: {
-                rateLimitType: rli.rateLimitType,
-                resetsAt: rli.resetsAt,
-                status: rli.status,
-                unifiedWindows: rli.unifiedWindows,
-                isUsingOverage: rli.isUsingOverage,
-                overageStatus: rli.overageStatus,
-                overageDisabledReason: rli.overageDisabledReason,
-              },
-            },
-          });
-        }
         break;
       }
 

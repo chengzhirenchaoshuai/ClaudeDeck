@@ -15,6 +15,7 @@ import {
 } from '../../stores/settingsStore';
 import { getContextUsedTokens } from '../../lib/context-usage';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useRateLimitsStore, type RateLimitWindow } from '../../stores/rateLimitsStore';
 import { RemotePathInput } from '../layout/EnvSwitcher';
 import { UsageChip } from '../usage/UsageChip';
 import { useFileStore } from '../../stores/fileStore';
@@ -458,26 +459,21 @@ function formatResetCountdown(resetsAtSec: number, t: (k: string) => string): st
   return `${t('chat.resetsIn')} ${mins}${t('chat.minutes')}`;
 }
 
-/** 一个用量窗口（5 小时 / 7 天）的小段：有真实使用率（CLI 部分版本才会带）就画进度条，
- *  没有就只显示状态点 + 重置倒计时——CLI 的 rate_limit_event 本身不一定带百分比，
- *  绝不能在缺失时拿本地 token 量凑一个假数字出来显示。 */
-function RateLimitWindow({ label, windowKey, entry, t }: {
+/** 一个用量窗口（5 小时 / 7 天）的小段：有百分比就画进度条，没有(数据缺失、只知道
+ *  重置时间)就只显示状态点 + 倒计时——绝不能在缺失时拿本地数据凑一个假数字出来显示。 */
+function RateLimitWindowView({ label, entry, t }: {
   label: string;
-  windowKey: 'five_hour' | 'seven_day';
-  entry?: { resetsAt: number; status?: string; unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }> };
+  entry?: RateLimitWindow;
   t: (k: string) => string;
 }) {
   if (!entry) return null;
-  // 优先用 unifiedWindows 里对应窗口自己的 utilization/resetsAt（部分 CLI 版本才有）
-  const windowData = entry.unifiedWindows?.[windowKey];
-  const utilization = windowData?.utilization;
-  const resetsAt = windowData?.resetsAt ?? entry.resetsAt;
-  const hasPercent = typeof utilization === 'number' && Number.isFinite(utilization);
-  const percent = hasPercent ? Math.min(100, Math.round(utilization! * 100)) : null;
-  const isWarning = entry.status === 'allowed_warning' || (percent !== null && percent >= 80);
-  const isRejected = entry.status === 'rejected';
+  const hasPercent = typeof entry.usedPercentage === 'number' && Number.isFinite(entry.usedPercentage);
+  const percent = hasPercent ? Math.min(100, Math.round(entry.usedPercentage!)) : null;
+  const isWarning = percent !== null && percent >= 80;
+  const isRejected = percent !== null && percent >= 100;
   const colorClass = isRejected ? 'text-error' : isWarning ? 'text-warning' : 'text-text-tertiary';
-  const countdown = formatResetCountdown(resetsAt, t);
+  const countdown = entry.resetsAt ? formatResetCountdown(entry.resetsAt, t) : null;
+  if (!hasPercent && !countdown) return null;
 
   return (
     <div className="flex items-center gap-1" title={countdown ?? undefined}>
@@ -493,68 +489,44 @@ function RateLimitWindow({ label, windowKey, entry, t }: {
           <span className={colorClass}>{percent}%</span>
         </>
       ) : (
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0
-          ${isRejected ? 'bg-error' : isWarning ? 'bg-warning' : 'bg-success'}`} />
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-success" />
       )}
       {countdown && !hasPercent && <span className="text-text-tertiary">{countdown}</span>}
     </div>
   );
 }
 
-/** 5 小时 / 7 天用量窗口状态条。数据只在当前进程存活期间从 CLI 的 rate_limit_event
- *  流式事件里收集，历史会话/还没发过消息的新会话看不到（CLI 不会补发），此时不渲染。 */
+/** 5 小时 / 7 天用量状态条。数据全局共享一份缓存（useRateLimitsStore，落一份到
+ *  localStorage），不挂在某个会话 tab 下——账户级别的用量数据本来就不该按会话分开存：
+ *  切换会话不会清空，哪个会话轮询到新数据全局都能看到，重开应用也先显示上次已知的值，
+ *  不用等第一次轮询回来。只对本机会话生效——远程会话没有 sessionId 对应本地钩子文件。 */
 function UsageStatusBar({ sessionMeta }: { sessionMeta: SessionMeta }) {
   const t = useT();
-  const tabId = useSessionStore((s) => s.selectedSessionId);
   const cliSessionId = sessionMeta.sessionId;
+  const fiveHour = useRateLimitsStore((s) => s.fiveHour);
+  const sevenDay = useRateLimitsStore((s) => s.sevenDay);
+  const setFromHook = useRateLimitsStore((s) => s.setFromHook);
 
-  // statusLine 钩子写下来的数据比 stream 里的 rate_limit_event 更可靠（后者不同
-  // CLI 版本字段不一样，部分版本干脆没有百分比），轮询它作为主要数据源。
-  // 只对本机会话生效——远程会话没有 sessionId 对应本地钩子文件。
   useEffect(() => {
-    if (!tabId || !cliSessionId || cliSessionId.startsWith('desk_')) return;
+    if (!cliSessionId || cliSessionId.startsWith('desk_')) return;
     let cancelled = false;
     const poll = async () => {
       const data = await bridge.getSessionRateLimits(cliSessionId);
       if (cancelled || !data) return;
-      // 轮询期间用户可能已经切到别的会话，不要把结果写错地方
-      if (useSessionStore.getState().selectedSessionId !== tabId) return;
-      const prev = useChatStore.getState().getTab(tabId)?.sessionMeta.rateLimits || {};
-      const toEntry = (
-        key: 'five_hour' | 'seven_day',
-        w?: { used_percentage: number; resets_at: number },
-      ) => {
-        if (!w) return prev[key];
-        return {
-          rateLimitType: key,
-          resetsAt: w.resets_at,
-          unifiedWindows: { [key]: { utilization: w.used_percentage / 100, resetsAt: w.resets_at } },
-        };
-      };
-      const fiveHourEntry = toEntry('five_hour', data.five_hour);
-      const sevenDayEntry = toEntry('seven_day', data.seven_day);
-      useChatStore.getState().setSessionMeta(tabId, {
-        rateLimits: {
-          ...prev,
-          ...(fiveHourEntry ? { five_hour: fiveHourEntry } : {}),
-          ...(sevenDayEntry ? { seven_day: sevenDayEntry } : {}),
-        },
-      });
+      setFromHook(data);
     };
     void poll();
     const timer = setInterval(poll, 20_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [tabId, cliSessionId]);
+  }, [cliSessionId, setFromHook]);
 
-  const fiveHour = sessionMeta.rateLimits?.five_hour;
-  const sevenDay = sessionMeta.rateLimits?.seven_day;
   if (!fiveHour && !sevenDay) return null;
 
   return (
     <div className="hidden md:flex items-center gap-3 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px]">
-      <RateLimitWindow label="5h" windowKey="five_hour" entry={fiveHour} t={t} />
-      <RateLimitWindow label={t('chat.weekly')} windowKey="seven_day" entry={sevenDay} t={t} />
+      <RateLimitWindowView label="5h" entry={fiveHour} t={t} />
+      <RateLimitWindowView label={t('chat.weekly')} entry={sevenDay} t={t} />
     </div>
   );
 }

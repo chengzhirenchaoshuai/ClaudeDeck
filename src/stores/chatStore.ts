@@ -140,19 +140,6 @@ export interface SessionMeta {
   modelSwitched?: boolean;
   /** The user message text to re-send if model-switch auto-retry triggers. */
   modelSwitchPendingText?: string;
-  /** Rate limit info from CLI rate_limit_event (latest per rateLimitType) */
-  rateLimits?: Record<string, {
-    rateLimitType: string;
-    resetsAt: number;
-    isUsingOverage?: boolean;
-    overageStatus?: string;
-    overageDisabledReason?: string;
-    /** 'allowed' | 'allowed_warning' | 'rejected'（CLI 目前没有暴露具体用量百分比，只有这个档位） */
-    status?: string;
-    /** 部分 CLI 版本会附带每个用量窗口的具体使用率（0-1），没有就是 undefined——
-     *  绝不能在这个字段缺失时自己拿本地 token 量凑一个假百分比出来显示。 */
-    unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }>;
-  }>;
 }
 
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';

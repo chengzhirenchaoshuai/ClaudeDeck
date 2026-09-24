@@ -8305,7 +8305,32 @@ pub fn statusline_write_hook() {
     }
     let Some(rate_limits) = data.get("rate_limits") else { return };
     let Some(dir) = statusline_dir() else { return };
-    let _ = std::fs::write(dir.join(format!("{}.json", session_id)), rate_limits.to_string());
+    let path = dir.join(format!("{}.json", session_id));
+
+    // 5h/7d 是不是每次都一起出现，CLI 那边不保证（官方文档写了：每个窗口可能各自
+    // 缺失）。合并写入而不是整个覆盖：这次只带了其中一个窗口的数据时，保留上次
+    // 已知的另一个窗口，除非它自己的 resets_at 已经过了——那种情况本来就该被认为
+    // 过期丢弃（模拟 CLI 自己 "drops a window once resets_at passes" 的语义），
+    // 不是我们这边弄丢的。不然会出现"这次显示 5h、下次显示 7d，来回跳"的现象。
+    let mut merged = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Some(merged_obj) = merged.as_object_mut() {
+        merged_obj.retain(|_, v| {
+            v.get("resets_at").and_then(|r| r.as_u64()).map(|r| r > now_secs).unwrap_or(true)
+        });
+        if let Some(new_obj) = rate_limits.as_object() {
+            for (k, v) in new_obj {
+                merged_obj.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    let _ = std::fs::write(&path, merged.to_string());
 }
 
 /// 读取某个 CLI 会话最近一次 statusLine 钩子写下的 5 小时 / 7 天用量数据。
