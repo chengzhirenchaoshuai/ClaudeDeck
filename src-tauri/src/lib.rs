@@ -1486,12 +1486,16 @@ async fn start_claude_session(
     // 远程主机上没有这个可执行文件，钩子指过去也跑不起来。
     if remote_target.is_none() {
         if let Ok(exe) = std::env::current_exe() {
-            // Windows 路径本身不含双引号，直接原样包一层双引号就是合法的带空格路径
-            // 引用写法（cmd.exe / PowerShell 都认）；用 {:?} 的 Debug 格式反而会把
-            // 反斜杠转义成两个，路径就解析错了。
+            // 官方文档明确写了：Windows 上 statusLine 命令是通过 Git Bash（装了的话）
+            // 或者 PowerShell 跑的；Git Bash 会把不在引号保护范围内的反斜杠当成转义符，
+            // 路径分隔符直接被吃掉，命令静默失败、什么错误都不会冒出来——这正是钩子
+            // 完全没生效、5h/7d 用量彻底不显示的真正原因。文档给的解决办法就是路径统一用
+            // 正斜杠，Windows 的 CreateProcess/PowerShell/Git Bash 三边都认，不需要纠结
+            // 引号规则。
+            let exe_str = exe.display().to_string().replace('\\', "/");
             settings_obj["statusLine"] = serde_json::json!({
                 "type": "command",
-                "command": format!("\"{}\" --statusline-write", exe.display()),
+                "command": format!("\"{}\" --statusline-write", exe_str),
             });
         }
     }
