@@ -148,13 +148,8 @@ pub(crate) async fn start_claude_session(
     } else {
         // Resolve claude binary — it may not be on the default PATH
         let claude_bin = find_claude_binary().unwrap_or_else(|| {
-            #[cfg(target_os = "windows")]
             {
                 "claude.cmd".to_string()
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                "claude".to_string()
             }
         });
 
@@ -215,7 +210,6 @@ pub(crate) async fn start_claude_session(
         // Without this, MSYS2 converts Windows paths (e.g. F:\秀\input\file.xlsx)
         // to Unix-style paths (/f/秀/input/file.xlsx), which breaks file operations
         // especially with non-ASCII (Chinese) characters in paths.
-        #[cfg(target_os = "windows")]
         {
             resolved_env.entry("MSYS_NO_PATHCONV".to_string())
                 .or_insert_with(|| "1".to_string());
@@ -225,7 +219,6 @@ pub(crate) async fn start_claude_session(
 
         // On Windows, auto-detect git-bash and inject CLAUDE_CODE_GIT_BASH_PATH
         // so Claude Code CLI can find bash.exe without user manual configuration.
-        #[cfg(target_os = "windows")]
         {
             if !resolved_env.contains_key("CLAUDE_CODE_GIT_BASH_PATH") {
                 if let Some(bash_path) = find_git_bash() {
@@ -237,19 +230,6 @@ pub(crate) async fn start_claude_session(
                          Please reinstall Claude Code via Settings to auto-install Git,\n\
                          or install Git for Windows manually: https://git-scm.com/downloads/win"
                         .to_string());
-                }
-            }
-        }
-
-        // Auto-detect and inject proxy env vars into CLI subprocess.
-        // GUI apps launched from Finder/Dock don't inherit shell proxy settings.
-        // Detection order: login shell > macOS system proxy > local port probing.
-        #[cfg(not(target_os = "windows"))]
-        {
-            let proxy_env = login_shell_proxy_env();
-            for (k, v) in proxy_env {
-                if !resolved_env.contains_key(k) && std::env::var(k).is_err() {
-                    resolved_env.insert(k.clone(), v.clone());
                 }
             }
         }
@@ -275,7 +255,6 @@ pub(crate) async fn start_claude_session(
         }
 
         // On Windows, .cmd/.bat files must be launched via cmd /C
-        #[cfg(target_os = "windows")]
         let child = {
             // Helper: build and spawn a Command for the given binary
             let spawn_win = |bin: &str| {
@@ -327,101 +306,6 @@ pub(crate) async fn start_claude_session(
                     }
                     eprintln!("Retrying with alternative: {}", alt_bin);
                     spawn_win(&alt_bin).map_err(|e2| {
-                        format!(
-                            "Failed to spawn claude (tried '{}' then '{}'): {}",
-                            claude_bin, alt_bin, e2
-                        )
-                    })?
-                }
-                Err(e) => {
-                    return Err(format!(
-                        "Failed to spawn claude (tried '{}'): {}",
-                        claude_bin, e
-                    ));
-                }
-            }
-        };
-        #[cfg(not(target_os = "windows"))]
-        let child = {
-            let spawn_unix = |bin: &str| -> std::io::Result<tokio::process::Child> {
-                let mut cmd = Command::new(bin);
-                cmd.args(&args)
-                    .current_dir(&params.cwd)
-                    .env("PATH", &enriched_path)
-                    // Clear CLAUDECODE env var so the CLI doesn't refuse to start
-                    // when ClaudeDeck itself is launched from within a Claude Code session.
-                    .env_remove("CLAUDECODE");
-                // Clear inherited ANTHROPIC_* env vars that conflict with our overrides
-                for key in &inherited_keys_to_remove {
-                    cmd.env_remove(key);
-                }
-                // Inject custom API provider env vars
-                for (key, value) in &resolved_env {
-                    cmd.env(key, value);
-                }
-                cmd.stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-            };
-
-            match spawn_unix(&claude_bin) {
-                Ok(c) => c,
-                Err(e) if e.raw_os_error() == Some(13) => {
-                    // EACCES
-                    // Permission denied — attempt to fix execute permission and retry.
-                    eprintln!(
-                        "EACCES on '{}', attempting chmod +x and retrying...",
-                        claude_bin
-                    );
-                    let path = std::path::Path::new(&claude_bin);
-                    let fixed = (|| -> Result<(), std::io::Error> {
-                        use std::os::unix::fs::PermissionsExt;
-                        let metadata = std::fs::metadata(path)?;
-                        let mut perms = metadata.permissions();
-                        perms.set_mode(perms.mode() | 0o755);
-                        std::fs::set_permissions(path, perms)?;
-                        Ok(())
-                    })();
-                    if let Err(chmod_err) = fixed {
-                        eprintln!("chmod +x failed: {}", chmod_err);
-                        return Err(format!(
-                            "Failed to spawn claude (tried '{}', permission denied, chmod fix also failed: {}): {}",
-                            claude_bin, chmod_err, e
-                        ));
-                    }
-                    eprintln!("chmod +x succeeded, retrying spawn...");
-                    spawn_unix(&claude_bin).map_err(|e2| {
-                        format!(
-                            "Failed to spawn claude (tried '{}', retried after chmod +x): {}",
-                            claude_bin, e2
-                        )
-                    })?
-                }
-                Err(e) if e.raw_os_error() == Some(88) || e.raw_os_error() == Some(8) => {
-                    // ENOEXEC (88 on macOS, 8 on Linux) — Malformed binary.
-                    // Delete the corrupt binary and try to find an alternative.
-                    eprintln!(
-                        "ENOEXEC on '{}' (malformed binary), cleaning up and retrying...",
-                        claude_bin
-                    );
-                    if let Some(cli_dir) = cli_download_dir() {
-                        let suspect = cli_dir.join("claude");
-                        if suspect.exists() {
-                            let _ = std::fs::remove_file(&suspect);
-                            eprintln!("Removed corrupt binary: {:?}", suspect);
-                        }
-                    }
-                    let alt_bin = find_claude_binary().unwrap_or_else(|| "claude".to_string());
-                    if alt_bin == claude_bin {
-                        return Err(format!(
-                            "Failed to spawn claude (tried '{}', binary is malformed/corrupt — \
-                             please reinstall CLI from Settings): {}",
-                            claude_bin, e
-                        ));
-                    }
-                    eprintln!("Retrying with alternative: {}", alt_bin);
-                    spawn_unix(&alt_bin).map_err(|e2| {
                         format!(
                             "Failed to spawn claude (tried '{}' then '{}'): {}",
                             claude_bin, alt_bin, e2

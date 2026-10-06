@@ -22,19 +22,12 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex as TokioMutex;
 
-#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-#[cfg(target_os = "windows")]
 fn claude_needs_cmd_wrapper(bin: &str) -> bool {
     bin.ends_with(".cmd")
         || bin.ends_with(".bat")
         || (!bin.contains('\\') && !bin.contains('/') && !bin.contains('.'))
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn shell_single_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', r#"'\''"#))
 }
 
 /// Strip ANSI escape sequences from a string (terminal color/cursor codes).
@@ -94,13 +87,11 @@ pub(crate) fn cli_download_dir() -> Option<std::path::PathBuf> {
 }
 
 /// Path to the local Git installation directory (Windows only).
-#[cfg(target_os = "windows")]
 fn git_download_dir() -> Result<std::path::PathBuf, String> {
     app_paths::tools_dir().map(|d| d.join("git"))
 }
 
 /// Check if app-local PortableGit bash.exe exists (Windows only).
-#[cfg(target_os = "windows")]
 fn get_local_git_bash() -> Option<String> {
     let git_dir = git_download_dir().ok()?;
     let bash = git_dir.join("bin").join("bash.exe");
@@ -115,7 +106,6 @@ fn get_local_git_bash() -> Option<String> {
 
 /// On Windows, find git-bash (bash.exe) to satisfy Claude Code's requirement.
 /// Returns the path to bash.exe if found.
-#[cfg(target_os = "windows")]
 pub(crate) fn find_git_bash() -> Option<String> {
     // 1. Check app-local PortableGit first (auto-installed by ClaudeDeck)
     if let Some(local) = get_local_git_bash() {
@@ -173,40 +163,6 @@ fn find_claude_binary_ordered() -> Vec<String> {
         .collect()
 }
 
-/// On macOS/Linux, GUI apps inherit a minimal launchd PATH and miss version
-/// managers (nvm, volta, fnm) that are set up in login-shell config files.
-/// This function spawns a login shell once, captures its PATH, and caches it
-/// for the lifetime of the process via OnceLock.
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn login_shell_extra_path() -> &'static str {
-    static CACHE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    CACHE.get_or_init(|| {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        let output = std::process::Command::new(&shell)
-            .args(["-l", "-c", "echo $PATH"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        match output {
-            Ok(o) if o.status.success() => {
-                let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if !p.is_empty() {
-                    eprintln!(
-                        "login shell PATH captured ({} entries)",
-                        p.split(':').count()
-                    );
-                }
-                p
-            }
-            _ => {
-                eprintln!("login shell PATH capture failed");
-                String::new()
-            }
-        }
-    })
-}
-
 /// Truncate excessively large string values inside a JSON structure.
 /// Used to prevent Tauri IPC / WebView freezes when Claude CLI returns
 /// huge tool results (e.g. 24MB PDF text content).
@@ -242,10 +198,7 @@ pub(crate) fn build_enriched_path() -> String {
     let current = std::env::var("PATH").unwrap_or_default();
     let mut paths = vec![];
 
-    #[cfg(target_os = "windows")]
     let separator = ";";
-    #[cfg(not(target_os = "windows"))]
-    let separator = ":";
 
     // Highest priority: local npm-global/bin (where CLI is installed via local npm)
     if let Some(npm_bin) = get_npm_global_bin() {
@@ -263,7 +216,6 @@ pub(crate) fn build_enriched_path() -> String {
     }
 
     // App-local Git (PortableGit) bin directory (Windows only)
-    #[cfg(target_os = "windows")]
     {
         if let Ok(git_dir) = git_download_dir() {
             let git_bin = git_dir.join("bin");
@@ -311,7 +263,6 @@ pub(crate) fn build_enriched_path() -> String {
     }
 
     if let Some(home) = dirs::home_dir() {
-        #[cfg(target_os = "windows")]
         {
             if let Some(app_data) = dirs::data_dir() {
                 paths.push(app_data.join("npm").to_string_lossy().to_string());
@@ -386,74 +337,6 @@ pub(crate) fn build_enriched_path() -> String {
                 let node_path = format!("{}\\nodejs", pf);
                 paths.push(node_path);
             }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            paths.push(home.join(".cargo/bin").to_string_lossy().to_string());
-            paths.push(home.join(".local/bin").to_string_lossy().to_string());
-            paths.push(home.join(".npm-global/bin").to_string_lossy().to_string());
-
-            // volta (version manager) — shims live here
-            paths.push(home.join(".volta/bin").to_string_lossy().to_string());
-
-            // fnm (version manager) — default alias symlink
-            paths.push(
-                home.join(".fnm/aliases/default/bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-
-            // nvm: find the latest installed Node.js version
-            let nvm_dir = std::env::var("NVM_DIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| home.join(".nvm"));
-            let nvm_versions = nvm_dir.join("versions/node");
-            if nvm_versions.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
-                    let mut version_dirs: Vec<std::path::PathBuf> = entries
-                        .flatten()
-                        .filter(|e| e.path().is_dir())
-                        .map(|e| e.path())
-                        .collect();
-                    version_dirs.sort_by(|a, b| {
-                        let parse_ver = |p: &std::path::Path| -> (u32, u32, u32) {
-                            let name = p.file_name().unwrap_or_default().to_string_lossy();
-                            let s = name.strip_prefix('v').unwrap_or(&name);
-                            let parts: Vec<u32> =
-                                s.split('.').filter_map(|x| x.parse().ok()).collect();
-                            (
-                                parts.first().copied().unwrap_or(0),
-                                parts.get(1).copied().unwrap_or(0),
-                                parts.get(2).copied().unwrap_or(0),
-                            )
-                        };
-                        parse_ver(a).cmp(&parse_ver(b))
-                    });
-                    if let Some(latest) = version_dirs.last() {
-                        paths.push(latest.join("bin").to_string_lossy().to_string());
-                    }
-                }
-            }
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        paths.push("/opt/homebrew/bin".to_string());
-        paths.push("/usr/local/bin".to_string());
-    }
-
-    // Merge login shell PATH (macOS/Linux) to catch version managers we missed
-    #[cfg(not(target_os = "windows"))]
-    {
-        let shell_path = login_shell_extra_path();
-        if !shell_path.is_empty() {
-            let existing: std::collections::HashSet<String> = paths.iter().cloned().collect();
-            let extra: Vec<String> = shell_path
-                .split(':')
-                .filter(|p| !p.is_empty() && !existing.contains(*p))
-                .map(|p| p.to_string())
-                .collect();
-            paths.extend(extra);
         }
     }
 
@@ -555,51 +438,6 @@ async fn get_claude_config_paths() -> Result<Value, String> {
     }))
 }
 
-/// Set the macOS dock icon dynamically from base64-encoded PNG data.
-#[tauri::command]
-async fn set_dock_icon(app: AppHandle, png_base64: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        use base64::Engine;
-        let data = base64::engine::general_purpose::STANDARD
-            .decode(&png_base64)
-            .map_err(|e| format!("Invalid base64: {}", e))?;
-
-        // NSApplication APIs must be called on the main thread
-        app.run_on_main_thread(move || {
-            objc::rc::autoreleasepool(|| unsafe {
-                use objc::msg_send;
-                use objc::runtime::{Class, Object};
-                use objc::sel;
-                use objc::sel_impl;
-
-                let nsdata_class = Class::get("NSData").unwrap();
-                let nsdata: *mut Object = msg_send![nsdata_class, alloc];
-                let nsdata: *mut Object = msg_send![nsdata,
-                    initWithBytes: data.as_ptr()
-                    length: data.len()
-                ];
-
-                let nsimage_class = Class::get("NSImage").unwrap();
-                let nsimage: *mut Object = msg_send![nsimage_class, alloc];
-                let nsimage: *mut Object = msg_send![nsimage, initWithData: nsdata];
-
-                if !nsimage.is_null() {
-                    let nsapp_class = Class::get("NSApplication").unwrap();
-                    let nsapp: *mut Object = msg_send![nsapp_class, sharedApplication];
-                    let _: () = msg_send![nsapp, setApplicationIconImage: nsimage];
-                }
-            });
-        })
-        .map_err(|e| format!("Failed to run on main thread: {}", e))?;
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    let _ = (&app, &png_base64);
-
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -607,7 +445,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
-        // 开机自启动（Windows 写入当前用户的注册表启动项）；macOS 的启动方式在此指定
+        // 开机自启动（写入当前用户的注册表启动项；MacosLauncher 参数是插件接口要求，Windows 下不起作用）
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -639,30 +477,11 @@ pub fn run() {
             }
             main_window.build()?;
 
-            // titleBarStyle: "Overlay" in tauri.conf.json handles macOS traffic lights
-            // and native titlebar drag/double-click-to-maximize automatically.
-
             // 监听 CLI 会话目录，让会话列表随 CLI 变化自动同步
             start_sessions_watcher(app.handle().clone());
 
             // 系统托盘
             setup_tray(app)?;
-
-            // Propagate proxy env vars from login shell to the process environment
-            // so that ALL HTTP clients (including the updater plugin) can reach
-            // external services through the proxy.
-            #[cfg(not(target_os = "windows"))]
-            {
-                let proxy_env = login_shell_proxy_env();
-                for (k, v) in proxy_env {
-                    if std::env::var(k).is_err() {
-                        // SAFETY: called once during single-threaded setup
-                        unsafe {
-                            std::env::set_var(k, v);
-                        }
-                    }
-                }
-            }
 
             // Register updater plugin (desktop only)
             #[cfg(desktop)]
@@ -718,8 +537,6 @@ pub fn run() {
             commands::files::open_in_vscode,
             commands::files::reveal_in_finder,
             commands::files::open_with_default_app,
-            commands::files::share_file,
-            commands::files::share_to_wechat,
             commands::sessions::export_session_markdown,
             commands::sessions::export_session_json,
             commands::sessions::list_recent_projects,
@@ -742,7 +559,6 @@ pub fn run() {
             commands::skills::translate_skill_markdown,
             commands::git::run_git_command,
             commands::git::rewind_files,
-            set_dock_icon,
             commands::cli_setup::run_claude_command,
             commands::cli_setup::run_claude_plugin_command,
             commands::cli_setup::check_claude_cli,
@@ -820,7 +636,6 @@ mod decode_tests {
         assert_eq!(info, ("hi".to_string(), r"D:\work".to_string()));
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn test_dpapi_master_key_roundtrip() {
         let key = [42u8; super::MASTER_KEY_LEN];

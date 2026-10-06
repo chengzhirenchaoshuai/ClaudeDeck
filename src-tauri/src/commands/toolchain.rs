@@ -34,19 +34,11 @@ pub(crate) fn npm_cache_dir() -> Result<std::path::PathBuf, String> {
 /// Get the bin directory of the local Node.js installation, if it exists.
 pub(crate) fn get_local_node_bin() -> Option<std::path::PathBuf> {
     let node_dir = node_download_dir().ok()?;
-    #[cfg(target_os = "windows")]
     {
         // Windows: node.exe is at the root of the extracted directory
         let node_exe = node_dir.join("node.exe");
         if node_exe.exists() {
             return Some(node_dir);
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let bin = node_dir.join("bin");
-        if bin.join("node").exists() {
-            return Some(bin);
         }
     }
     None
@@ -55,10 +47,7 @@ pub(crate) fn get_local_node_bin() -> Option<std::path::PathBuf> {
 /// Get the bin directory of npm-global, if it exists.
 pub(crate) fn get_npm_global_bin() -> Option<std::path::PathBuf> {
     let dir = npm_global_dir().ok()?;
-    #[cfg(target_os = "windows")]
     let bin = dir.clone();
-    #[cfg(not(target_os = "windows"))]
-    let bin = dir.join("bin");
     if bin.exists() {
         Some(bin)
     } else {
@@ -70,12 +59,8 @@ pub(crate) fn get_npm_global_bin() -> Option<std::path::PathBuf> {
 pub(crate) fn get_node_archive_info() -> Result<(String, &'static str), String> {
     // Returns (filename, extension)
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("macos", "aarch64") => Ok((format!("node-{}-darwin-arm64", NODE_LTS_VERSION), "tar.gz")),
-        ("macos", "x86_64") => Ok((format!("node-{}-darwin-x64", NODE_LTS_VERSION), "tar.gz")),
         ("windows", "x86_64") => Ok((format!("node-{}-win-x64", NODE_LTS_VERSION), "zip")),
         ("windows", "aarch64") => Ok((format!("node-{}-win-arm64", NODE_LTS_VERSION), "zip")),
-        ("linux", "x86_64") => Ok((format!("node-{}-linux-x64", NODE_LTS_VERSION), "tar.gz")),
-        ("linux", "aarch64") => Ok((format!("node-{}-linux-arm64", NODE_LTS_VERSION), "tar.gz")),
         (os, arch) => Err(format!("Unsupported platform for Node.js: {}-{}", os, arch)),
     }
 }
@@ -85,7 +70,6 @@ pub(crate) async fn is_system_npm_available() -> bool {
     let enriched_path = build_enriched_path();
 
     // 1. Direct PATH check
-    #[cfg(target_os = "windows")]
     let result = {
         let mut cmd = Command::new("cmd");
         cmd.args(["/C", "npm.cmd", "--version"])
@@ -94,38 +78,9 @@ pub(crate) async fn is_system_npm_available() -> bool {
             .creation_flags(0x08000000);
         tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output()).await
     };
-    #[cfg(not(target_os = "windows"))]
-    let result = {
-        let mut cmd = Command::new("npm");
-        cmd.arg("--version")
-            .env("PATH", &enriched_path)
-            .stdin(Stdio::null());
-        tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output()).await
-    };
 
     if matches!(&result, Ok(Ok(output)) if output.status.success()) {
         return true;
-    }
-
-    // 2. Fallback: login shell (macOS/Linux GUI apps don't inherit shell PATH)
-    #[cfg(not(target_os = "windows"))]
-    {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        let shell_result = {
-            let mut cmd = Command::new(&shell);
-            cmd.args(["-l", "-c", "npm --version"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null());
-            tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output()).await
-        };
-        if matches!(shell_result, Ok(Ok(output)) if output.status.success()) {
-            eprintln!(
-                "npm found via login shell ({}) but not via enriched PATH",
-                shell
-            );
-            return true;
-        }
     }
 
     false
@@ -145,14 +100,9 @@ pub(crate) async fn check_node_env() -> Result<NodeEnvStatus, String> {
 
     // 1. Check local Node.js first
     if let Some(local_bin) = get_local_node_bin() {
-        let node_path = local_bin.join(if cfg!(target_os = "windows") {
-            "node.exe"
-        } else {
-            "node"
-        });
+        let node_path = local_bin.join("node.exe");
         let mut node_cmd = Command::new(&node_path);
         node_cmd.arg("--version").stdin(Stdio::null());
-        #[cfg(target_os = "windows")]
         node_cmd.creation_flags(0x08000000);
         if let Ok(Ok(output)) =
             tokio::time::timeout(std::time::Duration::from_secs(10), node_cmd.output()).await
@@ -170,21 +120,12 @@ pub(crate) async fn check_node_env() -> Result<NodeEnvStatus, String> {
     }
 
     // 2. Check system Node.js
-    #[cfg(target_os = "windows")]
     let node_result = {
         let mut cmd = Command::new("cmd");
         cmd.args(["/C", "node", "--version"])
             .env("PATH", &enriched_path)
             .stdin(Stdio::null())
             .creation_flags(0x08000000);
-        tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output()).await
-    };
-    #[cfg(not(target_os = "windows"))]
-    let node_result = {
-        let mut cmd = Command::new("node");
-        cmd.arg("--version")
-            .env("PATH", &enriched_path)
-            .stdin(Stdio::null());
         tokio::time::timeout(std::time::Duration::from_secs(10), cmd.output()).await
     };
 
@@ -281,23 +222,6 @@ pub(crate) async fn install_node_env_inner(app: &AppHandle, china: bool) -> Resu
 
     extract_node_archive(&bytes, ext, &archive_name, &install_dir)?;
 
-    // Set executable permissions on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let bin_dir = install_dir.join("bin");
-        if bin_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&bin_dir) {
-                for entry in entries.flatten() {
-                    let _ = std::fs::set_permissions(
-                        entry.path(),
-                        std::fs::Permissions::from_mode(0o755),
-                    );
-                }
-            }
-        }
-    }
-
     let _ = app.emit(
         "setup:download:progress",
         serde_json::json!({
@@ -315,28 +239,22 @@ pub(crate) async fn install_node_env_inner(app: &AppHandle, china: bool) -> Resu
 // ─── Git for Windows (PortableGit) local deployment ─────────────────────────
 
 /// PortableGit version for auto-deployment on Windows (when git-bash is missing).
-#[cfg(target_os = "windows")]
 pub(crate) const GIT_PORTABLE_VERSION: &str = "2.47.1.2";
 
 /// Git for Windows release tag (used in download URLs).
-#[cfg(target_os = "windows")]
 pub(crate) const GIT_RELEASE_TAG: &str = "v2.47.1.windows.2";
 
 /// GitHub releases URL for Git for Windows.
-#[cfg(target_os = "windows")]
 pub(crate) const GIT_DIST_GITHUB: &str = "https://github.com/git-for-windows/git/releases/download";
 
 /// China mirror: npmmirror binary mirror.
-#[cfg(target_os = "windows")]
 pub(crate) const GIT_DIST_NPMMIRROR: &str = "https://registry.npmmirror.com/-/binary/git-for-windows";
 
 /// China mirror: Huawei Cloud.
-#[cfg(target_os = "windows")]
 pub(crate) const GIT_DIST_HUAWEI: &str = "https://mirrors.huaweicloud.com/git-for-windows";
 
 /// Download and install PortableGit to provide bash.exe on Windows.
 /// The .7z.exe self-extracting archive is downloaded and executed silently.
-#[cfg(target_os = "windows")]
 pub(crate) async fn install_git_bash_inner(app: &AppHandle, china: bool) -> Result<(), String> {
     let install_dir = git_download_dir()?;
 
@@ -523,7 +441,7 @@ pub(crate) async fn download_with_progress(
     Ok(bytes)
 }
 
-/// Extract a Node.js archive (tar.gz or zip) into the target directory.
+/// 解压 Node.js 的 zip 包到目标目录。
 pub(crate) fn extract_node_archive(
     data: &[u8],
     ext: &str,
@@ -531,37 +449,6 @@ pub(crate) fn extract_node_archive(
     install_dir: &std::path::Path,
 ) -> Result<(), String> {
     match ext {
-        "tar.gz" => {
-            let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(data));
-            let mut archive = tar::Archive::new(decoder);
-
-            // Node.js tar.gz extracts to a subdirectory like "node-v22.22.0-darwin-arm64/"
-            // We want the contents directly in install_dir
-            for entry in archive.entries().map_err(|e| format!("tar error: {}", e))? {
-                let mut entry = entry.map_err(|e| format!("tar entry error: {}", e))?;
-                let path = entry.path().map_err(|e| format!("path error: {}", e))?;
-
-                // Strip the top-level directory (e.g., "node-v22.22.0-darwin-arm64/bin/node" -> "bin/node")
-                let stripped: std::path::PathBuf = path
-                    .components()
-                    .skip(1) // skip "node-v22.22.0-platform/"
-                    .collect();
-
-                if stripped.as_os_str().is_empty() {
-                    continue; // skip the top-level dir itself
-                }
-
-                let target = install_dir.join(&stripped);
-                if let Some(parent) = target.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-
-                entry
-                    .unpack(&target)
-                    .map_err(|e| format!("unpack error for {:?}: {}", stripped, e))?;
-            }
-            Ok(())
-        }
         "zip" => {
             let reader = std::io::Cursor::new(data);
             let mut archive =

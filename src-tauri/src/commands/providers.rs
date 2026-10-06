@@ -48,9 +48,8 @@ pub(crate) fn providers_path() -> Result<std::path::PathBuf, String> {
 }
 
 // --- Provider credential encryption (TK-303) ---
-// Provider JSON is AES-GCM encrypted with a persistent random master key. On
-// Windows that key is sealed with DPAPI for the current OS user; legacy raw key
-// files are migrated on load. Unix builds retain owner-only file permissions.
+// Provider JSON is AES-GCM encrypted with a persistent random master key, sealed
+// with DPAPI for the current OS user; legacy raw key files are migrated on load.
 // Export/import still operates on explicit user-requested plaintext JSON.
 
 use rand::RngCore;
@@ -59,17 +58,14 @@ use base64::Engine;
 pub(crate) const ENC_MAGIC: &str = "TENC1:";
 pub(crate) const PROVIDER_KEY_FILE: &str = "providers.key";
 pub(crate) const MASTER_KEY_LEN: usize = 32;
-#[cfg(target_os = "windows")]
 pub(crate) const DPAPI_MAGIC: &[u8] = b"TDP1";
 
-#[cfg(target_os = "windows")]
 #[repr(C)]
 pub(crate) struct DataBlob {
     pub(crate) cb_data: u32,
     pub(crate) pb_data: *mut u8,
 }
 
-#[cfg(target_os = "windows")]
 #[link(name = "Crypt32")]
 unsafe extern "system" {
     fn CryptProtectData(
@@ -92,13 +88,11 @@ unsafe extern "system" {
     ) -> i32;
 }
 
-#[cfg(target_os = "windows")]
 #[link(name = "Kernel32")]
 unsafe extern "system" {
     fn LocalFree(memory: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
 }
 
-#[cfg(target_os = "windows")]
 pub(crate) fn dpapi_transform(input: &[u8], protect: bool) -> Result<Vec<u8>, String> {
     const CRYPTPROTECT_UI_FORBIDDEN: u32 = 0x1;
     let input_blob = DataBlob {
@@ -130,19 +124,12 @@ pub(crate) fn dpapi_transform(input: &[u8], protect: bool) -> Result<Vec<u8>, St
     Ok(output)
 }
 
-#[cfg(target_os = "windows")]
 pub(crate) fn seal_master_key(key: &[u8; MASTER_KEY_LEN]) -> Result<Vec<u8>, String> {
     let mut stored = DPAPI_MAGIC.to_vec();
     stored.extend_from_slice(&dpapi_transform(key, true)?);
     Ok(stored)
 }
 
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn seal_master_key(key: &[u8; MASTER_KEY_LEN]) -> Result<Vec<u8>, String> {
-    Ok(key.to_vec())
-}
-
-#[cfg(target_os = "windows")]
 pub(crate) fn open_master_key(raw: &[u8]) -> Result<[u8; MASTER_KEY_LEN], String> {
     let plain = if raw.starts_with(DPAPI_MAGIC) {
         dpapi_transform(&raw[DPAPI_MAGIC.len()..], false)?
@@ -152,18 +139,6 @@ pub(crate) fn open_master_key(raw: &[u8]) -> Result<[u8; MASTER_KEY_LEN], String
     plain.try_into().map_err(|_| "Invalid provider master key".to_string())
 }
 
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn open_master_key(raw: &[u8]) -> Result<[u8; MASTER_KEY_LEN], String> {
-    raw.try_into().map_err(|_| "Invalid provider master key".to_string())
-}
-
-#[cfg(unix)]
-pub(crate) fn harden_path_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
 pub(crate) fn harden_path_permissions(_path: &std::path::Path) {}
 
 pub(crate) fn provider_key_path() -> Result<std::path::PathBuf, String> {
@@ -176,7 +151,6 @@ pub(crate) fn load_or_create_master_key() -> Result<[u8; MASTER_KEY_LEN], String
     if path.exists() {
         let raw = std::fs::read(&path).map_err(|e| format!("读取密钥失败: {}", e))?;
         let key = open_master_key(&raw)?;
-        #[cfg(target_os = "windows")]
         if !raw.starts_with(DPAPI_MAGIC) {
             std::fs::write(&path, seal_master_key(&key)?)
                 .map_err(|e| format!("Failed to migrate provider key protection: {}", e))?;

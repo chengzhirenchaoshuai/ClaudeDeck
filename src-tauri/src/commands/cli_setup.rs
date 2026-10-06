@@ -22,7 +22,6 @@ pub(crate) async fn run_claude_command(subcommand: String, cwd: Option<String>) 
 
     let binary = find_claude_binary().ok_or_else(|| "Claude CLI not found".to_string())?;
     let enriched_path = build_enriched_path();
-    #[cfg(target_os = "windows")]
     let mut cmd = if claude_needs_cmd_wrapper(&binary) {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(&binary).arg(&subcommand);
@@ -32,16 +31,9 @@ pub(crate) async fn run_claude_command(subcommand: String, cwd: Option<String>) 
         c.arg(&subcommand);
         c
     };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut c = Command::new(&binary);
-        c.arg(&subcommand);
-        c
-    };
     cmd.env("PATH", &enriched_path);
     cmd.env_remove("CLAUDECODE");
     cmd.stdin(Stdio::null());
-    #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000);
         // Disable MSYS2 auto path conversion on Windows (Chinese path fix)
@@ -104,7 +96,6 @@ pub(crate) async fn run_claude_plugin_command(args: Vec<String>, cwd: Option<Str
 
     let binary = find_claude_binary().ok_or_else(|| "Claude CLI not found".to_string())?;
     let enriched_path = build_enriched_path();
-    #[cfg(target_os = "windows")]
     let mut cmd = if claude_needs_cmd_wrapper(&binary) {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(&binary).arg("plugin");
@@ -114,17 +105,10 @@ pub(crate) async fn run_claude_plugin_command(args: Vec<String>, cwd: Option<Str
         c.arg("plugin");
         c
     };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut c = Command::new(&binary);
-        c.arg("plugin");
-        c
-    };
     cmd.args(&args);
     cmd.env("PATH", &enriched_path);
     cmd.env_remove("CLAUDECODE");
     cmd.stdin(Stdio::null());
-    #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000);
         cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
@@ -167,7 +151,6 @@ pub(crate) async fn check_claude_cli() -> Result<CliStatus, String> {
             eprintln!("[check_claude_cli] running '{} --version'...", path);
 
             // On Windows, .cmd files need cmd /C wrapper
-            #[cfg(target_os = "windows")]
             let output_result = {
                 let needs_cmd = path.ends_with(".cmd") || path.ends_with(".bat");
                 let fut = if needs_cmd {
@@ -212,44 +195,6 @@ pub(crate) async fn check_claude_cli() -> Result<CliStatus, String> {
                     }
                 }
             };
-            #[cfg(not(target_os = "windows"))]
-            let output_result = match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                Command::new(&path)
-                    .arg("--version")
-                    .env("PATH", &enriched_path)
-                    .output(),
-            )
-            .await
-            {
-                Ok(r) => r,
-                Err(_) => {
-                    eprintln!(
-                        "[check_claude_cli] --version timed out for '{}', trying fallback...",
-                        path
-                    );
-                    // The app-local binary is hanging; try to find an alternative via system PATH
-                    let fallback = find_claude_binary_ordered().into_iter().find(|p| p != &path);
-                    let git_bash_missing = false;
-                    return match fallback {
-                        Some(alt_path) => {
-                            eprintln!("[check_claude_cli] fallback found: {}", alt_path);
-                            Ok(CliStatus {
-                                installed: true,
-                                path: Some(alt_path),
-                                version: None,
-                                git_bash_missing,
-                            })
-                        }
-                        None => Ok(CliStatus {
-                            installed: false,
-                            path: None,
-                            version: None,
-                            git_bash_missing: false,
-                        }),
-                    };
-                }
-            };
 
             let version = match output_result {
                 Ok(output) if output.status.success() => {
@@ -269,7 +214,6 @@ pub(crate) async fn check_claude_cli() -> Result<CliStatus, String> {
                     eprintln!("check_claude_cli: failed to execute '{}': {}", path, e);
                     // On Windows, error 193 means the binary is corrupt/incompatible.
                     // Delete it and try to find a working alternative.
-                    #[cfg(target_os = "windows")]
                     {
                         if e.raw_os_error() == Some(193) {
                             eprintln!("error 193: removing corrupt binary and re-searching...");
@@ -298,10 +242,7 @@ pub(crate) async fn check_claude_cli() -> Result<CliStatus, String> {
                         }
                     }
                     // TK-319: Binary found but can't be executed → report as not installed
-                    #[cfg(target_os = "windows")]
                     let git_bash_missing = find_git_bash().is_none();
-                    #[cfg(not(target_os = "windows"))]
-                    let git_bash_missing = false;
                     return Ok(CliStatus {
                         installed: false,
                         path: Some(path),
@@ -311,10 +252,7 @@ pub(crate) async fn check_claude_cli() -> Result<CliStatus, String> {
                 }
             };
             // On Windows, check if git-bash is available (hard requirement for Claude Code)
-            #[cfg(target_os = "windows")]
             let git_bash_missing = find_git_bash().is_none();
-            #[cfg(not(target_os = "windows"))]
-            let git_bash_missing = false;
 
             Ok(CliStatus {
                 installed: true,
@@ -344,7 +282,6 @@ pub(crate) async fn diagnose_cli() -> Result<Vec<commands::cli_resolver::CliCand
         if !candidate.issues.is_empty() && candidate.version.is_none() {
             continue;
         }
-        #[cfg(target_os = "windows")]
         let version_result = {
             let needs_cmd = candidate.path.ends_with(".cmd") || candidate.path.ends_with(".bat");
             let fut = if needs_cmd {
@@ -366,17 +303,6 @@ pub(crate) async fn diagnose_cli() -> Result<Vec<commands::cli_resolver::CliCand
             };
             tokio::time::timeout(std::time::Duration::from_secs(3), fut).await
         };
-        #[cfg(not(target_os = "windows"))]
-        let version_result = tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            Command::new(&candidate.path)
-                .arg("--version")
-                .env("PATH", &enriched_path)
-                .stdin(Stdio::null())
-                .stderr(Stdio::null())
-                .output(),
-        )
-        .await;
 
         match version_result {
             Ok(Ok(output)) if output.status.success() => {
@@ -489,17 +415,9 @@ pub(crate) async fn install_cli_via_npm(app: &AppHandle, china: bool) -> Result<
 
     // Determine npm path: local Node.js takes priority, then system npm
     let npm_path = if let Some(local_bin) = get_local_node_bin() {
-        #[cfg(target_os = "windows")]
-        let npm = local_bin.join("npm.cmd");
-        #[cfg(not(target_os = "windows"))]
-        let npm = local_bin.join("npm");
-        npm.to_string_lossy().to_string()
+        local_bin.join("npm.cmd").to_string_lossy().to_string()
     } else {
-        #[cfg(target_os = "windows")]
-        let npm = "npm.cmd".to_string();
-        #[cfg(not(target_os = "windows"))]
-        let npm = "npm".to_string();
-        npm
+        "npm.cmd".to_string()
     };
 
     // Build PATH that includes local Node.js bin
@@ -560,7 +478,6 @@ pub(crate) async fn install_cli_via_npm(app: &AppHandle, china: bool) -> Result<
 
         let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-        #[cfg(target_os = "windows")]
         let result = {
             let mut cmd = Command::new("cmd");
             cmd.arg("/C").arg(&npm_path);
@@ -568,14 +485,6 @@ pub(crate) async fn install_cli_via_npm(app: &AppHandle, china: bool) -> Result<
             cmd.env("PATH", &enriched_path)
                 .stdin(Stdio::null())
                 .creation_flags(0x08000000);
-            tokio::time::timeout(std::time::Duration::from_secs(300), cmd.output()).await
-        };
-        #[cfg(not(target_os = "windows"))]
-        let result = {
-            let mut cmd = Command::new(&npm_path);
-            cmd.args(&args_str)
-                .env("PATH", &enriched_path)
-                .stdin(Stdio::null());
             tokio::time::timeout(std::time::Duration::from_secs(300), cmd.output()).await
         };
 
@@ -631,18 +540,10 @@ pub(crate) fn version_gt(a: &str, b: &str) -> bool {
 
 /// Return the platform key matching the server manifest (e.g. "win32-x64").
 pub(crate) fn native_platform_key() -> &'static str {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     { "win32-x64" }
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    #[cfg(target_arch = "aarch64")]
     { "win32-arm64" }
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { "darwin-arm64" }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { "darwin-x64" }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { "linux-x64" }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    { "linux-arm64" }
 }
 
 /// Try to update the CLI by downloading a native binary from GCS.
@@ -683,7 +584,7 @@ pub(crate) async fn try_native_cli_update(china: bool) -> Result<String, String>
     // 2. Fetch manifest for checksum
     let platform = native_platform_key();
     let mut expected_checksum = String::new();
-    let mut binary_name = if cfg!(target_os = "windows") { "claude.exe" } else { "claude" }.to_string();
+    let mut binary_name = "claude.exe".to_string();
 
     for base in &sources {
         let url = format!("{}/{}/manifest.json", base, version);
@@ -772,13 +673,6 @@ pub(crate) async fn try_native_cli_update(china: bool) -> Result<String, String>
         return Err("All download sources failed".to_string());
     }
 
-    // 6. Set executable permission and move to final location
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755));
-    }
-
     // On Windows the running binary may be locked; try rename, then copy+delete
     if let Err(_) = std::fs::rename(&tmp_path, &dest_path) {
         std::fs::copy(&tmp_path, &dest_path)
@@ -813,17 +707,9 @@ pub(crate) async fn update_claude_cli(app: AppHandle) -> Result<String, String> 
     // For China: npmmirror first (fast), verify version matches target,
     // if stale → auto-retry with npm official
     let npm_path = if let Some(local_bin) = get_local_node_bin() {
-        #[cfg(target_os = "windows")]
-        let npm = local_bin.join("npm.cmd");
-        #[cfg(not(target_os = "windows"))]
-        let npm = local_bin.join("npm");
-        npm.to_string_lossy().to_string()
+        local_bin.join("npm.cmd").to_string_lossy().to_string()
     } else {
-        #[cfg(target_os = "windows")]
-        let npm = "npm.cmd".to_string();
-        #[cfg(not(target_os = "windows"))]
-        let npm = "npm".to_string();
-        npm
+        "npm.cmd".to_string()
     };
 
     let enriched_path = build_enriched_path();
@@ -882,7 +768,6 @@ pub(crate) async fn update_claude_cli(app: AppHandle) -> Result<String, String> 
         ];
         let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-        #[cfg(target_os = "windows")]
         let result = {
             let mut cmd = Command::new("cmd");
             cmd.arg("/C").arg(&npm_path);
@@ -890,13 +775,6 @@ pub(crate) async fn update_claude_cli(app: AppHandle) -> Result<String, String> 
             cmd.env("PATH", &enriched_path)
                 .stdin(Stdio::null())
                 .creation_flags(0x08000000);
-            tokio::time::timeout(std::time::Duration::from_secs(300), cmd.output()).await
-        };
-        #[cfg(not(target_os = "windows"))]
-        let result = {
-            let mut cmd = Command::new(&npm_path);
-            cmd.args(&args_str);
-            cmd.env("PATH", &enriched_path).stdin(Stdio::null());
             tokio::time::timeout(std::time::Duration::from_secs(300), cmd.output()).await
         };
 
@@ -1026,10 +904,7 @@ pub(crate) async fn install_claude_cli(app: AppHandle) -> Result<(), String> {
     // Skip installation if CLI already exists on system.
     // On Windows, still continue when git-bash is missing because reinstall is the repair path.
     let existing_cli = find_claude_binary();
-    #[cfg(target_os = "windows")]
     let can_skip_install = existing_cli.is_some() && find_git_bash().is_some();
-    #[cfg(not(target_os = "windows"))]
-    let can_skip_install = existing_cli.is_some();
     if can_skip_install {
         eprintln!("CLI already found on system, skipping installation");
         let _ = app.emit(
@@ -1045,7 +920,6 @@ pub(crate) async fn install_claude_cli(app: AppHandle) -> Result<(), String> {
     let china = is_china_network().await;
 
     // Phase 1 (Windows only): Ensure git-bash is available
-    #[cfg(target_os = "windows")]
     {
         if find_git_bash().is_none() {
             eprintln!("git-bash not found, auto-installing PortableGit...");
@@ -1089,54 +963,8 @@ pub(crate) async fn install_claude_cli(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Inject a directory into the user's Unix shell profile PATH.
-/// Appends an export line to the first existing profile file (.zshrc, .bashrc, etc.).
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn inject_unix_shell_path(dir: &str) {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return,
-    };
-    let export_line = format!("export PATH=\"{}:$PATH\"", dir);
-    let marker = "# Added by ClaudeDeck";
-    let block = format!("\n{}\n{}\n", marker, export_line);
-
-    let profiles = [
-        home.join(".zshrc"),
-        home.join(".bashrc"),
-        home.join(".bash_profile"),
-        home.join(".profile"),
-    ];
-
-    // Check if already injected
-    for p in &profiles {
-        if let Ok(c) = std::fs::read_to_string(p) {
-            if c.contains(&export_line) {
-                return;
-            }
-        }
-    }
-
-    // Append to the first existing profile
-    for p in &profiles {
-        if p.exists() {
-            if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(p) {
-                use std::io::Write;
-                let _ = f.write_all(block.as_bytes());
-                eprintln!("Injected PATH into {}", p.display());
-                return;
-            }
-        }
-    }
-
-    // None exist — create ~/.profile
-    let _ = std::fs::write(home.join(".profile"), block);
-    eprintln!("Created ~/.profile with PATH injection");
-}
-
 /// Post-install: add relevant directories to Windows user PATH and emit completion.
 pub(crate) fn finalize_cli_install_paths(app: &AppHandle) {
-    #[cfg(target_os = "windows")]
     {
         // Collect all directories that should be on PATH
         let mut dirs_to_add: Vec<String> = vec![];
@@ -1213,17 +1041,6 @@ pub(crate) fn finalize_cli_install_paths(app: &AppHandle) {
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Some(node_bin) = get_local_node_bin() {
-            inject_unix_shell_path(&node_bin.to_string_lossy());
-        }
-        if let Some(npm_bin) = get_npm_global_bin() {
-            inject_unix_shell_path(&npm_bin.to_string_lossy());
-        }
-        let _ = app;
-    }
-
     let _ = app.emit(
         "setup:download:progress",
         serde_json::json!({
@@ -1249,7 +1066,6 @@ pub(crate) async fn start_claude_login(app: AppHandle) -> Result<(), String> {
     let enriched_path = build_enriched_path();
 
     // On Windows, .cmd/.bat files must be launched via cmd /C (same logic as start_session)
-    #[cfg(target_os = "windows")]
     let mut child = {
         let needs_cmd = claude_bin.ends_with(".cmd")
             || claude_bin.ends_with(".bat")
@@ -1272,15 +1088,6 @@ pub(crate) async fn start_claude_login(app: AppHandle) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to start login (tried '{}'): {}", claude_bin, e))?
     };
-    #[cfg(not(target_os = "windows"))]
-    let mut child = Command::new(&claude_bin)
-        .args(["login"])
-        .env("PATH", &enriched_path)
-        .env_remove("CLAUDECODE")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start login (tried '{}'): {}", claude_bin, e))?;
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -1346,13 +1153,8 @@ pub(crate) struct AuthStatus {
 #[tauri::command]
 pub(crate) async fn check_claude_auth() -> Result<AuthStatus, String> {
     let claude_bin = find_claude_binary().unwrap_or_else(|| {
-        #[cfg(target_os = "windows")]
         {
             "claude.cmd".to_string()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            "claude".to_string()
         }
     });
     let enriched_path = build_enriched_path();
@@ -1393,7 +1195,6 @@ pub(crate) async fn check_claude_auth() -> Result<AuthStatus, String> {
     }
 
     // Fallback: run `claude doctor` with a shorter timeout
-    #[cfg(target_os = "windows")]
     let mut cmd = if claude_needs_cmd_wrapper(&claude_bin) {
         let mut c = Command::new("cmd");
         c.args(["/C", &claude_bin, "doctor"]);
@@ -1403,14 +1204,7 @@ pub(crate) async fn check_claude_auth() -> Result<AuthStatus, String> {
         c.arg("doctor");
         c
     };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut c = Command::new(&claude_bin);
-        c.arg("doctor");
-        c
-    };
     cmd.env("PATH", &enriched_path).env_remove("CLAUDECODE");
-    #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let result = tokio::time::timeout(std::time::Duration::from_secs(8), cmd.output()).await;
 
@@ -1441,58 +1235,14 @@ pub(crate) async fn check_claude_auth() -> Result<AuthStatus, String> {
         }
     }
 }
-/// Open a native terminal window to run `claude login`.
-/// On macOS: uses osascript to open Terminal.app.
-/// On Linux: tries common terminal emulators.
-/// On Windows: opens cmd.exe with enriched PATH.
+
+/// 打开一个 cmd.exe 终端窗口运行 `claude login`（带补全后的 PATH）。
 #[tauri::command]
 pub(crate) async fn open_terminal_login() -> Result<(), String> {
     let claude_bin = find_claude_binary().ok_or_else(|| {
         "Claude CLI not found. Please install it first via the Setup Wizard.".to_string()
     })?;
 
-    #[cfg(target_os = "macos")]
-    {
-        let command = format!("{} login", shell_single_quote(&claude_bin));
-        let script = format!(
-            r#"tell application "Terminal"
-    activate
-    do script "{}"
-end tell"#,
-            command.replace('\\', "\\\\").replace('"', "\\\"")
-        );
-        std::process::Command::new("osascript")
-            .args(["-e", &script])
-            .spawn()
-            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        // Try common terminal emulators in order of preference
-        let xterm_cmd = format!("{} login", shell_single_quote(&claude_bin));
-        let terminals = [
-            ("gnome-terminal", vec!["--", &claude_bin, "login"]),
-            ("konsole", vec!["-e", &claude_bin, "login"]),
-            ("xterm", vec!["-e", xterm_cmd.as_str()]),
-        ];
-        let mut opened = false;
-        for (term, args) in &terminals {
-            if std::process::Command::new(term)
-                .args(args.iter().copied())
-                .spawn()
-                .is_ok()
-            {
-                opened = true;
-                break;
-            }
-        }
-        if !opened {
-            return Err("No supported terminal emulator found".to_string());
-        }
-    }
-
-    #[cfg(target_os = "windows")]
     {
         // Spawn cmd /k with CREATE_NEW_CONSOLE to open a visible terminal window.
         // This avoids the `start` command's tricky quoting rules.

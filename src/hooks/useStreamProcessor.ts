@@ -2092,19 +2092,12 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           const hasAssistantReply = hasAssistantReplyForTurn(exitMsgs, turnStartTime);
           if (!hasAssistantReply) {
             if (lastStderrRef.current) {
-              // Detect macOS TCC permission errors and provide actionable guidance
               const stderr = lastStderrRef.current;
-              const isTccError = /unexpected|operation not permitted|permission denied/i.test(stderr);
-              const cwd = useSettingsStore.getState().workingDirectory || '';
-              const isProtectedDir = /\/(Desktop|Downloads|Documents)\//i.test(cwd);
-              const hint = isTccError && isProtectedDir
-                ? '\n\n此目录可能受 macOS 隐私保护限制。请在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中授权，或选择其他目录。'
-                : '';
               addMessage({
                 id: generateMessageId(),
                 role: 'system',
                 type: 'text',
-                content: formatErrorForUser(`CLI error: ${stderr}${hint}`),
+                content: formatErrorForUser(`CLI error: ${stderr}`),
                 timestamp: Date.now(),
               });
             } else {

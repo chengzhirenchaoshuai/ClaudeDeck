@@ -14,7 +14,6 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 // ─── Public Types ──────────────────────────────────────────
@@ -84,39 +83,12 @@ pub fn is_native_binary(path: &Path) -> bool {
     if !path.exists() {
         return false;
     }
-    #[cfg(target_os = "windows")]
     {
         if let Ok(mut f) = std::fs::File::open(path) {
             use std::io::Read;
             let mut magic = [0u8; 2];
             if f.read_exact(&mut magic).is_ok() {
                 return magic == [0x4D, 0x5A]; // MZ (PE header)
-            }
-        }
-        false
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let Ok(metadata) = std::fs::metadata(path) else {
-            return false;
-        };
-        if metadata.permissions().mode() & 0o111 == 0 {
-            return false;
-        }
-        if let Ok(mut f) = std::fs::File::open(path) {
-            use std::io::Read;
-            let mut magic = [0u8; 4];
-            if f.read_exact(&mut magic).is_ok() {
-                return matches!(
-                    magic,
-                    [0xCF, 0xFA, 0xED, 0xFE]   // Mach-O 64-bit LE
-                    | [0xCE, 0xFA, 0xED, 0xFE]  // Mach-O 32-bit LE
-                    | [0xFE, 0xED, 0xFA, 0xCF]  // Mach-O 64-bit BE
-                    | [0xFE, 0xED, 0xFA, 0xCE]  // Mach-O 32-bit BE
-                    | [0xCA, 0xFE, 0xBA, 0xBE]  // Universal/fat binary
-                    | [0x7F, 0x45, 0x4C, 0x46]   // ELF
-                );
             }
         }
         false
@@ -128,7 +100,6 @@ pub fn is_valid_executable(path: &Path) -> bool {
     if !path.exists() {
         return false;
     }
-    #[cfg(target_os = "windows")]
     {
         // Script wrappers (.cmd, .bat, .ps1) are valid if they exist
         if let Some(ext) = path.extension() {
@@ -143,50 +114,6 @@ pub fn is_valid_executable(path: &Path) -> bool {
             let mut magic = [0u8; 2];
             if f.read_exact(&mut magic).is_ok() {
                 return magic == [0x4D, 0x5A];
-            }
-        }
-        false
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let Ok(metadata) = std::fs::metadata(path) else {
-            return false;
-        };
-        if metadata.permissions().mode() & 0o111 == 0 {
-            return false;
-        }
-        if let Ok(mut f) = std::fs::File::open(path) {
-            use std::io::Read;
-            let mut magic = [0u8; 4];
-            if f.read_exact(&mut magic).is_ok() {
-                // Native binary
-                if matches!(
-                    magic,
-                    [0xCF, 0xFA, 0xED, 0xFE] | [0xCE, 0xFA, 0xED, 0xFE]
-                    | [0xFE, 0xED, 0xFA, 0xCF] | [0xFE, 0xED, 0xFA, 0xCE]
-                    | [0xCA, 0xFE, 0xBA, 0xBE] | [0x7F, 0x45, 0x4C, 0x46]
-                ) {
-                    return true;
-                }
-                // Shebang script — verify the interpreter exists
-                if magic[0] == 0x23 && magic[1] == 0x21 {
-                    use std::io::{BufRead, BufReader, Seek, SeekFrom};
-                    let _ = f.seek(SeekFrom::Start(0));
-                    let mut first_line = String::new();
-                    if BufReader::new(&f).read_line(&mut first_line).is_ok() {
-                        let shebang = first_line.trim_start_matches("#!").trim();
-                        let interpreter = shebang.split_whitespace().next().unwrap_or("");
-                        if !interpreter.is_empty() && Path::new(interpreter).exists() {
-                            return true;
-                        }
-                        eprintln!(
-                            "[cli_resolver] shebang interpreter '{}' not found, skipping {:?}",
-                            interpreter, path
-                        );
-                    }
-                    return false;
-                }
             }
         }
         false
@@ -219,68 +146,16 @@ fn find_newest_version_bin(base_dir: &Path, bin_name: &str) -> Option<String> {
     None
 }
 
-/// Detect shebang issues for diagnostics: checks if `#!/usr/bin/env X`
-/// can actually resolve X on the given PATH.
-#[cfg(not(target_os = "windows"))]
-fn shebang_issues(path: &Path, enriched_path: &str) -> Vec<String> {
-    let mut issues = Vec::new();
-    if let Ok(mut f) = std::fs::File::open(path) {
-        use std::io::{BufRead, BufReader, Read};
-        let mut magic = [0u8; 2];
-        if f.read_exact(&mut magic).is_ok() && magic == [0x23, 0x21] {
-            use std::io::Seek;
-            let _ = f.seek(std::io::SeekFrom::Start(0));
-            let mut first_line = String::new();
-            if BufReader::new(&f).read_line(&mut first_line).is_ok() {
-                let shebang = first_line.trim_start_matches("#!").trim();
-                let parts: Vec<&str> = shebang.split_whitespace().collect();
-                // #!/usr/bin/env node → check if `node` resolves on enriched PATH
-                if parts.first() == Some(&"/usr/bin/env") {
-                    if let Some(arg) = parts.get(1) {
-                        let found = std::process::Command::new("which")
-                            .arg(arg)
-                            .env("PATH", enriched_path)
-                            .stdin(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .output()
-                            .map(|o| o.status.success())
-                            .unwrap_or(false);
-                        if !found {
-                            issues.push(format!(
-                                "shebang uses '{}' but '{}' not found on spawn PATH",
-                                shebang, arg
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    issues
-}
-
 // ─── Subprocess with timeout ───────────────────────────────
 
 /// Run a command with a timeout. Returns stdout on success, empty string on timeout/failure.
 fn cmd_with_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> String {
-    #[cfg(target_os = "windows")]
     let mut child = match std::process::Command::new(cmd)
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .creation_flags(0x08000000)
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(_) => return String::new(),
-    };
-    #[cfg(not(target_os = "windows"))]
-    let mut child = match std::process::Command::new(cmd)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
         .spawn()
     {
         Ok(c) => c,
@@ -326,25 +201,11 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
         }
     };
 
-    #[cfg(target_os = "windows")]
     let bin_name = "claude.exe";
-    #[cfg(not(target_os = "windows"))]
-    let bin_name = "claude";
 
     if let Some(home) = dirs::home_dir() {
         // ── Tier 0: Official ───────────────────────────────
 
-        // Claude Desktop bundled CLI (versioned dirs — newest version)
-        #[cfg(target_os = "macos")]
-        {
-            let vdir = home.join("Library/Application Support/Claude/claude-code");
-            if let Some(bin) = find_newest_version_bin(&vdir, bin_name) {
-                if let Some(p) = Path::new(&bin).parent() {
-                    push(p.to_string_lossy().to_string(), CliSource::Official);
-                }
-            }
-        }
-        #[cfg(target_os = "windows")]
         {
             for base_fn in [dirs::data_local_dir, dirs::data_dir] {
                 if let Some(base) = base_fn() {
@@ -357,23 +218,7 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
                 }
             }
         }
-        #[cfg(target_os = "linux")]
-        if let Some(data_dir) = dirs::data_dir() {
-            let vdir = data_dir.join("Claude").join("claude-code");
-            if let Some(bin) = find_newest_version_bin(&vdir, bin_name) {
-                if let Some(p) = Path::new(&bin).parent() {
-                    push(p.to_string_lossy().to_string(), CliSource::Official);
-                }
-            }
-        }
 
-        // Official native installer path
-        #[cfg(not(target_os = "windows"))]
-        push(
-            home.join(".claude/local").to_string_lossy().to_string(),
-            CliSource::Official,
-        );
-        #[cfg(target_os = "windows")]
         push(
             home.join(".claude\\local").to_string_lossy().to_string(),
             CliSource::Official,
@@ -381,7 +226,6 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
 
         // ── Tier 1: System ─────────────────────────────────
 
-        #[cfg(target_os = "windows")]
         {
             if let Some(app_data) = dirs::data_dir() {
                 push(
@@ -407,41 +251,6 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
                 CliSource::System,
             );
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            push(
-                home.join(".local/bin").to_string_lossy().to_string(),
-                CliSource::System,
-            );
-            push(
-                home.join(".npm-global/bin").to_string_lossy().to_string(),
-                CliSource::System,
-            );
-            push(
-                home.join(".cargo/bin").to_string_lossy().to_string(),
-                CliSource::System,
-            );
-        }
-        // System-wide paths
-        #[cfg(not(target_os = "windows"))]
-        {
-            push("/usr/local/bin".to_string(), CliSource::System);
-            push("/opt/homebrew/bin".to_string(), CliSource::System);
-        }
-        // npm root -g derived bin directory (3s timeout to avoid blocking)
-        #[cfg(not(target_os = "windows"))]
-        {
-            let root = cmd_with_timeout("npm", &["root", "-g"], 3);
-            if !root.is_empty() {
-                if let Some(lib_dir) = Path::new(&root).parent() {
-                    let npm_bin = lib_dir.join("bin");
-                    if npm_bin.exists() {
-                        push(npm_bin.to_string_lossy().to_string(), CliSource::System);
-                    }
-                }
-            }
-        }
-        #[cfg(target_os = "windows")]
         {
             let root = cmd_with_timeout("cmd", &["/C", "npm", "root", "-g"], 3);
             if !root.is_empty() {
@@ -462,7 +271,6 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
 
         // ── Tier 3: Version Managers ───────────────────────
 
-        #[cfg(target_os = "windows")]
         {
             push(
                 home.join(".volta\\bin").to_string_lossy().to_string(),
@@ -492,101 +300,18 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
                 );
             }
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            push(
-                home.join(".volta/bin").to_string_lossy().to_string(),
-                CliSource::VersionManager,
-            );
-            push(
-                home.join(".bun/bin").to_string_lossy().to_string(),
-                CliSource::VersionManager,
-            );
-            // fnm
-            let fnm_bin = home.join(".fnm/aliases/default/bin");
-            if fnm_bin.exists() {
-                push(
-                    fnm_bin.to_string_lossy().to_string(),
-                    CliSource::VersionManager,
-                );
-            }
-            // nvm — scan for newest version
-            let nvm_dir = std::env::var("NVM_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| home.join(".nvm"));
-            let nvm_versions = nvm_dir.join("versions/node");
-            if nvm_versions.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
-                    let mut version_dirs: Vec<PathBuf> = entries
-                        .flatten()
-                        .filter(|e| e.path().is_dir())
-                        .map(|e| e.path())
-                        .collect();
-                    version_dirs.sort_by(|a, b| {
-                        let parse_ver = |p: &Path| -> (u32, u32, u32) {
-                            let name = p
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
-                            let s = name.strip_prefix('v').unwrap_or(&name);
-                            let parts: Vec<u32> =
-                                s.split('.').filter_map(|x| x.parse().ok()).collect();
-                            (
-                                parts.first().copied().unwrap_or(0),
-                                parts.get(1).copied().unwrap_or(0),
-                                parts.get(2).copied().unwrap_or(0),
-                            )
-                        };
-                        parse_ver(a).cmp(&parse_ver(b))
-                    });
-                    if let Some(latest) = version_dirs.last() {
-                        let bin_dir = latest.join("bin");
-                        if bin_dir.join(bin_name).exists() {
-                            push(
-                                bin_dir.to_string_lossy().to_string(),
-                                CliSource::VersionManager,
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // ── Tier 4: Dynamic ────────────────────────────────
 
     // Current process PATH
-    let sep = if cfg!(windows) { ';' } else { ':' };
+    let sep = ';';
     for entry in std::env::var("PATH").unwrap_or_default().split(sep) {
         if !entry.is_empty() {
             push(entry.to_string(), CliSource::Dynamic);
         }
     }
 
-    // Login shell PATH (macOS/Linux — GUI apps miss version manager PATHs)
-    #[cfg(not(target_os = "windows"))]
-    {
-        let shell_path = crate::login_shell_extra_path();
-        if !shell_path.is_empty() {
-            for entry in shell_path.split(':') {
-                if !entry.is_empty() {
-                    push(entry.to_string(), CliSource::Dynamic);
-                }
-            }
-        }
-    }
-
-    // which/where fallback (3s timeout)
-    #[cfg(not(target_os = "windows"))]
-    {
-        let p = cmd_with_timeout("which", &[bin_name], 3);
-        if !p.is_empty() && Path::new(&p).exists() {
-            if let Some(dir) = Path::new(&p).parent() {
-                push(dir.to_string_lossy().to_string(), CliSource::Dynamic);
-            }
-        }
-    }
-    #[cfg(target_os = "windows")]
     {
         let result = cmd_with_timeout("cmd", &["/C", "where", bin_name], 3);
         if let Some(line) = result.lines().next() {
@@ -606,13 +331,8 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
 
 /// Binary names to search for, platform-specific.
 fn bin_names() -> &'static [&'static str] {
-    #[cfg(target_os = "windows")]
     {
         &["claude.exe", "claude.cmd"]
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        &["claude"]
     }
 }
 
@@ -684,10 +404,6 @@ pub fn scan_all() -> Vec<CliCandidate> {
     let mut candidates = Vec::new();
     let mut seen_paths = HashSet::new();
 
-    // Get enriched PATH for shebang validation
-    #[cfg(not(target_os = "windows"))]
-    let enriched_path = crate::build_enriched_path();
-
     for td in &dirs {
         for name in names {
             let candidate = Path::new(&td.path).join(name);
@@ -717,18 +433,9 @@ pub fn scan_all() -> Vec<CliCandidate> {
                 issues.push("not a valid executable".to_string());
             }
 
-            // Shebang validation on Unix
-            #[cfg(not(target_os = "windows"))]
-            if valid && !native {
-                issues.extend(shebang_issues(&candidate, &enriched_path));
-            }
-
             // Windows: check git-bash availability
-            #[cfg(target_os = "windows")]
-            if valid {
-                if crate::find_git_bash().is_none() {
-                    issues.push("Git Bash not found (required on Windows)".to_string());
-                }
+            if valid && crate::find_git_bash().is_none() {
+                issues.push("Git Bash not found (required on Windows)".to_string());
             }
 
             candidates.push(CliCandidate {
@@ -842,7 +549,6 @@ pub fn cleanup(targets: &[String]) -> CleanupResult {
                 }
             }
             // Windows: npm_global_dir is flat, no lib/node_modules
-            #[cfg(target_os = "windows")]
             {
                 let claude_pkg_win = npm_dir.join("node_modules").join("@anthropic-ai").join("claude-code");
                 if claude_pkg_win.exists() {
@@ -956,56 +662,6 @@ pub fn unpin_cli() -> Result<(), String> {
 
 // ─── PATH Injection ────────────────────────────────────────
 
-/// Inject a CLI's directory into the user's shell PATH profile.
-/// Returns the shell profile file that was modified.
-#[cfg(not(target_os = "windows"))]
-pub fn inject_path(cli_path: &str) -> Result<String, String> {
-    let dir = Path::new(cli_path)
-        .parent()
-        .ok_or("Cannot determine CLI directory")?
-        .to_string_lossy()
-        .to_string();
-
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    let export_line = format!("export PATH=\"{}:$PATH\"", dir);
-    let marker = "# Added by Her";
-    let block = format!("\n{}\n{}\n", marker, export_line);
-
-    let profiles = [
-        home.join(".zshrc"),
-        home.join(".bashrc"),
-        home.join(".bash_profile"),
-        home.join(".profile"),
-    ];
-
-    // Check if already injected
-    for p in &profiles {
-        if let Ok(c) = std::fs::read_to_string(p) {
-            if c.contains(&export_line) {
-                return Ok(format!("Already in {}", p.display()));
-            }
-        }
-    }
-
-    // Append to the first existing profile
-    for p in &profiles {
-        if p.exists() {
-            if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(p) {
-                use std::io::Write;
-                f.write_all(block.as_bytes())
-                    .map_err(|e| format!("Write failed: {}", e))?;
-                return Ok(format!("Injected into {}", p.display()));
-            }
-        }
-    }
-
-    // None exist — create ~/.zshrc
-    std::fs::write(home.join(".zshrc"), block)
-        .map_err(|e| format!("Failed to create .zshrc: {}", e))?;
-    Ok("Created ~/.zshrc with PATH".to_string())
-}
-
-#[cfg(target_os = "windows")]
 pub fn inject_path(cli_path: &str) -> Result<String, String> {
     let dir = Path::new(cli_path)
         .parent()

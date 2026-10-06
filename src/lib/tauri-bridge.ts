@@ -411,11 +411,7 @@ export const bridge = {
   openWithDefaultApp: (path: string) =>
     invoke<void>('open_with_default_app', { path }),
 
-  shareFile: (path: string) =>
-    invoke<void>('share_file', { path }),
 
-  shareToWechat: (path: string) =>
-    invoke<void>('share_to_wechat', { path }),
 
   readFileTree: (path: string, depth?: number) =>
     invoke<FileNode[]>('read_file_tree', { path, depth }),
@@ -480,7 +476,7 @@ export const bridge = {
   readFileBase64: (path: string) =>
     invoke<string>('read_file_base64', { path }),
 
-  /** Check if app has file system access to a directory (macOS TCC detection) */
+  /** Check if app has file system access to a directory */
   checkFileAccess: (path: string) =>
     invoke<boolean>('check_file_access', { path }),
 
@@ -543,9 +539,6 @@ export const bridge = {
       invoke<string>('rewind_files', { sessionId, checkpointUuid: userMessageId, cwd }),
     ),
 
-  // Set macOS dock icon from base64-encoded PNG
-  setDockIcon: (pngBase64: string) =>
-    invoke<void>('set_dock_icon', { pngBase64 }),
 
   // Run a Claude CLI subcommand as a one-shot process (e.g. `claude doctor`)
   runClaudeCommand: (subcommand: string, cwd?: string) =>

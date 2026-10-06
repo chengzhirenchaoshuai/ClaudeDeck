@@ -1,6 +1,5 @@
 import { useSettingsStore } from '../stores/settingsStore';
 import type { Locale } from '../stores/settingsStore';
-import { modKey, fileManagerName, fileManagerNameEn } from './platform';
 import { APP_NAME } from './edition';
 
 // --- Translation dictionary ---
@@ -196,10 +195,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.search': '搜索文件...',
     'files.revealInFinder': '在 {fileManager} 中显示',
     'files.openDefault': '使用默认应用打开',
-    'files.share': '分享...',
-    'files.shareToWechat': '分享到微信',
-    'files.shareToWechatSuccess': '文件已复制，切换到微信窗口后按 Ctrl+V 粘贴发送',
-    'files.shareToWechatFailed': '分享失败，请重试',
     'files.openVscodeShort': '在 VS Code 中打开',
     'files.preview': '预览',
     'files.source': '源码',
@@ -864,13 +859,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'setup.nativeVerify': '正在验证文件完整性...',
     'setup.nativeInstall': '正在安装到系统...',
     'setup.npmFallback': '正在通过备用方式安装...',
-
-    // Permission dialog
-    'perm.title': '需要文件访问权限',
-    'perm.desc': `${APP_NAME} 需要「完整磁盘访问」权限才能正常读写项目文件。请在系统设置中授权，否则部分功能可能受限。`,
-    'perm.openSettings': '打开系统设置',
-    'perm.later': '稍后设置',
-    'perm.path': '系统设置 → 隐私与安全性 → 完整磁盘访问',
   },
 
   en: {
@@ -1063,10 +1051,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.search': 'Search files...',
     'files.revealInFinder': 'Reveal in {fileManagerEn}',
     'files.openDefault': 'Open with Default App',
-    'files.share': 'Share...',
-    'files.shareToWechat': 'Share to WeChat',
-    'files.shareToWechatSuccess': 'File copied. Switch to WeChat and press Ctrl+V to paste.',
-    'files.shareToWechatFailed': 'Share failed. Please try again.',
     'files.openVscodeShort': 'Open in VS Code',
     'files.preview': 'Preview',
     'files.source': 'Source',
@@ -1729,24 +1713,17 @@ const messages: Record<Locale, Record<string, string>> = {
     'setup.nativeVerify': 'Verifying file integrity...',
     'setup.nativeInstall': 'Installing to system...',
     'setup.npmFallback': 'Installing via fallback method...',
-
-    // Permission dialog
-    'perm.title': 'File Access Required',
-    'perm.desc': `${APP_NAME} needs Full Disk Access to read and write project files. Please grant access in System Settings, otherwise some features may not work.`,
-    'perm.openSettings': 'Open System Settings',
-    'perm.later': 'Later',
-    'perm.path': 'System Settings → Privacy & Security → Full Disk Access',
   },
 };
 
-// --- Platform-aware placeholder substitution ---
+// --- 平台相关占位符替换（只支持 Windows） ---
 
 function resolvePlatformPlaceholders(text: string): string {
   if (!text.includes('{')) return text;
   return text
-    .replace(/\{mod\}/g, modKey())
-    .replace(/\{fileManager\}/g, fileManagerName())
-    .replace(/\{fileManagerEn\}/g, fileManagerNameEn());
+    .replace(/\{mod\}/g, 'Ctrl')
+    .replace(/\{fileManager\}/g, '资源管理器')
+    .replace(/\{fileManagerEn\}/g, 'Explorer');
 }
 
 // --- Non-reactive t() for use outside components ---

@@ -22,7 +22,6 @@ pub(crate) async fn run_ollama(args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("ollama");
     cmd.args(args);
     // Windows 上不创建控制台窗口，否则每次调用都会闪出一个黑框
-    #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let output = cmd
         .output()
@@ -50,7 +49,6 @@ pub(crate) async fn run_ollama(args: &[&str]) -> Result<String, String> {
 pub(crate) async fn read_ollama_version() -> Result<(Option<String>, Option<String>), String> {
     let mut cmd = Command::new("ollama");
     cmd.arg("--version");
-    #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let output = cmd
         .output()
@@ -165,7 +163,6 @@ pub(crate) async fn pull_local_model(app: AppHandle, model: String) -> Result<()
         .arg(&model)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(target_os = "windows")]
     pull_cmd.creation_flags(0x08000000);
     let mut child = pull_cmd
         .spawn()

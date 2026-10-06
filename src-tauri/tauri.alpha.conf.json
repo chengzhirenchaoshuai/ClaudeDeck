@@ -10,9 +10,7 @@
         "width": 1600,
         "height": 860,
         "minWidth": 900,
-        "minHeight": 600,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "minHeight": 600
       }
     ]
   },
@@ -21,7 +19,6 @@
       "../assets/icons-alpha/32x32.png",
       "../assets/icons-alpha/128x128.png",
       "../assets/icons-alpha/128x128@2x.png",
-      "../assets/icons-alpha/icon.icns",
       "../assets/icons-alpha/icon.ico"
     ]
   },

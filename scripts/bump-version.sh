@@ -10,7 +10,7 @@ set -euo pipefail
 # 用法：
 #   scripts/bump-version.sh 1.1.0
 #
-# 只依赖 Node.js，Windows（Git Bash）与 macOS 均可运行。
+# 只依赖 Node.js，在 Windows 的 Git Bash 中运行。
 # ============================================================
 
 if [ $# -ne 1 ]; then

@@ -2,60 +2,6 @@
 
 use crate::*;
 
-/// Resolve a usable git binary path on macOS without triggering the Xcode CLT install popup.
-///
-/// **Why this exists**: macOS ships `/usr/bin/git` as a shim. When Xcode Command Line Tools
-/// (CLT) are not installed, running `/usr/bin/git` spawns a **GUI dialog** asking the user to
-/// install CLT. ClaudeDeck calls git for snapshot/rewind on every message, so this popup
-/// would appear repeatedly.
-///
-/// Strategy:
-///   1. `xcode-select -p` — checks if CLT is installed (silent, never triggers popup).
-///   2. CLT installed → safe to use bare "git" (resolves to /usr/bin/git which works).
-///   3. CLT not installed → scan known third-party git locations (Homebrew, MacPorts, Nix, etc.)
-///      skipping `/usr/bin/git` (the shim) to avoid the popup.
-///   4. Nothing found → return None; caller returns Err without spawning any process.
-///
-/// Result is cached for the process lifetime via OnceLock.
-#[cfg(target_os = "macos")]
-pub(crate) fn resolve_git_binary() -> Option<&'static str> {
-    static GIT_BIN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    GIT_BIN
-        .get_or_init(|| {
-            // Check if Xcode CLT is installed (xcode-select -p does NOT trigger popup)
-            let clt_check = std::process::Command::new("xcode-select")
-                .arg("-p")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            if let Ok(status) = clt_check {
-                if status.success() {
-                    // CLT installed → /usr/bin/git works, use bare "git" to respect PATH order
-                    return Some("git".to_string());
-                }
-            }
-
-            // CLT not installed → scan known third-party git install locations.
-            // IMPORTANT: Do NOT include /usr/bin/git here — that's the shim that triggers the popup.
-            let candidates = [
-                "/opt/homebrew/bin/git",                 // Homebrew (Apple Silicon)
-                "/usr/local/bin/git",                    // Homebrew (Intel) or manual install
-                "/opt/local/bin/git",                    // MacPorts
-                "/nix/var/nix/profiles/default/bin/git", // Nix
-            ];
-            for path in &candidates {
-                if std::path::Path::new(path).exists() {
-                    eprintln!("resolve_git_binary: CLT not installed, using {}", path);
-                    return Some(path.to_string());
-                }
-            }
-
-            eprintln!("resolve_git_binary: no git found (CLT not installed, no third-party git)");
-            None
-        })
-        .as_deref()
-}
-
 /// Run a git command in a specific working directory and return stdout.
 /// Only allows safe, read-or-restore git operations.
 #[tauri::command]
@@ -101,16 +47,10 @@ pub(crate) async fn run_git_command(cwd: String, args: Vec<String>) -> Result<St
         }
     }
 
-    // On macOS, resolve git binary without triggering Xcode CLT popup
-    #[cfg(target_os = "macos")]
-    let git_bin = resolve_git_binary()
-        .ok_or_else(|| "git not available (no Xcode CLT or Homebrew git found)".to_string())?;
-    #[cfg(not(target_os = "macos"))]
     let git_bin = "git";
 
     let mut cmd = Command::new(git_bin);
     cmd.args(&args).current_dir(&cwd);
-    #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let output = cmd
         .output()
@@ -148,13 +88,8 @@ pub(crate) async fn rewind_files(
     }
 
     let claude_bin = find_claude_binary().unwrap_or_else(|| {
-        #[cfg(target_os = "windows")]
         {
             "claude.cmd".to_string()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            "claude".to_string()
         }
     });
 
@@ -167,7 +102,6 @@ pub(crate) async fn rewind_files(
         .env("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1")
         .env_remove("CLAUDECODE");
     // Disable MSYS2 auto path conversion on Windows (Chinese path fix)
-    #[cfg(target_os = "windows")]
     rewind_cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
 
     let output = rewind_cmd

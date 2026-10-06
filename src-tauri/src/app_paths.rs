@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 const ROOT_DIR_NAME: &str = "ClaudeDeck";
 
-/// 根目录：%APPDATA%\ClaudeDeck（macOS 为 ~/Library/Application Support/ClaudeDeck）
+/// 根目录：%APPDATA%\ClaudeDeck
 pub fn root_dir() -> Result<PathBuf, String> {
     dirs::data_dir()
         .map(|d| d.join(ROOT_DIR_NAME))

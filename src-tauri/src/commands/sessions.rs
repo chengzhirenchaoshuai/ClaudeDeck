@@ -1241,7 +1241,6 @@ pub(crate) async fn generate_session_title(
     }
 
     // Disable MSYS2 auto path conversion on Windows (Chinese path fix)
-    #[cfg(target_os = "windows")]
     cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
 
     // Inject provider env vars
@@ -1252,19 +1251,7 @@ pub(crate) async fn generate_session_title(
         cmd.env_remove(k);
     }
 
-    // Inject proxy env vars from login shell for GUI apps
-    #[cfg(not(target_os = "windows"))]
-    {
-        let proxy_env = login_shell_proxy_env();
-        for (k, v) in proxy_env {
-            if std::env::var(k).is_err() && !provider_env.contains_key(k) {
-                cmd.env(k, v);
-            }
-        }
-    }
-
     // Suppress console window on Windows
-    #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     let output = cmd

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ClaudeDeck：Claude Code CLI 的桌面 GUI（个人自用，fork 自 TOKENICODE，不再合并上游）。
-技术栈：Tauri 2 + React 19 + TypeScript 5.8 + Tailwind CSS 4 + Zustand 5，pnpm，主要用于 Windows（也支持 macOS）。
+技术栈：Tauri 2 + React 19 + TypeScript 5.8 + Tailwind CSS 4 + Zustand 5，pnpm，只支持 Windows（macOS/Linux 代码已移除，不要再加回非 Windows 分支）。
 
 ## 命令
 
@@ -39,7 +39,6 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - 素材统一放在 `assets/`：`icons/`（应用图标 + 托盘图标）、`icons-alpha/`、`public/`（Vite publicDir）。
 - 面向用户的文案全部走 `src/lib/i18n.ts`（zh/en，默认 zh）。
 - 代码中残留的 `tokenicode` 命名（事件名、`tokenicode_session_names.json`、项目内 `.tokenicode/tmp`）是为兼容已有用户数据，不要改名。
-- 标题栏为 Overlay + hiddenTitle，macOS 下要避开红绿灯区域。
 - Windows：`.cmd`/`.bat` 需经 `cmd /C` 启动，子进程要加 CREATE_NO_WINDOW。
 - **换行符一律 LF**（`.gitattributes` 强制，`.bat/.cmd/.ps1` 除外）。用脚本改文件时不要引入 CRLF：Python 用 `read_bytes()/write_bytes()` 或 `open(..., newline="")`，不要用默认文本模式的 `write_text()`/`open("w")`（Windows 下会把 `\n` 写成 `\r\n`）；改完用 `git ls-files --eol | grep w/crlf` 自查，应无输出。
 

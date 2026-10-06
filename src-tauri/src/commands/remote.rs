@@ -115,7 +115,6 @@ pub fn ssh_command(host: &RemoteHost) -> Command {
         }
     }
     cmd.arg(host.destination.trim());
-    #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     cmd
 }
