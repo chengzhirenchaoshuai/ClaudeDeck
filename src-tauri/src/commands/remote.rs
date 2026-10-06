@@ -699,6 +699,65 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
         .collect())
 }
 
+/// 读取远端任意文件的原始字节（会话里点开的文件链接用）。超过 max_bytes 报错，
+/// 大小限制与本机读文件保持一致。内容 gzip + base64 传回，省流量。
+/// 脚本里自己 try/catch 把错误写成 JSON：直接 throw 的话，PowerShell 在没有控制台时
+/// 会把错误序列化成 CLIXML，前端只能看到一串不可读的 "#< CLIXML"。
+pub async fn read_remote_file(uri: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
+    if path.chars().any(|c| matches!(c, '\n' | '\r' | '\0'))
+        || path.split(['/', '\\']).any(|seg| seg == "..")
+    {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    let host = find_host(&host_id)?;
+    let win_path = path.replace('/', "\\").replace('\'', "''");
+    let script = format!(
+        "try {{ \
+           $ErrorActionPreference = 'Stop'; \
+           $fi = Get-Item -LiteralPath '{win_path}'; \
+           if ($fi.PSIsContainer) {{ throw '这是一个目录，不是文件' }}; \
+           if ($fi.Length -gt {max}) {{ throw ('文件太大（' + $fi.Length + ' 字节）') }}; \
+           $buf = [System.IO.File]::ReadAllBytes($fi.FullName); \
+           $ms = New-Object System.IO.MemoryStream; \
+           $gz = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress); \
+           $gz.Write($buf, 0, $buf.Length); $gz.Close(); \
+           ConvertTo-Json -Compress -InputObject @{{ ok = $true; data = [Convert]::ToBase64String($ms.ToArray()) }} \
+         }} catch {{ \
+           Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $false; error = $_.Exception.Message }}) \
+         }}",
+        win_path = win_path,
+        max = max_bytes,
+    );
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(60)).await?;
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    let resp: Value = serde_json::from_str(text).map_err(|_| {
+        if stderr.trim().is_empty() {
+            format!("读取远端文件失败（退出码 {}）", code)
+        } else {
+            format!("读取远端文件失败: {}", stderr.trim())
+        }
+    })?;
+    if resp["ok"].as_bool() != Some(true) {
+        return Err(format!(
+            "读取远端文件失败: {}",
+            resp["error"].as_str().unwrap_or("未知错误")
+        ));
+    }
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let compressed = STANDARD
+        .decode(resp["data"].as_str().unwrap_or("").as_bytes())
+        .map_err(|e| format!("解码远端文件失败: {}", e))?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut flate2::read::GzDecoder::new(std::io::Cursor::new(compressed)),
+        &mut bytes,
+    )
+    .map_err(|e| format!("解压远端文件失败: {}", e))?;
+    Ok(bytes)
+}
+
 /// 删除远端会话：只允许删除 CLI projects 目录内的 .jsonl 文件，和本机 delete_session 的白名单逻辑一致。
 pub async fn delete_remote_session(uri: &str) -> Result<(), String> {
     let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;

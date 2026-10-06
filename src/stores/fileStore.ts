@@ -187,9 +187,9 @@ export const useFileStore = create<FileState>()((set, get) => ({
           if (get().selectedFile === path) {
             set({ fileContent: content, isLoadingContent: false });
           }
-        } catch {
+        } catch (err) {
           if (get().selectedFile === path) {
-            set({ fileContent: '// Error loading file', isLoadingContent: false });
+            set({ fileContent: `// Error loading file: ${err}`, isLoadingContent: false });
           }
         }
       }

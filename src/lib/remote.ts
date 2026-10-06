@@ -11,6 +11,18 @@ export function remoteUri(hostId: string, remotePath: string): string {
   return cleaned ? `ssh://${hostId}/${cleaned}` : '';
 }
 
+/**
+ * 会话里点到的文件路径。当前处于远程项目（工作目录为 ssh://<主机>/...）时，
+ * 远端 claude 给出的绝对路径（如 C:\x\y.ts）要转成 ssh://<主机>/C:/x/y.ts 走远程读取，
+ * 否则会被当成本机路径——读不到，或者读到本机上恰好同名的另一个文件。
+ */
+export function toSessionFilePath(path: string): string {
+  if (path.startsWith('ssh://')) return path;
+  const host = (useSettingsStore.getState().workingDirectory || '').match(/^ssh:\/\/([^/]+)\//)?.[1];
+  if (host && /^[a-zA-Z]:[/\\]/.test(path)) return `ssh://${host}/${path.replace(/\\/g, '/')}`;
+  return path;
+}
+
 /** 保存当前标签的对话与 Agent 状态，切走后回来仍能恢复 */
 function saveCurrentTab() {
   const currentTabId = useSessionStore.getState().selectedSessionId;

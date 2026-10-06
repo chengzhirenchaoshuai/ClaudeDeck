@@ -10,6 +10,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useFileStore } from '../../stores/fileStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { rehypeKatexFix } from '../../lib/rehype-katex-fix';
+import { toSessionFilePath } from '../../lib/remote';
 import { useT } from '../../lib/i18n';
 import 'katex/dist/katex.min.css';
 
@@ -506,9 +507,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
       const text = extractText(children).trim();
       const ext = text.split('.').pop()?.toLowerCase() ?? '';
       if (((FILE_PATH_RE.test(text) || KNOWN_EXT_RE.test(text)) && KNOWN_FILE_EXTENSIONS.has(ext))) {
-        const resolved = text.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(text)
+        const resolved = toSessionFilePath(text.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(text)
           ? text
-          : resolveBase ? `${resolveBase.replace(/\/$/, '')}/${text}` : text;
+          : resolveBase ? `${resolveBase.replace(/\/$/, '')}/${text}` : text);
         const fileName = text.split(/[\\/]/).pop() || text;
         return (
           <button

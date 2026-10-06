@@ -4040,6 +4040,11 @@ fn reject_unsafe_path(path: &str) -> Result<(), String> {
 
 #[tauri::command]
 async fn read_file_content(path: String) -> Result<String, String> {
+    // 远程会话里点开的文件：经 ssh 从远端读取
+    if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        let bytes = commands::remote::read_remote_file(&path, 1_048_576).await?;
+        return Ok(String::from_utf8_lossy(&bytes).into_owned());
+    }
     reject_unsafe_path(&path)?;
     // Limit to 1MB to prevent loading huge files
     let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot read file: {}", e))?;
@@ -4069,12 +4074,16 @@ async fn read_file_base64(path: String) -> Result<String, String> {
     reject_unsafe_path(&path)?;
     use base64::Engine as _;
 
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot read file: {}", e))?;
-    if metadata.len() > 50_000_000 {
-        return Err("File too large (>50MB)".to_string());
-    }
-
-    let bytes = std::fs::read(&path).map_err(|e| format!("Cannot read file: {}", e))?;
+    let bytes = if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        // 远程会话里点开的图片 / PDF 等：经 ssh 从远端读取
+        commands::remote::read_remote_file(&path, 50_000_000).await?
+    } else {
+        let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot read file: {}", e))?;
+        if metadata.len() > 50_000_000 {
+            return Err("File too large (>50MB)".to_string());
+        }
+        std::fs::read(&path).map_err(|e| format!("Cannot read file: {}", e))?
+    };
 
     // Guess MIME type from extension
     let ext = std::path::Path::new(&path)
