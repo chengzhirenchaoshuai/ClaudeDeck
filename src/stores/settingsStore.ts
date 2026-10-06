@@ -15,8 +15,12 @@ export type BackgroundTheme = 'garden' | 'sakura' | 'lake' | 'dusk' | 'ink' | 'v
 export type SecondaryPanelTab = 'files' | 'preview' | 'skills' | 'plugins';
 export type ModelId =
   | 'claude-fable-5-1'
+  | 'claude-opus-5-5'
+  | 'claude-sonnet-5-5'
   | 'claude-opus-5'
   | 'claude-sonnet-5'
+  | 'claude-opus-4-8'
+  | 'claude-opus-4-7'
   | 'claude-opus-4-6'
   | 'claude-opus-4-6-1m'
   | 'claude-sonnet-4-6'
@@ -51,10 +55,15 @@ function clampAutoCompactThreshold(tokens: number): number {
 
 // --- Model options (display mapping) ---
 
+// 与已安装 CLI（2.1.291）内置的模型 ID 核对过；按新到旧排列
 export const MODEL_OPTIONS: { id: ModelId; label: string; short: string }[] = [
   { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', short: 'Fable 5.1' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', short: 'Opus 5.5' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', short: 'Sonnet 5.5' },
   { id: 'claude-opus-5', label: 'Claude Opus 5', short: 'Opus 5' },
   { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', short: 'Sonnet 5' },
+  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', short: 'Opus 4.8' },
+  { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', short: 'Opus 4.7' },
   { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', short: 'Opus 4.6' },
   { id: 'claude-opus-4-6-1m', label: 'Claude Opus 4.6 (1M)', short: 'Opus 4.6 1M' },
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', short: 'Sonnet 4.6' },
@@ -64,8 +73,12 @@ export const MODEL_OPTIONS: { id: ModelId; label: string; short: string }[] = [
 /** 官方模型所属档位；第三方供应商按档位（opus / sonnet / haiku）映射到自己的模型 */
 export const MODEL_TIER_MAP: Record<string, 'opus' | 'sonnet' | 'haiku'> = {
   'claude-fable-5-1': 'opus',
+  'claude-opus-5-5': 'opus',
+  'claude-sonnet-5-5': 'sonnet',
   'claude-opus-5': 'opus',
   'claude-sonnet-5': 'sonnet',
+  'claude-opus-4-8': 'opus',
+  'claude-opus-4-7': 'opus',
   'claude-opus-4-6': 'opus',
   'claude-opus-4-6-1m': 'opus',
   'claude-sonnet-4-6': 'sonnet',
