@@ -11,6 +11,9 @@ const edition = process.env.EDITION || 'stable';
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // 前端静态资源统一放在 assets/public
+  publicDir: "assets/public",
+
   define: {
     __APP_EDITION__: JSON.stringify(edition),
     __APP_NAME__: JSON.stringify(edition === 'alpha' ? 'ClaudeDeck Alpha' : 'ClaudeDeck'),

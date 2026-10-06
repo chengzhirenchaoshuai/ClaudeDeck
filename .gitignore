@@ -13,8 +13,7 @@ dist-ssr
 *.local
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 .idea
 .DS_Store
 *.suo
@@ -42,7 +41,6 @@ release-artifacts/
 # Environment / secrets
 .env
 .env.*
-!.env.example
 configs/*.json
 
 # npm lock (project uses pnpm)

@@ -2581,7 +2581,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "tray-show", "显示 ClaudeDeck", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/icons/tray.png"))?;
 
     TrayIconBuilder::with_id("main")
         .icon(icon)

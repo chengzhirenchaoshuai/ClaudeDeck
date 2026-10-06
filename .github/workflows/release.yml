@@ -1,26 +1,23 @@
+# Windows 版构建发布：推送 v* tag 自动触发，也可在 Actions 页面手动运行
+# tag 含 -alpha 时构建 alpha 版（预发布），否则构建 stable 版；产物为 Release 草稿
 name: Release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag，例如 v1.0.9 或 v1.0.9-alpha.1'
+        required: true
+        type: string
 
 jobs:
   release:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-          - platform: ubuntu-22.04
-            args: ''
-          - platform: windows-latest
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -30,24 +27,19 @@ jobs:
         id: edition
         shell: bash
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           if [[ "$TAG" == *"-alpha"* ]]; then
             echo "edition=alpha" >> $GITHUB_OUTPUT
             echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "release_name=TCAlpha $TAG" >> $GITHUB_OUTPUT
-            echo "extra_args=--config editions/alpha/tauri.alpha.conf.json" >> $GITHUB_OUTPUT
+            echo "release_name=ClaudeDeck Alpha $TAG" >> $GITHUB_OUTPUT
+            echo "extra_args=--config src-tauri/tauri.alpha.conf.json" >> $GITHUB_OUTPUT
           else
             echo "edition=stable" >> $GITHUB_OUTPUT
             echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "release_name=TOKENICODE $TAG" >> $GITHUB_OUTPUT
+            echo "release_name=ClaudeDeck $TAG" >> $GITHUB_OUTPUT
             echo "extra_args=" >> $GITHUB_OUTPUT
           fi
-
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -61,8 +53,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -77,18 +67,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EDITION: ${{ steps.edition.outputs.edition }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ steps.edition.outputs.tag }}
           releaseName: ${{ steps.edition.outputs.release_name }}
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: '下载对应的安装包（.exe 或 .msi）安装即可。'
           releaseDraft: true
           prerelease: ${{ steps.edition.outputs.prerelease == 'true' }}
-          args: ${{ matrix.args }} ${{ steps.edition.outputs.extra_args }}
+          args: ${{ steps.edition.outputs.extra_args }}

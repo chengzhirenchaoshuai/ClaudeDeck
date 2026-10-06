@@ -1,278 +1,64 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this repository.
+ClaudeDeck：Claude Code CLI 的桌面 GUI（个人自用，fork 自 TOKENICODE，不再合并上游）。
+技术栈：Tauri 2 + React 19 + TypeScript 5.8 + Tailwind CSS 4 + Zustand 5，pnpm，主要用于 Windows（也支持 macOS）。
 
-## Project Overview
-
-ClaudeDeck (个人自用分支，fork 自 TOKENICODE，不再合并上游 main) is a native desktop GUI for Claude Code (Anthropic's CLI), built with **Tauri 2 + React 19 + TypeScript + Tailwind CSS 4 + Zustand 5**. It wraps the Claude CLI in a rich interface with multi-session tabs, file exploration, rewind/checkpoint restore, slash commands, a command palette, MCP server management, and a multi-provider API configuration system.
-
-**Version**: 0.8.0
-**Package manager**: pnpm
-**Platforms**: macOS (primary), Windows (supported)
-
-> For the full architecture reference (data flow diagrams, store relationships, component hierarchy), see **ARCHITECTURE.md**.
-
-## Development Commands
+## 命令
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Development (Vite dev server + Tauri app)
-pnpm tauri dev
-
-# Build production app
-pnpm tauri build
-
-# Frontend only (Vite dev server on port 1420)
-pnpm dev
-
-# Type check + Vite build (frontend only)
-pnpm build
-
-# Rust checks (from src-tauri/)
+pnpm tauri dev                           # 开发（beforeDevCommand: npm run dev，Vite 端口 1420）
+pnpm tauri build                         # 构建
+EDITION=alpha pnpm tauri build --config src-tauri/tauri.alpha.conf.json   # alpha 版
+pnpm build                               # tsc + vite build
+pnpm vitest run                          # 测试在 src/**/__tests__/
 cd src-tauri && cargo check && cargo clippy
+scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.conf.json / Cargo.toml
 ```
 
-The Tauri dev command runs `npm run dev` as its `beforeDevCommand` (configured in `tauri.conf.json`).
+## 架构要点
 
-## Tech Stack
+- **IPC**：前端调用后端一律经 `src/lib/tauri-bridge.ts`；后端到前端用事件 `claude:stream|stderr|exit|permission_request:{stdinId}`、`fs:change`、`setup:*`。
+- **后端**：命令几乎都在 `src-tauri/src/lib.rs`（约 9000 行，列表见 `generate_handler!`）；`commands/claude_process.rs`（ProcessManager/StdinManager）、`commands/cli_resolver.rs`（CLI 查找/诊断/固定版本）、`commands/remote.rs`（SSH 远程）、`protocol.rs`（SDK 控制协议类型）。
+- **CLI 进程**：首条消息由 `start_claude_session` 启动 CLI（`--input-format/--output-format stream-json --verbose --include-partial-messages --replay-user-messages --permission-mode <mode> --permission-prompt-tool stdio --settings <JSON>`，可选 `--resume` / `--resume-session-at --fork-session` / `--model`）；后续消息经 StdinManager 写 stdin，不新建进程。
+- **SDK 控制协议**：权限请求（`can_use_tool`）由 Rust 拦截后发给前端 `PermissionCard`，响应经 stdin 回写；运行时 `set_permission_mode`、`set_model`、`interrupt`、`rewind_files` 同样走 stdin。bypass 模式也走此协议，只是 CLI 自动批准工具权限。
+- **模式映射**：`code/ask/plan/bypass` → `acceptEdits/default/plan/bypassPermissions`（`mapSessionModeToPermissionMode()`）。
+- **环境注入**：`CLAUDE_CODE_EFFORT_LEVEL`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS`、`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW`（≥1M 上下文）、`CLAUDE_CODE_GIT_BASH_PATH`、服务商的 `ANTHROPIC_*` 及自定义变量。
+- **远程主机**：项目路径用 `ssh://<主机别名>/<远端路径>`，由后端识别并经系统 ssh 在远端运行 claude，不注入本机服务商配置。
+- **多标签页**：`chatStore`/`agentStore` 用 `saveToCache`/`restoreFromCache` 切换；后台会话按 `sessionStore.stdinToTab` 路由，经 `*InCache()` 写缓存。
+- **回溯**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
+- **流解析**：`useStreamProcessor.ts` 逐行解析 NDJSON（前台 + 后台标签页）。
+- **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `~/.tokenicode/providers.json`。
+- **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`）；`decode_project_name()` 靠逐段匹配文件系统还原，连字符有歧义。CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。
+- **双版本**：`EDITION` 环境变量注入 `__APP_EDITION__`/`__APP_NAME__`（`vite.config.ts`、`src/lib/edition.ts`）；alpha 有独立 identifier 和图标，CI 中带 `-alpha` 的 tag 会构建 alpha 版。
 
-| Layer | Technologies |
-|-------|-------------|
-| Frontend | React 19, TypeScript 5.8, Tailwind CSS 4, Zustand 5 |
-| Backend | Rust (Tauri 2), tokio, serde, reqwest 0.12, notify 7 |
-| Rich text input | TipTap 3 (editor), CodeMirror 6 (code preview) |
-| Markdown | react-markdown 10, rehype-highlight, remark-gfm |
-| Build | Vite 7, @vitejs/plugin-react, @tailwindcss/vite |
-| macOS native | cocoa 0.26, objc 0.2 (window customization) |
-| Auto-update | tauri-plugin-updater (GitHub primary, Gitee fallback) |
+## 约定
 
-## Architecture Overview
+- 素材统一放在 `assets/`：`icons/`（应用图标 + 托盘图标）、`icons-alpha/`、`public/`（Vite publicDir）。
+- 面向用户的文案全部走 `src/lib/i18n.ts`（zh/en，默认 zh）。
+- 代码中残留的 `tokenicode` 命名（`~/.tokenicode` 目录、事件名、`tokenicode_session_names.json`）是为兼容已有用户数据，不要改名。
+- 标题栏为 Overlay + hiddenTitle，macOS 下要避开红绿灯区域。
+- Windows：`.cmd`/`.bat` 需经 `cmd /C` 启动，子进程要加 CREATE_NO_WINDOW。
 
-```
-React UI  -->  src/lib/tauri-bridge.ts  -->  Tauri invoke()  -->  src-tauri/src/lib.rs
-                                                                        |
-                                                                  Claude CLI (subprocess)
-                                                                  --output-format stream-json
-                                                                  --permission-prompt-tool stdio
-```
+## 排查入口
 
-**IPC pattern**: All frontend-to-backend calls go through `src/lib/tauri-bridge.ts` (the single source of truth for the native API). Backend-to-frontend uses Tauri events.
-
-**Event channels**:
-- `claude:stream:{stdinId}` — NDJSON output from Claude CLI
-- `claude:stderr:{stdinId}` — stderr output
-- `claude:exit:{stdinId}` — process exit
-- `claude:permission_request:{stdinId}` — SDK control protocol permission requests
-- `fs:change` — file system watcher events
-- `setup:*` — CLI installation/login progress events
-
-### SDK Control Protocol
-
-ClaudeDeck uses the Claude CLI's SDK control protocol (`--permission-prompt-tool stdio`) for structured bidirectional communication:
-
-- **CLI -> ClaudeDeck**: Permission requests (`can_use_tool`), hook callbacks — parsed in `lib.rs`, emitted as Tauri events
-- **ClaudeDeck -> CLI**: Permission responses, runtime commands (`set_permission_mode`, `set_model`, `interrupt`, `rewind_files`) — sent via stdin pipe
-- Protocol types defined in `src-tauri/src/protocol.rs`
-
-### Claude CLI Integration
-
-The Rust backend spawns Claude CLI as a subprocess. Key behaviors:
-- First message spawns a new process with `--output-format stream-json`
-- Follow-up messages are sent via **stdin pipe** (StdinManager) — no new process per message
-- Session resume uses `--resume <session_id>` in a new process
-- The `permission_mode` setting controls whether `--permission-prompt-tool stdio` or `--dangerously-skip-permissions` is used
-
-## State Management
-
-Ten independent **Zustand** stores in `src/stores/`:
-
-| Store | Responsibility | Persisted |
-|-------|---------------|-----------|
-| `chatStore` | Messages, streaming state, session meta, per-tab cache, pending user messages | No |
-| `sessionStore` | Session list, selection, drafts, running state, stdinId-to-tab routing, custom names | No (names to disk) |
-| `settingsStore` | Theme, color theme, locale, model, mode, thinking level, layout, font size, update state | Yes (localStorage) |
-| `fileStore` | File tree, preview, edit buffer, changed files, drag-drop state | No |
-| `agentStore` | Agent tree (multi-agent nesting), phase tracking, per-tab cache | No |
-| `commandStore` | Unified commands (built-in + custom + skills), prefix mode | No |
-| `skillStore` | Skills CRUD, enable/disable, content editing | No |
-| `mcpStore` | MCP servers from ~/.claude.json | No |
-| `providerStore` | API providers (multi-provider), model mappings, active provider | Disk (providers.json) |
-| `setupStore` | CLI install/login wizard state | No |
-
-**Tab-switching pattern**: `chatStore` and `agentStore` implement `saveToCache(tabId)` / `restoreFromCache(tabId)` for seamless multi-session tab switching. Background sessions receive stream events via `*InCache()` methods.
-
-## Frontend Structure
-
-```
-src/
-├── App.tsx                    # Entry: theme, font, file watcher, global hotkeys
-├── main.tsx                   # React root + ErrorBoundary
-├── stores/                    # 10 Zustand stores (see above)
-├── components/                # ~46 component files
-│   ├── layout/                # AppShell, Sidebar, SecondaryPanel
-│   ├── chat/                  # ChatPanel, InputBar, MessageBubble, TiptapEditor,
-│   │                          # PermissionCard, QuestionCard, PlanReviewCard,
-│   │                          # RewindPanel, SlashCommandPopover, ToolGroup,
-│   │                          # ModelSelector, ModeSelector, CommandProcessingCard
-│   ├── files/                 # FileExplorer, FilePreview, ProjectSelector
-│   ├── conversations/         # ConversationList, SessionItem, SessionGroup,
-│   │                          # SessionContextMenu, ExportMenu
-│   ├── commands/              # CommandPalette
-│   ├── agents/                # AgentPanel
-│   ├── skills/                # SkillsPanel
-│   ├── mcp/                   # McpPanel
-│   ├── settings/              # SettingsPanel, ProviderTab, ProviderManager,
-│   │                          # ProviderForm, ProviderCard, AddProviderMenu,
-│   │                          # GeneralTab, CliTab, McpTab
-│   ├── setup/                 # SetupWizard
-│   └── shared/                # MarkdownRenderer, ImageLightbox, ConfirmDialog,
-│                              # FileIcon, UpdateButton, ChangelogModal
-├── hooks/
-│   ├── useStreamProcessor.ts  # Stream message handling (foreground + background tabs)
-│   ├── useFileAttachments.ts  # File upload, drag-drop (OS native + browser)
-│   ├── useRewind.ts           # Rewind orchestration (kill, truncate, checkpoint restore)
-│   └── useAutoUpdateCheck.ts  # Periodic update check via tauri-plugin-updater
-└── lib/
-    ├── tauri-bridge.ts        # ALL Tauri IPC calls + event listeners (single source of truth)
-    ├── i18n.ts                # Chinese/English translations (zh/en)
-    ├── api-provider.ts        # Model resolution for custom providers, env fingerprint
-    ├── api-config.ts          # Provider config import/export (v1/v2 format)
-    ├── provider-presets.ts    # Pre-configured API provider templates
-    ├── session-loader.ts      # Parse CLI session JSONL into ChatMessage[] for history reload
-    ├── turns.ts               # Turn parsing for rewind (pure functions)
-    ├── platform.ts            # OS detection, modifier keys, path utilities
-    ├── changelog.ts           # Version changelog entries for "What's New" modal
-    ├── codemirror-theme.ts    # CodeMirror theme configuration
-    ├── drag-state.ts          # File tree drag state coordination
-    └── strip-ansi.ts          # ANSI escape sequence removal
-```
-
-## Rust Backend
-
-**`src-tauri/src/lib.rs`** (~4,576 LOC) — All Tauri command handlers:
-
-| Category | Commands |
-|----------|---------|
-| Session lifecycle | `start_claude_session`, `send_stdin`, `send_raw_stdin`, `kill_session`, `track_session`, `delete_session` |
-| Session data | `list_sessions`, `load_session`, `export_session_markdown`, `export_session_json` |
-| SDK control protocol | `respond_permission`, `send_control_request` |
-| File operations | `read_file_tree`, `read_file_content`, `write_file_content`, `copy_file`, `rename_file`, `delete_file`, `create_directory`, `read_file_base64`, `check_file_access`, `get_file_size`, `save_temp_file` |
-| File watching | `watch_directory`, `unwatch_directory` |
-| External tools | `open_in_vscode`, `reveal_in_finder`, `open_with_default_app` |
-| Skills/Commands | `list_slash_commands`, `list_skills`, `read_skill`, `write_skill`, `delete_skill`, `toggle_skill_enabled`, `list_all_commands` |
-| Git | `run_git_command` (allowlisted operations only) |
-| Rewind | `rewind_files` (spawn-based fallback for checkpoint restore) |
-| CLI management | `check_claude_cli`, `install_claude_cli`, `check_node_env`, `install_node_env`, `run_claude_command` |
-| Auth | `start_claude_login`, `check_claude_auth`, `open_terminal_login` |
-| Session metadata | `load_custom_previews`, `save_custom_previews`, `load_pinned_sessions`, `save_pinned_sessions`, `load_archived_sessions`, `save_archived_sessions`, `generate_session_title` |
-| Provider | `load_providers`, `save_providers`, `test_provider_connection` |
-| Projects | `list_recent_projects` |
-| UI | `set_dock_icon` |
-
-**`src-tauri/src/commands/claude_process.rs`** — Types: `ProcessManager`, `StdinManager`, `ManagedProcess`, `StartSessionParams`, `SessionInfo`
-
-**`src-tauri/src/protocol.rs`** — SDK control protocol types for bidirectional CLI communication (ControlRequest, ControlRequestPayload, SdkControlRequestPayload)
-
-## Key Design Decisions
-
-1. **Overlay title bar** — `titleBarStyle: "Overlay"` with `hiddenTitle: true`. Components must account for the traffic light area on macOS.
-
-2. **StdinManager for follow-up messages** — After the first message spawns a CLI process, subsequent messages in the same session are written to the process's stdin pipe. No new process per message.
-
-3. **Multi-session tabs** — Sessions run concurrently. `chatStore` caches per-tab state. Stream events for background tabs are routed via `stdinToTab` mapping in `sessionStore` and written to cache via `*InCache()` methods.
-
-4. **SDK control protocol** — Permission requests, mode changes, model switching, and interrupts use the Claude CLI's native control protocol (`--permission-prompt-tool stdio`). Fallback: `--dangerously-skip-permissions` in "bypass" mode.
-
-5. **Provider system** — Multi-provider API configuration stored in `~/.tokenicode/providers.json`. Supports Anthropic, OpenAI-compatible APIs, and presets (DeepSeek, Zhipu, Qwen, Kimi, MiniMax). Environment variables are injected into CLI process at spawn.
-
-6. **Rewind via CLI checkpoints** — File restoration uses Claude CLI's native checkpoint system (`--replay-user-messages`) via the SDK control protocol. Falls back to spawning a separate CLI process if stdin pipe is unavailable.
-
-7. **i18n** — All user-facing strings go through `src/lib/i18n.ts`. Supports `zh` (Chinese) and `en` (English). Default locale is `zh`.
-
-8. **NDJSON streaming** — Claude CLI output is parsed line-by-line as newline-delimited JSON in `useStreamProcessor.ts`.
-
-9. **Settings persistence** — `settingsStore` uses Zustand's `persist` middleware (localStorage, version 4 with migrations). `providerStore` persists to disk via Rust backend.
-
-10. **Session mode mapping** — Frontend modes (`code`/`ask`/`plan`/`bypass`) map to CLI permission modes (`acceptEdits`/`default`/`plan`/`bypassPermissions`) via `mapSessionModeToPermissionMode()`.
-
-## Common Debugging Locations
-
-| Symptom | Where to look |
-|---------|--------------|
-| Message not appearing | `useStreamProcessor.ts` (stream parsing), `chatStore.ts` (addMessage, updatePartialMessage) |
-| Message sent but no response | `InputBar.tsx` (handleSubmit), `tauri-bridge.ts` (startSession/sendStdin), `lib.rs` (start_claude_session) |
-| Permission dialog issues | `PermissionCard.tsx`, `protocol.rs`, `lib.rs` (respond_permission, send_control_request) |
-| Streaming stuck / partial | `useStreamProcessor.ts` (handleStreamMessage), `lib.rs` (stdout reading loop) |
-| Tab switching loses state | `chatStore.ts` (saveToCache/restoreFromCache), `agentStore.ts` (saveToCache/restoreFromCache) |
-| File tree not updating | `fileStore.ts` (loadTree/refreshTree), `lib.rs` (read_file_tree, watch_directory) |
-| Provider/API connection | `providerStore.ts`, `api-provider.ts`, `lib.rs` (test_provider_connection, env injection in start_claude_session) |
-| CLI not found / install | `setupStore.ts`, `SetupWizard.tsx`, `lib.rs` (check_claude_cli, install_claude_cli, find_claude_binary) |
-| Rewind not working | `useRewind.ts`, `turns.ts`, `RewindPanel.tsx`, `lib.rs` (rewind_files, send_control_request) |
-| Session resume failures | `InputBar.tsx` (resume logic), `lib.rs` (start_claude_session with resume_session_id) |
-| Background session events | `useStreamProcessor.ts` (handleBackgroundStreamMessage), `chatStore.ts` (*InCache methods) |
-| Mode/model switch at runtime | `settingsStore.ts` (subscribe watcher), `protocol.rs` (ControlRequest), `lib.rs` (send_control_request) |
-| Auto-update | `useAutoUpdateCheck.ts`, `UpdateButton.tsx`, `tauri.conf.json` (updater endpoints) |
-
-## File Quick Reference
-
-| What | File |
+| 现象 | 位置 |
 |------|------|
-| Message sending + stream processing | `src/components/chat/InputBar.tsx` + `src/hooks/useStreamProcessor.ts` |
-| Chat state | `src/stores/chatStore.ts` |
-| IPC bridge (all native calls) | `src/lib/tauri-bridge.ts` |
-| Rust backend entry | `src-tauri/src/lib.rs` |
-| Process/stdin management | `src-tauri/src/commands/claude_process.rs` |
-| SDK protocol types | `src-tauri/src/protocol.rs` |
-| Settings (persisted) | `src/stores/settingsStore.ts` |
-| API provider management | `src/stores/providerStore.ts` + `src/lib/api-provider.ts` |
-| Session list + tabs | `src/stores/sessionStore.ts` |
-| Translations | `src/lib/i18n.ts` |
-| Tauri config | `src-tauri/tauri.conf.json` |
-| Build script (macOS local) | `scripts/build-macos-local.sh` |
+| 消息不显示/流卡住 | `useStreamProcessor.ts`、`chatStore.ts`、`lib.rs` 的 stdout 读取循环 |
+| 发送无响应/恢复失败 | `InputBar.tsx`、`tauri-bridge.ts`、`lib.rs` 的 `start_claude_session` |
+| 权限弹窗 | `PermissionCard.tsx`、`protocol.rs`、`respond_permission` |
+| 切标签丢状态 | `chatStore.ts`/`agentStore.ts` 的缓存方法 |
+| 服务商/API | `providerStore.ts`、`api-provider.ts`、`test_provider_connection` |
+| 找不到 CLI | `SetupWizard.tsx`、`CliTab.tsx`、`cli_resolver.rs` |
+| 回溯 | `useRewind.ts`、`turns.ts`、`rewind-point.ts`、`RewindPanel.tsx` |
+| 远程 | `remote.rs`、`src/lib/remote.ts`、`RemoteTab.tsx`、`EnvSwitcher.tsx` |
+| 用量 | `usageStore.ts`、`rateLimitsStore.ts`、`src/lib/usage.ts` |
 
-## 调试开发 UI（重要）
+## 调试开发版 UI（重要）
 
-当**用户正在使用旧版 ClaudeDeck 作为当前 Claude Code 的 UI** 时，调试新版 ClaudeDeck 需要特别注意避免干扰用户的当前会话。
+用户可能正用旧版 ClaudeDeck 作为当前 Claude Code 的界面：
 
-### 核心原则
-
-1. **绝不杀掉用户的旧 UI 进程**：旧版 ClaudeDeck 的进程是用户当前正在使用的，杀死它会导致用户丢失会话
-2. **开发版需要使用不同的 identifier**：WebView2 用户数据目录基于 app identifier，两个实例共用同一个 identifier 会导致开发版窗口无法渲染
-
-### 正确启动开发版的步骤
-
-```bash
-# 第 1 步：临时修改 identifier（必须！避免 WebView2 冲突）
-# 编辑 src-tauri/tauri.conf.json:
-#   "identifier": "com.chengzhiren66.claudedeck"  →  "com.chengzhiren66.claudedeck-dev"
-
-# 第 2 步：杀掉旧的开发版进程（但保留用户的主 UI！）
-# 用户主 UI 的 PID 通常是最早启动的那个 claudedeck.exe
-# 使用 PowerShell 查看：Get-Process -Name claudedeck | Select-Object Id,StartTime
-
-# 第 3 步：启动 Vite 开发服务器（后台运行）
-npm run dev &
-
-# 第 4 步：启动 Tauri 开发版（直接运行二进制，避免 pnpm tauri dev 的生命周期问题）
-./src-tauri/target/debug/claudedeck.exe &
-
-# 第 5 步：验证两个进程都在运行
-# 预期结果：2 个 claudedeck.exe 进程（旧 UI + 开发版）
-```
-
-### 为什么不用 `pnpm tauri dev`？
-
-`pnpm tauri dev` 启动的 Tauri 进程会随窗口关闭而退出，且开发版窗口关闭时整个命令退出。分开启动 Vite 和二进制更稳定，开发版窗口可以独立启停。
-
-### 提交前务必还原 identifier
-
-`tauri.conf.json` 中的 identifier 改动**仅用于调试**，提交前必须还原为 `"com.chengzhiren66.claudedeck"`。
-
-### 清理开发版进程
-
-```bash
-# 杀掉开发版但保留用户主 UI（替换 <MAIN_PID> 为用户主 UI 的实际 PID）
-powershell -Command "Get-Process claudedeck | Where-Object { \$_.Id -ne <MAIN_PID> } | Stop-Process -Force"
-```
+1. **绝不杀用户的主 UI 进程**（通常是最早启动的 `claudedeck.exe`，用 `Get-Process claudedeck | Select Id,StartTime` 查看）。
+2. 启动前把 `src-tauri/tauri.conf.json` 的 identifier 临时改为 `com.chengzhiren66.claudedeck-dev`，否则 WebView2 数据目录冲突，窗口无法渲染。**提交前必须改回。**
+3. 分开启动：后台运行 `npm run dev`，再运行 `./src-tauri/target/debug/claudedeck.exe`（不用 `pnpm tauri dev`，它会随窗口关闭退出）。
+4. 只清理开发版：`Get-Process claudedeck | Where-Object { $_.Id -ne <主UI PID> } | Stop-Process -Force`。
