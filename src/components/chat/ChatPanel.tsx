@@ -954,7 +954,9 @@ export function ChatPanel() {
       <div className="flex flex-1 min-h-0 relative">
       {/* Main chat area */}
       <div className="flex flex-col flex-1 min-w-0">
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-5 py-6 selectable chat-scroll-container">
+      {/* 右侧轮次导航条（lg 及以上显示）悬浮在消息区上方，显示时给消息区留出等宽的右边距，避免挡住文字 */}
+      <div ref={scrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto px-5 py-6 selectable chat-scroll-container
+        ${!showPlanPanel && turns.length > 0 ? 'lg:pr-16' : ''}`}>
         {!workingDirectory && messages.length === 0 && !isStreaming ? (
           <WelcomeScreen />
         ) : messages.length === 0 && !isStreaming && sessionStatus === 'running' ? (

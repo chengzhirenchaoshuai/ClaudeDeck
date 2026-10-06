@@ -34,6 +34,11 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
   const selectedFile = useFileStore((s) => s.selectedFile);
   const isFilePreviewMode = !!selectedFile;
 
+  // 拖动调整宽度期间关闭面板的宽度动画：外层容器有 300ms 宽度过渡而内容宽度是即时的，
+  // 不关的话拖动时内容先变、外框再慢慢跟上，看起来像分两段
+  const [isResizing, setIsResizing] = useState(false);
+  const panelTransition = isResizing ? '' : 'transition-all duration-300 ease-out';
+
   // --- Right-side panel dragging (secondary + preview) ---
   const isRightDragging = useRef(false);
   const rightStartX = useRef(0);
@@ -83,6 +88,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
     e.preventDefault();
     e.stopPropagation();
     isRightDragging.current = true;
+    setIsResizing(true);
     rightStartX.current = e.clientX;
     rightStartWidth.current = isFilePreviewModeRef.current
       ? previewWidthRef.current
@@ -100,6 +106,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       if (isFilePreviewModeRef.current) {
         if (newWidth < COLLAPSE_THRESHOLD) {
           isRightDragging.current = false;
+          setIsResizing(false);
           document.body.style.cursor = '';
           document.body.style.userSelect = '';
           useFileStore.getState().closePreview();
@@ -111,6 +118,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       } else {
         if (newWidth < COLLAPSE_THRESHOLD) {
           isRightDragging.current = false;
+          setIsResizing(false);
           document.body.style.cursor = '';
           document.body.style.userSelect = '';
           const settings = useSettingsStore.getState();
@@ -126,6 +134,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
     const handleMouseUp = () => {
       if (!isRightDragging.current) return;
       isRightDragging.current = false;
+      setIsResizing(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -155,6 +164,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
     e.preventDefault();
     e.stopPropagation();
     isSidebarDragging.current = true;
+    setIsResizing(true);
     sidebarStartX.current = e.clientX;
     sidebarStartW.current = sidebarWidthRef.current;
     document.body.style.cursor = 'col-resize';
@@ -169,6 +179,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       const newW = sidebarStartW.current + delta;
       if (newW < SIDEBAR_COLLAPSE_THRESHOLD) {
         isSidebarDragging.current = false;
+        setIsResizing(false);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
         const settings = useSettingsStore.getState();
@@ -182,6 +193,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
     const handleUp = () => {
       if (!isSidebarDragging.current) return;
       isSidebarDragging.current = false;
+      setIsResizing(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -214,7 +226,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
 
       {/* Sidebar — animates to w-0 when hidden or preview mode */}
       <div
-        className="flex-shrink-0 transition-all duration-300 ease-out overflow-hidden"
+        className={`flex-shrink-0 overflow-hidden ${panelTransition}`}
         style={{ width: showSidebar ? `${sidebarWidth}px` : '0px' }}
       >
         <div
@@ -252,7 +264,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       )}
       {/* File Preview Panel — animates in/out */}
       <div
-        className="flex-shrink-0 overflow-hidden transition-all duration-300 ease-out"
+        className={`flex-shrink-0 overflow-hidden ${panelTransition}`}
         style={{ width: isFilePreviewMode ? `${previewWidth}px` : '0px' }}
       >
         <div className="h-full overflow-hidden flex flex-col bg-bg-chat"
@@ -274,7 +286,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       {/* Secondary Panel — animates to w-0 when hidden or preview mode */}
       {secondary && (
         <div
-          className="flex-shrink-0 transition-all duration-300 ease-out overflow-hidden"
+          className={`flex-shrink-0 overflow-hidden ${panelTransition}`}
           style={{ width: showSecondary ? `${secondaryPanelWidth}px` : '0px' }}
         >
           <div

@@ -161,7 +161,7 @@ export const SessionItem = memo(function SessionItem({
         startRename();
       }}
       onContextMenu={(e) => onContextMenu(e, session)}
-      className={`w-full text-left pl-7 pr-3 py-1.5 rounded-xl
+      className={`relative w-full text-left pl-7 pr-2 py-1.5 rounded-xl
         transition-smooth group conversation-list-item
         ${isArchived ? 'opacity-50' : ''}
         ${isHighlighted ? 'locate-flash' : ''}
@@ -170,6 +170,17 @@ export const SessionItem = memo(function SessionItem({
           : 'hover:bg-bg-secondary'
         }`}
     >
+      {/* 状态指示放在左侧缩进区（pl-7）里，不占标题行宽度，出现/消失也不会挤动标题：
+          进行中显示转圈，否则未读显示圆点 */}
+      {(isRunning || isUnread) && (
+        <span className="absolute left-0 top-1.5 w-7 h-4 flex items-center justify-center pointer-events-none">
+          {isRunning ? (
+            <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-accent/30 border-t-accent animate-spin" />
+          ) : (
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" title={t('conv.unread')} />
+          )}
+        </span>
+      )}
       <div className="flex items-center gap-2">
         {multiSelect && (
           <input
@@ -212,43 +223,39 @@ export const SessionItem = memo(function SessionItem({
             {name || (session.path === '' ? t('conv.newChat') : t('conv.empty'))}
           </div>
         )}
-        <span className="text-[10px] text-text-tertiary flex-shrink-0">
-          {formatRelativeTime(session.modifiedAt)}
-        </span>
-        {!multiSelect && !isRenaming && onPin && (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onPin(session);
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter' && e.key !== ' ') return;
-              e.preventDefault();
-              e.stopPropagation();
-              onPin(session);
-            }}
-            className="flex-shrink-0 p-0.5 rounded text-text-tertiary opacity-0
-              group-hover:opacity-100 hover:text-accent hover:bg-accent/10 transition-smooth"
-            title={isPinned ? t('conv.unpin') : t('conv.pin')}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9.5 2L14 6.5L8.5 12L6 14L4.5 11.5L2 9.5L4 7.5L9.5 2z" />
-              <path d="M4.5 11.5L1.5 14.5" />
-            </svg>
+        {/* 时间与置顶按钮共用一个位置：悬停时时间隐藏、置顶按钮显示在原处 */}
+        <span className="relative flex-shrink-0 flex items-center justify-end min-w-[16px]">
+          <span className={`text-[10px] text-text-tertiary
+            ${!multiSelect && !isRenaming && onPin ? 'group-hover:invisible' : ''}`}>
+            {formatRelativeTime(session.modifiedAt)}
           </span>
-        )}
-        <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent
-          ${isUnread ? '' : 'invisible'}`}
-          title={t('conv.unread')} />
-        {/* 固定占位：始终占用同一块空间，只切换可见性，避免发消息时
-            进行中图标忽隐忽现把左边的标题挤得左右乱飘 */}
-        <span className={`flex-shrink-0 w-2.5 h-2.5 rounded-full
-          border-[1.5px] border-accent/30 border-t-accent animate-spin
-          ${isRunning ? '' : 'invisible'}`} />
+          {!multiSelect && !isRenaming && onPin && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onPin(session);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                e.stopPropagation();
+                onPin(session);
+              }}
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-tertiary
+                opacity-0 group-hover:opacity-100 hover:text-accent hover:bg-accent/10 transition-smooth"
+              title={isPinned ? t('conv.unpin') : t('conv.pin')}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9.5 2L14 6.5L8.5 12L6 14L4.5 11.5L2 9.5L4 7.5L9.5 2z" />
+                <path d="M4.5 11.5L1.5 14.5" />
+              </svg>
+            </span>
+          )}
+        </span>
       </div>
       {contentSnippet && (
         <div className="flex gap-1 mt-0.5 text-[10px] text-text-muted leading-relaxed">
