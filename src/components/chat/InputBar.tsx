@@ -1024,7 +1024,7 @@ export function InputBar() {
               if (cleanedMessages.length === tab.messages.length) return {}; // nothing to clean
               const newTabs = new Map(state.tabs);
               newTabs.set(tabId!, { ...tab, messages: cleanedMessages });
-              return { tabs: newTabs, sessionCache: newTabs };
+              return { tabs: newTabs };
             });
             stdinId = undefined;
           } else {
@@ -1121,7 +1121,7 @@ export function InputBar() {
             if (reqOwnerTabId && reqOwnerTabId !== reqActiveTabId) {
               // Route to background cache instead of foreground
               const cache = useChatStore.getState();
-              cache.addMessageToCache(reqOwnerTabId, {
+              cache.addMessage(reqOwnerTabId, {
                 id: generateMessageId(),
                 role: 'assistant',
                 type: 'permission',
@@ -1138,7 +1138,7 @@ export function InputBar() {
                   toolUseId: req.tool_use_id,
                 },
               });
-              cache.setActivityInCache(reqOwnerTabId, { phase: 'awaiting' });
+              cache.setActivityStatus(reqOwnerTabId, { phase: 'awaiting' });
               return;
             }
             const { addMessage: addMsg, setActivityStatus: setActivity } = useChatStore.getState();
@@ -1250,7 +1250,7 @@ export function InputBar() {
             const newTabs = new Map(chatState.tabs);
             newTabs.set(session.session_id, { ...tabData, tabId: session.session_id });
             newTabs.delete(tabId);
-            useChatStore.setState({ tabs: newTabs, sessionCache: newTabs });
+            useChatStore.setState({ tabs: newTabs });
           }
           useSessionStore.getState().promoteDraft(tabId, session.session_id);
           bridge.hideSession(rewoundFromSessionId).catch((error) => {
@@ -1298,7 +1298,7 @@ export function InputBar() {
       if (ownerTabId && ownerTabId !== activeTabId) {
         const clean = stripAnsi(line).trim();
         if (clean) {
-          useChatStore.getState().addMessageToCache(ownerTabId, {
+          useChatStore.getState().addMessage(ownerTabId, {
             id: generateMessageId(),
             role: 'system',
             type: 'text',

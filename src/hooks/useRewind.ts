@@ -107,7 +107,7 @@ export function useRewind() {
   const saveToTab = useCallback(() => {
     const tabId = useSessionStore.getState().selectedSessionId;
     if (tabId) {
-      useChatStore.getState().saveToCache(tabId);
+      useChatStore.getState().ensureTab(tabId);
     }
   }, []);
 

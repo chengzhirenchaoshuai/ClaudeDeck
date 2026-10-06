@@ -28,7 +28,7 @@ export function Sidebar() {
 
     const currentTabId = useSessionStore.getState().selectedSessionId;
     if (currentTabId) {
-      useChatStore.getState().saveToCache(currentTabId);
+      useChatStore.getState().ensureTab(currentTabId);
       useAgentStore.getState().saveToCache(currentTabId);
     }
 
@@ -117,7 +117,7 @@ export function Sidebar() {
       <button onClick={() => {
         const currentTabId = useSessionStore.getState().selectedSessionId;
         if (currentTabId) {
-          useChatStore.getState().saveToCache(currentTabId);
+          useChatStore.getState().ensureTab(currentTabId);
           useAgentStore.getState().saveToCache(currentTabId);
         }
         useSessionStore.getState().setSelectedSession(null);

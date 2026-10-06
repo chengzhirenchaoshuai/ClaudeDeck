@@ -476,7 +476,7 @@ function App() {
 
         // Save current session to cache
         if (selectedSessionId) {
-          useChatStore.getState().saveToCache(selectedSessionId);
+          useChatStore.getState().ensureTab(selectedSessionId);
           useAgentStore.getState().saveToCache(selectedSessionId);
         }
 

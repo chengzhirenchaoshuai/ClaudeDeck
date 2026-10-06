@@ -151,22 +151,6 @@ export interface ActivityStatus {
   toolName?: string;  // only when phase === 'tool'
 }
 
-// --- Per-session snapshot (backward compat type — kept for external consumers) ---
-
-export interface SessionSnapshot {
-  messages: ChatMessage[];
-  isStreaming: boolean;
-  partialText: string;
-  partialThinking: string;
-  sessionStatus: SessionStatus;
-  sessionMeta: SessionMeta;
-  activityStatus: ActivityStatus;
-  inputDraft: string;
-  pendingAttachments: FileAttachment[];
-  /** User messages queued while AI is actively processing (not yet sent to stdin) */
-  pendingUserMessages: string[];
-}
-
 // --- Tab session: the ONLY place session data lives ---
 
 export interface TabSession {
@@ -217,29 +201,11 @@ interface ChatState {
   removeTab: (tabId: string) => void;
   getTab: (tabId: string) => TabSession | undefined;
 
-  // --- Backward compat: sessionCache alias + *InCache methods ---
-  /** @deprecated Alias for tabs. Kept for gradual migration. */
-  sessionCache: Map<string, SessionSnapshot>;
-  /** @deprecated Data already lives in tabs. Kept for call sites that save before switching. */
-  saveToCache: (tabId: string) => void;
-  /** @deprecated Just checks tab existence. Kept for backward compat. */
+  /**
+   * 切换到某标签页时调用：标签页存在且可直接使用时返回 true；不存在、或是磁盘上的
+   * 会话但消息为空（需要从磁盘重新加载）时返回 false。同时校验 stdinId 归属并同步运行状态。
+   */
   restoreFromCache: (tabId: string) => boolean;
-  removeFromCache: (tabId: string) => void;
-  hasCachedSession: (tabId: string) => boolean;
-  /** @deprecated Use addMessage(tabId, message) directly. */
-  addMessageToCache: (tabId: string, message: ChatMessage) => void;
-  /** @deprecated Use updatePartialMessage(tabId, text) directly. */
-  updatePartialInCache: (tabId: string, text: string) => void;
-  /** @deprecated Use updatePartialThinking(tabId, thinking) directly. */
-  updatePartialThinkingInCache: (tabId: string, thinking: string) => void;
-  /** @deprecated Use setSessionStatus(tabId, status) directly. */
-  setStatusInCache: (tabId: string, status: SessionStatus) => void;
-  /** @deprecated Use setSessionMeta(tabId, meta) directly. */
-  setMetaInCache: (tabId: string, meta: Partial<SessionMeta>) => void;
-  /** @deprecated Use setActivityStatus(tabId, status) directly. */
-  setActivityInCache: (tabId: string, status: ActivityStatus) => void;
-  /** @deprecated Use updateMessage(tabId, msgId, updates) directly. */
-  updateMessageInCache: (tabId: string, msgId: string, updates: Partial<ChatMessage>) => void;
 }
 
 // --- Helpers ---
@@ -281,12 +247,12 @@ function updateTab(
   tabs: Map<string, TabSession>,
   tabId: string,
   updater: (tab: TabSession) => TabSession,
-): { tabs: Map<string, TabSession>; sessionCache: Map<string, TabSession> } | undefined {
+): { tabs: Map<string, TabSession> } | undefined {
   const tab = tabs.get(tabId);
   if (!tab) return undefined;
   const newTabs = new Map(tabs);
   newTabs.set(tabId, updater(tab));
-  return { tabs: newTabs, sessionCache: newTabs };
+  return { tabs: newTabs };
 }
 
 // --- Selector helpers ---
@@ -316,7 +282,6 @@ export function getActiveTabState(): TabSession {
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   tabs: new Map(),
-  sessionCache: new Map(),   // alias — always kept in sync with tabs
 
   // ------------------------------------------------------------------
   // Tab-level operations
@@ -580,27 +545,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }
       // If all candidates are streaming, allow cache to exceed MAX_CACHE
     }
-    set({ tabs: newTabs, sessionCache: newTabs });
+    set({ tabs: newTabs });
   },
 
   removeTab: (tabId) => {
     const newTabs = new Map(get().tabs);
     newTabs.delete(tabId);
-    set({ tabs: newTabs, sessionCache: newTabs });
+    set({ tabs: newTabs });
   },
 
   getTab: (tabId) => get().tabs.get(tabId),
-
-  // ------------------------------------------------------------------
-  // Backward compat: sessionCache + *InCache methods
-  // ------------------------------------------------------------------
-
-  saveToCache: (tabId) => {
-    // In v2, data already lives in tabs. This is effectively a no-op.
-    // However, we still ensure the tab exists (some call sites save before switching
-    // and may not have called ensureTab yet).
-    get().ensureTab(tabId);
-  },
 
   restoreFromCache: (tabId) => {
     const tab = get().tabs.get(tabId);
@@ -618,7 +572,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           inputDraft: tab.inputDraft,
           pendingAttachments: tab.pendingAttachments,
         });
-        set({ tabs: newTabs, sessionCache: newTabs });
+        set({ tabs: newTabs });
         return false;
       }
     }
@@ -639,52 +593,5 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     // Sync running state to sessionStore for sidebar indicator (FI-1 fix)
     useSessionStore.getState().setSessionRunning(tabId, tab.sessionStatus === 'running');
     return true;
-  },
-
-  removeFromCache: (tabId) => {
-    get().removeTab(tabId);
-  },
-
-  hasCachedSession: (tabId) => get().tabs.has(tabId),
-
-  // *InCache methods — delegate directly to tab-level methods
-
-  addMessageToCache: (tabId, message) => {
-    // #27/#30 fix: skip if no tab entry — creating a tab with only this single
-    // message risks losing real history if the entry was LRU-evicted.
-    if (!get().tabs.has(tabId)) return;
-    get().addMessage(tabId, message);
-  },
-
-  updatePartialInCache: (tabId, text) => {
-    if (!get().tabs.has(tabId)) return;
-    get().updatePartialMessage(tabId, text);
-  },
-
-  updatePartialThinkingInCache: (tabId, thinking) => {
-    if (!get().tabs.has(tabId)) return;
-    get().updatePartialThinking(tabId, thinking);
-  },
-
-  setStatusInCache: (tabId, status) => {
-    // Always sync running state indicator, even without a tab
-    useSessionStore.getState().setSessionRunning(tabId, status === 'running');
-    if (!get().tabs.has(tabId)) return;
-    get().setSessionStatus(tabId, status);
-  },
-
-  setMetaInCache: (tabId, meta) => {
-    if (!get().tabs.has(tabId)) return;
-    get().setSessionMeta(tabId, meta);
-  },
-
-  setActivityInCache: (tabId, status) => {
-    if (!get().tabs.has(tabId)) return;
-    get().setActivityStatus(tabId, status);
-  },
-
-  updateMessageInCache: (tabId, msgId, updates) => {
-    if (!get().tabs.has(tabId)) return;
-    get().updateMessage(tabId, msgId, updates);
   },
 }));

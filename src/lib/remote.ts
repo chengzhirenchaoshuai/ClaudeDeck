@@ -27,7 +27,7 @@ export function toSessionFilePath(path: string): string {
 function saveCurrentTab() {
   const currentTabId = useSessionStore.getState().selectedSessionId;
   if (currentTabId) {
-    useChatStore.getState().saveToCache(currentTabId);
+    useChatStore.getState().ensureTab(currentTabId);
     useAgentStore.getState().saveToCache(currentTabId);
   }
 }

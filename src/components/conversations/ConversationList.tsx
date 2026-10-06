@@ -442,7 +442,7 @@ export function ConversationList() {
 
     // Save current to cache
     if (currentTabId) {
-      useChatStore.getState().saveToCache(currentTabId);
+      useChatStore.getState().ensureTab(currentTabId);
       useAgentStore.getState().saveToCache(currentTabId);
     }
 
@@ -515,7 +515,7 @@ export function ConversationList() {
         setSelected(null);
         useChatStore.getState().resetTab(sessionId);
       }
-      useChatStore.getState().removeFromCache(sessionId);
+      useChatStore.getState().removeTab(sessionId);
       fetchSessions();
     } catch (err) {
       console.error('Failed to delete session:', err);
@@ -634,7 +634,7 @@ export function ConversationList() {
     useSettingsStore.getState().setWorkingDirectory(realPath);
     const currentTabId = useSessionStore.getState().selectedSessionId;
     if (currentTabId) {
-      useChatStore.getState().saveToCache(currentTabId);
+      useChatStore.getState().ensureTab(currentTabId);
       useAgentStore.getState().saveToCache(currentTabId);
     }
     const newDraftId = `draft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

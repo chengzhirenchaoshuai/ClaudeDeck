@@ -34,7 +34,7 @@ export function CommandPalette() {
       action: () => {
         const currentTabId = useSessionStore.getState().selectedSessionId;
         if (currentTabId) {
-          useChatStore.getState().saveToCache(currentTabId);
+          useChatStore.getState().ensureTab(currentTabId);
           useAgentStore.getState().saveToCache(currentTabId);
         }
         // In v2, navigating away doesn't reset the previous tab

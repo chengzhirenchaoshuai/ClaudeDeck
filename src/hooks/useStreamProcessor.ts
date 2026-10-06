@@ -533,7 +533,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             const newTabs = new Map(chatState.tabs);
             newTabs.set(cliSessionId, { ...tabData, tabId: cliSessionId });
             newTabs.delete(tabId);
-            useChatStore.setState({ tabs: newTabs, sessionCache: newTabs });
+            useChatStore.setState({ tabs: newTabs });
           }
           useSessionStore.getState().promoteDraft(tabId, cliSessionId);
           // Update UUID index: tab key changed from draft_* to the real UUID
@@ -555,7 +555,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       if (tabData && (tabData.isStreaming || tabData.partialText || tabData.partialThinking)) {
         const newTabs = new Map(useChatStore.getState().tabs);
         newTabs.set(tabId, { ...tabData, partialText: '', partialThinking: '', isStreaming: false });
-        useChatStore.setState({ tabs: newTabs, sessionCache: newTabs });
+        useChatStore.setState({ tabs: newTabs });
       }
     };
 
@@ -768,7 +768,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             if (td?.partialThinking) {
               const nt = new Map(useChatStore.getState().tabs);
               nt.set(tabId, { ...td, partialThinking: '' });
-              useChatStore.setState({ tabs: nt, sessionCache: nt });
+              useChatStore.setState({ tabs: nt });
             }
           }
         }
@@ -982,7 +982,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             if (td?.partialThinking) {
               const nt = new Map(useChatStore.getState().tabs);
               nt.set(tabId, { ...td, partialThinking: '' });
-              useChatStore.setState({ tabs: nt, sessionCache: nt });
+              useChatStore.setState({ tabs: nt });
             }
           }
             agentActions?.updatePhase(agentId, 'thinking');

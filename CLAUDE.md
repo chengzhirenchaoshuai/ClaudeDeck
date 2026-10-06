@@ -25,7 +25,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - **模式映射**：`code/ask/plan/bypass` → `acceptEdits/default/plan/bypassPermissions`（`mapSessionModeToPermissionMode()`）。
 - **环境注入**：`CLAUDE_CODE_EFFORT_LEVEL`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS`、`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW`（≥1M 上下文）、`CLAUDE_CODE_GIT_BASH_PATH`、服务商的 `ANTHROPIC_*` 及自定义变量。
 - **远程主机**：项目路径用 `ssh://<主机别名>/<远端路径>`，由后端识别并经系统 ssh 在远端运行 claude，不注入本机服务商配置。
-- **多标签页**：`chatStore`/`agentStore` 用 `saveToCache`/`restoreFromCache` 切换；后台会话按 `sessionStore.stdinToTab` 路由，经 `*InCache()` 写缓存。
+- **多标签页**：`chatStore` 按 `tabs: Map<tabId, TabSession>` 保存所有标签页，所有方法都带 `tabId`；切换时调用 `restoreFromCache`（判断是否需要从磁盘重新加载）。`agentStore` 只保存当前标签页的代理树，切换时用 `saveToCache`/`restoreFromCache` 存取。后台会话按 `sessionStore.stdinToTab` 路由。
 - **回溯**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
 - **流解析**：`useStreamProcessor.ts` 的 `handleStreamMessage` 逐行解析 NDJSON，按 stdinId 路由到所属标签页，前台、后台共用一套逻辑；依赖 InputBar 的 ref、`agentStore`（只存当前标签页）或当前选中标签页的动作用 `isForeground` 限定在前台。
 - **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `config/providers.json`。
