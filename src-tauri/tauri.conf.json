@@ -12,6 +12,8 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "ClaudeDeck",
         "width": 1600,
         "height": 860,

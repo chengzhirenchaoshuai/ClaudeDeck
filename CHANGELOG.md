@@ -3,6 +3,13 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
+## [未发布]
+
+### 调整
+- 所有应用数据统一放到 `%APPDATA%\ClaudeDeck\`（`config`、`cache`、`tools`、`webview` 四个子目录），首次启动自动从旧位置（`~\.tokenicode`、`%LOCALAPPDATA%\com.chengzhiren66.claudedeck`）复制迁移，旧目录保留作备份
+- 内置浏览窗口改由后端创建，与主窗口共用同一 WebView 数据目录
+- 安装包只出 MSI，另附免安装版 exe
+
 ## [1.1.0] - 2026-10-06
 
 自用版本的首个发布。

@@ -28,7 +28,8 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - **多标签页**：`chatStore`/`agentStore` 用 `saveToCache`/`restoreFromCache` 切换；后台会话按 `sessionStore.stdinToTab` 路由，经 `*InCache()` 写缓存。
 - **回溯**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
 - **流解析**：`useStreamProcessor.ts` 逐行解析 NDJSON（前台 + 后台标签页）。
-- **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `~/.tokenicode/providers.json`。
+- **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `config/providers.json`。
+- **数据目录**：统一在 `%APPDATA%/ClaudeDeck/`（`src-tauri/src/app_paths.rs`）：`config/` 配置、`cache/` 缓存、`tools/` 自动安装的 CLI/Git/Node、`webview/` WebView2 数据（alpha 为 `webview-alpha`，debug 构建自动加 `-dev`）。主窗口在配置里 `create: false`，由 `setup` 指定数据目录创建；新窗口也必须在后端用 `data_directory` 创建。首次启动自动从 `~/.tokenicode` 和 `%LOCALAPPDATA%/<identifier>/EBWebView` 复制迁移。例外：会话名称留在 CLI 配置目录（远程客户端共享），附件在 `<项目>/.tokenicode/tmp`。
 - **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`）；`decode_project_name()` 靠逐段匹配文件系统还原，连字符有歧义。CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。
 - **双版本**：`EDITION` 环境变量注入 `__APP_EDITION__`/`__APP_NAME__`（`vite.config.ts`、`src/lib/edition.ts`）；alpha 有独立 identifier 和图标。
 - **发布**：只维护 Windows 版，本地 `pnpm tauri build`（只出 MSI），连同 `target/release/claudedeck.exe`（免安装版）用 `gh release create` 上传到 `chengzhirenchaoshuai/ClaudeDeck`（步骤见 README），无 CI。
@@ -37,7 +38,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 
 - 素材统一放在 `assets/`：`icons/`（应用图标 + 托盘图标）、`icons-alpha/`、`public/`（Vite publicDir）。
 - 面向用户的文案全部走 `src/lib/i18n.ts`（zh/en，默认 zh）。
-- 代码中残留的 `tokenicode` 命名（`~/.tokenicode` 目录、事件名、`tokenicode_session_names.json`）是为兼容已有用户数据，不要改名。
+- 代码中残留的 `tokenicode` 命名（事件名、`tokenicode_session_names.json`、项目内 `.tokenicode/tmp`）是为兼容已有用户数据，不要改名。
 - 标题栏为 Overlay + hiddenTitle，macOS 下要避开红绿灯区域。
 - Windows：`.cmd`/`.bat` 需经 `cmd /C` 启动，子进程要加 CREATE_NO_WINDOW。
 
@@ -60,6 +61,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 用户可能正用旧版 ClaudeDeck 作为当前 Claude Code 的界面：
 
 1. **绝不杀用户的主 UI 进程**（通常是最早启动的 `claudedeck.exe`，用 `Get-Process claudedeck | Select Id,StartTime` 查看）。
-2. 启动前把 `src-tauri/tauri.conf.json` 的 identifier 临时改为 `com.chengzhiren66.claudedeck-dev`，否则 WebView2 数据目录冲突，窗口无法渲染。**提交前必须改回。**
+2. 启动前把 `src-tauri/tauri.conf.json` 的 identifier 临时改为 `com.chengzhiren66.claudedeck-dev`，否则单实例插件会直接唤起主 UI 而退出（WebView 数据目录 debug 构建已自动隔离）。**提交前必须改回。**
 3. 分开启动：后台运行 `npm run dev`，再运行 `./src-tauri/target/debug/claudedeck.exe`（不用 `pnpm tauri dev`，它会随窗口关闭退出）。
 4. 只清理开发版：`Get-Process claudedeck | Where-Object { $_.Id -ne <主UI PID> } | Stop-Process -Force`。
+5. 开发版与正式版共用 `config/`，测试时注意不要误改真实配置。

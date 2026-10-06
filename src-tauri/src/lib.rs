@@ -1,3 +1,4 @@
+mod app_paths;
 mod commands;
 mod protocol;
 
@@ -150,11 +151,25 @@ async fn preview_forward(app: AppHandle) -> Result<(), String> {
     emit_preview_command(&app, PreviewCommand::Forward)
 }
 
-/// Shared app data directory name — all editions (ClaudeDeck / TCAlpha) use the same
-/// directory so they share a single CLI installation and settings.
-/// 改名后这个目录名也跟着换了：本地已下载的 CLI / 便携版 git 会在下次启动时因为
-/// "找不到" 而重新下载一次，不是数据丢失，只是一次性的重新下载。
-const APP_DATA_DIR_NAME: &str = "com.chengzhiren66.claudedeck";
+/// 在应用内的独立浏览窗口中打开外部网页。由后端创建是为了指定和主窗口相同的
+/// WebView 数据目录——前端 JS 接口无法指定，会在默认位置另建一份数据。
+#[tauri::command]
+async fn open_browser_window(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("无效的网址: {}", e))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("只支持 http/https 网址".to_string());
+    }
+    let label = format!("browser-{}", uuid::Uuid::new_v4().simple());
+    let data_dir = app_paths::webview_dir(&app.config().identifier)?;
+    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
+        .title(&url)
+        .inner_size(1100.0, 760.0)
+        .center()
+        .data_directory(data_dir)
+        .build()
+        .map(|_| ())
+        .map_err(|e| format!("打开浏览窗口失败: {}", e))
+}
 
 /// GCS bucket for Claude Code releases.
 const CLI_GCS_BASE: &str = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases";
@@ -162,17 +177,15 @@ const CLI_GCS_BASE: &str = "https://storage.googleapis.com/claude-code-dist-86c5
 /// Self-hosted mirror for China users.
 const CLI_MIRROR_BASE: &str = "https://herear.cn:8443/releases/claude-code";
 
-/// Path to the CLI download directory under the app's local data dir.
+/// 应用内下载的 CLI 目录：<数据目录>/tools/cli
 pub(crate) fn cli_download_dir() -> Option<std::path::PathBuf> {
-    dirs::data_local_dir().map(|d| d.join(APP_DATA_DIR_NAME).join("cli"))
+    app_paths::tools_dir().ok().map(|d| d.join("cli"))
 }
 
 /// Path to the local Git installation directory (Windows only).
 #[cfg(target_os = "windows")]
 fn git_download_dir() -> Result<std::path::PathBuf, String> {
-    dirs::data_local_dir()
-        .map(|d| d.join(APP_DATA_DIR_NAME).join("git"))
-        .ok_or_else(|| "Cannot determine app data directory".to_string())
+    app_paths::tools_dir().map(|d| d.join("git"))
 }
 
 /// Check if app-local PortableGit bash.exe exists (Windows only).
@@ -794,21 +807,6 @@ pub(crate) fn build_enriched_path() -> String {
 
 // --- Credential storage (TK-303) ---
 
-/// Directory for ClaudeDeck app data (may be wiped by NSIS installer on Windows)
-fn app_data_dir() -> Result<std::path::PathBuf, String> {
-    dirs::data_local_dir()
-        .map(|d| d.join(APP_DATA_DIR_NAME))
-        .ok_or_else(|| "Cannot determine app data directory".to_string())
-}
-
-/// Safe directory in user's home — survives Windows NSIS updates.
-/// Uses ~/.tokenicode/ which also stores providers.json and hidden_sessions.txt.
-fn safe_data_dir() -> Result<std::path::PathBuf, String> {
-    dirs::home_dir()
-        .map(|d| d.join(".tokenicode"))
-        .ok_or_else(|| "Cannot determine home directory".to_string())
-}
-
 /// Claude CLI 的配置根目录：优先取环境变量 CLAUDE_CONFIG_DIR，否则为 ~/.claude。
 /// 会话（projects/）、skills、commands、credentials 等都以此为准，与 CLI 保持一致。
 fn claude_config_dir() -> Result<std::path::PathBuf, String> {
@@ -885,7 +883,7 @@ impl Default for ProvidersFile {
 }
 
 fn providers_path() -> Result<std::path::PathBuf, String> {
-    Ok(safe_data_dir()?.join("providers.json"))
+    app_paths::config_path("providers.json")
 }
 
 // --- Provider credential encryption (TK-303) ---
@@ -1008,7 +1006,7 @@ fn harden_path_permissions(path: &std::path::Path) {
 fn harden_path_permissions(_path: &std::path::Path) {}
 
 fn provider_key_path() -> Result<std::path::PathBuf, String> {
-    Ok(safe_data_dir()?.join(PROVIDER_KEY_FILE))
+    app_paths::config_path(PROVIDER_KEY_FILE)
 }
 
 /// Load the persistent master key, generating and persisting it on first use.
@@ -2657,7 +2655,7 @@ async fn list_active_processes(
 /// 隐藏名单文件：只记录“回退”产生的被替换旧分支。
 /// 会话列表以 CLI 的 projects 目录为准，这里的 ID 仅在列表中不显示，jsonl 文件保留以便恢复。
 fn hidden_sessions_path() -> Result<std::path::PathBuf, String> {
-    tokenicode_data_path("hidden_sessions.txt")
+    app_paths::config_path("hidden_sessions.txt")
 }
 
 /// 读取隐藏名单。文件不存在或读取失败时视为空。
@@ -4738,7 +4736,7 @@ struct SkillTranslationConfig {
 }
 
 fn skill_translation_config_path() -> Result<std::path::PathBuf, String> {
-    Ok(safe_data_dir()?.join("skill-translation.json"))
+    app_paths::config_path("skill-translation.json")
 }
 
 #[tauri::command]
@@ -5186,7 +5184,7 @@ static TRANSLATION_CACHE_META: std::sync::OnceLock<std::sync::Mutex<MetaCache>> 
 static TRANSLATION_CACHE_MD: std::sync::OnceLock<std::sync::Mutex<MdCache>> = std::sync::OnceLock::new();
 
 fn load_translation_cache_file<T: serde::de::DeserializeOwned>(name: &str) -> Result<T, String> {
-    let path = safe_data_dir()?.join(name);
+    let path = app_paths::cache_path(name)?;
     if !path.exists() {
         return Err("no cache".into());
     }
@@ -5195,7 +5193,7 @@ fn load_translation_cache_file<T: serde::de::DeserializeOwned>(name: &str) -> Re
 }
 
 fn persist_translation_cache_file<T: serde::Serialize>(name: &str, cache: &T) {
-    if let Ok(dir) = safe_data_dir() {
+    if let Ok(dir) = app_paths::cache_dir() {
         let path = dir.join(name);
         if let Ok(json) = serde_json::to_string(cache) {
             let _ = std::fs::write(&path, json);
@@ -7241,17 +7239,17 @@ const NODE_DIST_HUAWEI: &str = "https://mirrors.huaweicloud.com/nodejs";
 
 /// Directory for app-local Node.js installation.
 fn node_download_dir() -> Result<std::path::PathBuf, String> {
-    app_data_dir().map(|d| d.join("node"))
+    app_paths::tools_dir().map(|d| d.join("node"))
 }
 
 /// Directory for npm global installs (--prefix target).
 pub(crate) fn npm_global_dir() -> Result<std::path::PathBuf, String> {
-    app_data_dir().map(|d| d.join("npm-global"))
+    app_paths::tools_dir().map(|d| d.join("npm-global"))
 }
 
 /// Directory for npm cache (avoids system cache EPERM on Windows).
 fn npm_cache_dir() -> Result<std::path::PathBuf, String> {
-    app_data_dir().map(|d| d.join("npm-cache"))
+    app_paths::tools_dir().map(|d| d.join("npm-cache"))
 }
 
 /// Get the bin directory of the local Node.js installation, if it exists.
@@ -8274,19 +8272,9 @@ async fn save_custom_previews(data: Value) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("Failed to write session names: {}", e))
 }
 
-fn tokenicode_data_path(filename: &str) -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Cannot find home dir")?;
-    let dir = home.join(".tokenicode");
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create .tokenicode dir: {}", e))?;
-    }
-    Ok(dir.join(filename))
-}
-
 /// 存放 statusLine 钩子写下来的用量文件的目录（按 CLI 会话 id 分文件）。
 fn statusline_dir() -> Option<std::path::PathBuf> {
-    let dir = dirs::home_dir()?.join(".tokenicode").join("statusline");
+    let dir = app_paths::cache_path("statusline").ok()?;
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -8360,7 +8348,7 @@ async fn get_session_rate_limits(session_id: String) -> Option<Value> {
 /// Load pinned session IDs from disk.
 #[tauri::command]
 async fn load_pinned_sessions() -> Result<Value, String> {
-    let path = tokenicode_data_path("pinned.json")?;
+    let path = app_paths::config_path("pinned.json")?;
     // 文件不存在时返回 null（区别于“存在但为空”），前端据此决定是否保留本地缓存
     if !path.exists() {
         return Ok(Value::Null);
@@ -8373,7 +8361,7 @@ async fn load_pinned_sessions() -> Result<Value, String> {
 /// Save pinned session IDs to disk.
 #[tauri::command]
 async fn save_pinned_sessions(data: Value) -> Result<(), String> {
-    let path = tokenicode_data_path("pinned.json")?;
+    let path = app_paths::config_path("pinned.json")?;
     let content = serde_json::to_string_pretty(&data)
         .map_err(|e| format!("Failed to serialize pinned sessions: {}", e))?;
     std::fs::write(&path, content).map_err(|e| format!("Failed to write pinned sessions: {}", e))
@@ -8382,7 +8370,7 @@ async fn save_pinned_sessions(data: Value) -> Result<(), String> {
 /// Load archived session IDs from disk.
 #[tauri::command]
 async fn load_archived_sessions() -> Result<Value, String> {
-    let path = tokenicode_data_path("archived.json")?;
+    let path = app_paths::config_path("archived.json")?;
     // 文件不存在时返回 null（区别于“存在但为空”），前端据此决定是否保留本地缓存
     if !path.exists() {
         return Ok(Value::Null);
@@ -8395,7 +8383,7 @@ async fn load_archived_sessions() -> Result<Value, String> {
 /// Save archived session IDs to disk.
 #[tauri::command]
 async fn save_archived_sessions(data: Value) -> Result<(), String> {
-    let path = tokenicode_data_path("archived.json")?;
+    let path = app_paths::config_path("archived.json")?;
     let content = serde_json::to_string_pretty(&data)
         .map_err(|e| format!("Failed to serialize archived sessions: {}", e))?;
     std::fs::write(&path, content).map_err(|e| format!("Failed to write archived sessions: {}", e))
@@ -8724,6 +8712,21 @@ pub fn run() {
         .manage(WatcherManager::default())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // 先把旧位置的数据迁移到 %APPDATA%\ClaudeDeck，再创建主窗口：
+            // 主窗口在 tauri.conf.json 里设为 create: false，由这里指定固定的 WebView 数据目录创建
+            let identifier = app.config().identifier.clone();
+            app_paths::migrate_legacy(&identifier);
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .first()
+                .cloned()
+                .ok_or("tauri.conf.json 中缺少主窗口配置")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .data_directory(app_paths::webview_dir(&identifier)?)
+                .build()?;
+
             // titleBarStyle: "Overlay" in tauri.conf.json handles macOS traffic lights
             // and native titlebar drag/double-click-to-maximize automatically.
 
@@ -8765,6 +8768,7 @@ pub fn run() {
             preview_refresh,
             preview_back,
             preview_forward,
+            open_browser_window,
             send_stdin,
             send_raw_stdin,
             kill_session,

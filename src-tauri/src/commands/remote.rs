@@ -36,7 +36,7 @@ pub struct RemoteHost {
 }
 
 fn hosts_path() -> Result<std::path::PathBuf, String> {
-    crate::tokenicode_data_path("remote_hosts.json")
+    crate::app_paths::config_path("remote_hosts.json")
 }
 
 fn load_hosts() -> Result<Vec<RemoteHost>, String> {
@@ -355,7 +355,7 @@ pub async fn read_remote_config(host_id: String) -> Result<Value, String> {
 const REMOTE_NAMES_FILE: &str = "tokenicode_session_names.json";
 
 /// 归档同样是 ClaudeDeck 自己的概念（claude CLI 没有“归档”），本机存在
-/// ~/.tokenicode/archived.json 里，和改名一样只存在本地，不跨设备/远程同步。
+/// <数据目录>/config/archived.json 里，和改名一样只存在本地，不跨设备/远程同步。
 /// 用和改名相同的办法在远端主机自己的 CLAUDE_CONFIG_DIR 下也存一份，让它同样有源端。
 const REMOTE_ARCHIVED_FILE: &str = "tokenicode_archived_sessions.json";
 
@@ -593,9 +593,9 @@ pub async fn list_remote_sessions(host_id: String) -> Result<Vec<Value>, String>
     Ok(sessions)
 }
 
-/// 本地增量缓存文件所在目录：~/.tokenicode/remote_cache/
+/// 本地增量缓存文件所在目录：<数据目录>/cache/remote_cache/
 fn remote_cache_dir() -> Result<std::path::PathBuf, String> {
-    let dir = crate::tokenicode_data_path("remote_cache")?;
+    let dir = crate::app_paths::cache_path("remote_cache")?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create remote cache dir: {}", e))?;
     Ok(dir)
 }

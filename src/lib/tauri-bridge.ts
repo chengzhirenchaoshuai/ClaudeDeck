@@ -326,6 +326,10 @@ export const bridge = {
   previewForward: () =>
     invoke<void>('preview_forward'),
 
+  /** 在应用内独立浏览窗口打开外部网页（由后端创建，与主窗口共用 WebView 数据目录） */
+  openBrowserWindow: (url: string) =>
+    invoke<void>('open_browser_window', { url }),
+
   startSession: (params: StartSessionParams) =>
     invoke<SessionInfo>('start_claude_session', { params }),
 
@@ -642,14 +646,14 @@ export const bridge = {
   saveCustomPreviews: (data: Record<string, string>) =>
     invoke<void>('save_custom_previews', { data }),
 
-  // Pinned sessions (persisted to ~/.tokenicode/pinned.json)
+  // 置顶会话（保存在 <数据目录>/config/pinned.json）
   loadPinnedSessions: () =>
     invoke<string[] | null>('load_pinned_sessions').catch(() => null),
 
   savePinnedSessions: (data: string[]) =>
     invoke<void>('save_pinned_sessions', { data }).catch(() => {}),
 
-  // Archived sessions (persisted to ~/.tokenicode/archived.json)
+  // 归档会话（保存在 <数据目录>/config/archived.json）
   loadArchivedSessions: () =>
     invoke<string[] | null>('load_archived_sessions').catch(() => null),
 

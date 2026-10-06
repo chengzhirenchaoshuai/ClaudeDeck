@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { bridge } from '../../lib/tauri-bridge';
 import { openUrl as openExternalUrl } from '@tauri-apps/plugin-opener';
 import { usePreviewStore, PreviewCommand } from '../../stores/previewStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -26,15 +26,8 @@ export function PreviewPanel() {
 
   const openInAppWindow = async (target: string) => {
     if (!/^https?:\/\//i.test(target)) return;
-    const label = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     try {
-      new WebviewWindow(label, {
-        url: target,
-        title: target,
-        width: 1100,
-        height: 760,
-        center: true,
-      });
+      await bridge.openBrowserWindow(target);
       setNotice(t('preview.openedInAppWindow'));
     } catch (error) {
       console.warn('[preview] in-app browser failed, opening system browser', error);
