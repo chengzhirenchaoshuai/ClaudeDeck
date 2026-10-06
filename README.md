@@ -22,7 +22,7 @@ Claude Code CLI 的桌面图形界面（个人自用版）。
 
 前置条件：Windows 10 及以上，已安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)（未安装时应用内向导可引导安装和登录）。
 
-从 [Releases](https://github.com/chengzhirenchaoshuai/ClaudeDeck/releases) 下载 `.exe` 或 `.msi` 安装包运行即可。应用内自动更新已关闭，新版本需手动下载安装。
+从 [Releases](https://github.com/chengzhirenchaoshuai/ClaudeDeck/releases) 下载：`.msi` 为安装版；`_portable.exe` 为免安装版，直接运行（需系统已有 WebView2，Windows 11 自带）。应用内自动更新已关闭，新版本需手动下载安装。
 
 ## 开发
 
@@ -50,10 +50,11 @@ scripts/bump-version.sh 1.1.1    # 同步修改 package.json / tauri.conf.json /
 git commit -am "chore: 发布 v1.1.1"
 git tag -a v1.1.1 -m "ClaudeDeck v1.1.1"
 git push origin main v1.1.1
-pnpm tauri build
+pnpm tauri build                 # 生成 MSI 安装包与程序本体
+cp src-tauri/target/release/claudedeck.exe ClaudeDeck_1.1.1_x64_portable.exe   # 程序本体即免安装版
 gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." \
-  src-tauri/target/release/bundle/nsis/ClaudeDeck_1.1.1_x64-setup.exe \
-  src-tauri/target/release/bundle/msi/ClaudeDeck_1.1.1_x64_en-US.msi
+  src-tauri/target/release/bundle/msi/ClaudeDeck_1.1.1_x64_en-US.msi \
+  ClaudeDeck_1.1.1_x64_portable.exe
 ```
 
 ## 技术栈
