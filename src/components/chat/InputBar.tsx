@@ -9,6 +9,7 @@ import {
   type ThinkingLevel,
 } from '../../stores/settingsStore';
 import { bridge, onClaudeStream, onClaudeStderr, onSessionExit, onPermissionRequest, type UnifiedCommand, type PermissionRequest } from '../../lib/tauri-bridge';
+import { hasStreamListener, releaseStreamListener, setStreamListener } from '../../lib/stream-listeners';
 import { ModelSelector } from './ModelSelector';
 import { ModeSelector } from './ModeSelector';
 import { FileUploadChips } from './FileUploadChips';
@@ -253,10 +254,7 @@ export function InputBar() {
     if (meta.stdinId) {
       useChatStore.getState().setSessionMeta(tabId, { stdinId: undefined });
       bridge.killSession(meta.stdinId).catch(() => {});
-      if ((window as any).__claudeUnlisteners?.[meta.stdinId]) {
-        (window as any).__claudeUnlisteners[meta.stdinId]();
-        delete (window as any).__claudeUnlisteners[meta.stdinId];
-      }
+      releaseStreamListener(meta.stdinId);
     }
 
     // Restart with --resume <sessionId>
@@ -964,10 +962,7 @@ export function InputBar() {
         if (currentFp !== sessionFp) {
           console.warn('[ClaudeDeck] API provider config changed, killing stale session');
           bridge.killSession(stdinId).catch(() => {});
-          if ((window as any).__claudeUnlisteners?.[stdinId]) {
-            (window as any).__claudeUnlisteners[stdinId]();
-            delete (window as any).__claudeUnlisteners[stdinId];
-          }
+          releaseStreamListener(stdinId);
           // Keep sessionId so we attempt resume (preserving context).
           // If the resume fails due to thinking signature mismatch, the
           // stream error handler will auto-retry without resume.
@@ -979,10 +974,7 @@ export function InputBar() {
           if (spawnedMode && currentMode !== spawnedMode) {
             console.warn(`[ClaudeDeck] Permission mode changed (${spawnedMode} -> ${currentMode}), killing stale session`);
             bridge.killSession(stdinId).catch(() => {});
-            if ((window as any).__claudeUnlisteners?.[stdinId]) {
-              (window as any).__claudeUnlisteners[stdinId]();
-              delete (window as any).__claudeUnlisteners[stdinId];
-            }
+            releaseStreamListener(stdinId);
             setSessionMeta(tabId, { stdinId: undefined, snapshotMode: undefined });
             stdinId = undefined;
           } else {
@@ -991,10 +983,7 @@ export function InputBar() {
           if (currentContextMode !== spawnedContextMode) {
             console.warn(`[ClaudeDeck] Context window mode changed (${spawnedContextMode} -> ${currentContextMode}), killing stale session`);
             bridge.killSession(stdinId).catch(() => {});
-            if ((window as any).__claudeUnlisteners?.[stdinId]) {
-              (window as any).__claudeUnlisteners[stdinId]();
-              delete (window as any).__claudeUnlisteners[stdinId];
-            }
+            releaseStreamListener(stdinId);
             setSessionMeta(tabId, { stdinId: undefined, snapshotContextWindowMode: undefined });
             stdinId = undefined;
           } else {
@@ -1007,10 +996,7 @@ export function InputBar() {
             const newShort = MODEL_OPTIONS.find((m) => m.id === currentModel)?.short ?? displayProviderModelName(currentModel);
             console.warn(`[ClaudeDeck] Model changed (${oldShort} → ${newShort}), killing stale session`);
             bridge.killSession(stdinId).catch(() => {});
-            if ((window as any).__claudeUnlisteners?.[stdinId]) {
-              (window as any).__claudeUnlisteners[stdinId]();
-              delete (window as any).__claudeUnlisteners[stdinId];
-            }
+            releaseStreamListener(stdinId);
             // System message already inserted by ModelSelector — no duplicate here.
             // Keep sessionId so we attempt resume (preserving context).
             setSessionMeta(tabId, { stdinId: undefined, spawnedModel: undefined, modelSwitched: true, modelSwitchPendingText: text });
@@ -1040,10 +1026,7 @@ export function InputBar() {
             // stdin write failed (broken pipe — process already exited).
             // Clean up dead listeners (P0-5 fix) and fall through to spawn a new process.
             console.warn('[ClaudeDeck] sendStdin failed, spawning new process:', stdinErr);
-            if ((window as any).__claudeUnlisteners?.[stdinId]) {
-              (window as any).__claudeUnlisteners[stdinId]();
-              delete (window as any).__claudeUnlisteners[stdinId];
-            }
+            releaseStreamListener(stdinId);
             setSessionMeta(tabId, { stdinId: undefined });
             stdinId = undefined;
           }
@@ -1070,9 +1053,8 @@ export function InputBar() {
         // TK-329 fix: only clean up THIS tab's old stdinId listener, not the global singleton.
         // The old __claudeUnlisten global could kill another tab's active listener.
         const oldStdinId = getActiveTabState().sessionMeta.stdinId;
-        if (oldStdinId && (window as any).__claudeUnlisteners?.[oldStdinId]) {
-          (window as any).__claudeUnlisteners[oldStdinId]();
-          delete (window as any).__claudeUnlisteners[oldStdinId];
+        if (oldStdinId && hasStreamListener(oldStdinId)) {
+          releaseStreamListener(oldStdinId);
           // Also flush any pending stream buffer for the old session
           flushStreamBuffer(oldStdinId);
         }
@@ -1183,15 +1165,12 @@ export function InputBar() {
         });
 
         // Store unlisten per stdinId for multi-session support
-        if (!(window as any).__claudeUnlisteners) {
-          (window as any).__claudeUnlisteners = {};
-        }
-        (window as any).__claudeUnlisteners[preGeneratedId] = () => {
+        setStreamListener(preGeneratedId, () => {
           unlisten();
           unlistenStderr();
           unlistenPermission();
           unlistenExit();
-        };
+        });
 
         // Spawn persistent process (first message sent via stdin inside Rust)
         // If resuming a historical session, pass resume_session_id so the CLI
@@ -1266,10 +1245,7 @@ export function InputBar() {
         setTimeout(() => useSessionStore.getState().fetchSessions(), 1500);
       }
     } catch (err: any) {
-      if (sessionStdinId && (window as any).__claudeUnlisteners?.[sessionStdinId]) {
-        (window as any).__claudeUnlisteners[sessionStdinId]();
-        delete (window as any).__claudeUnlisteners[sessionStdinId];
-      }
+      releaseStreamListener(sessionStdinId);
       if (sessionStdinId) {
         useSessionStore.getState().unregisterStdinTab(sessionStdinId);
       }
@@ -1373,9 +1349,9 @@ export function InputBar() {
   // but the UI never shows it. The handler uses getState() internally so a stale
   // reference is safe.
   useEffect(() => {
-    (window as any).__claudeStreamHandler = handleStreamMessage;
+    window.__claudeStreamHandler = handleStreamMessage;
     // Drain any events that were queued while handler was unavailable
-    const queue: any[] = (window as any).__claudeStreamQueue;
+    const queue = window.__claudeStreamQueue;
     if (queue && queue.length > 0) {
       console.warn(`[ClaudeDeck] draining ${queue.length} queued stream events on handler mount`);
       const pending = queue.splice(0);
@@ -1715,10 +1691,7 @@ export function InputBar() {
                   // The listener will be replaced when a new session spawns (line ~788).
                   // As a safety net, force-clean after 3s if process_exit hasn't arrived.
                   setTimeout(() => {
-                    if ((window as any).__claudeUnlisteners?.[sid]) {
-                      (window as any).__claudeUnlisteners[sid]();
-                      delete (window as any).__claudeUnlisteners[sid];
-                    }
+                    releaseStreamListener(sid);
                   }, 3000);
                 }
               }}

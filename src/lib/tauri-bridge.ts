@@ -742,9 +742,9 @@ export function onClaudeStream(
     channel,
     (event) => {
       // Diagnostic: log first event received to confirm the IPC bridge is working
-      if (!(window as any).__tcFirstEventLogged?.[stdinId]) {
-        if (!(window as any).__tcFirstEventLogged) (window as any).__tcFirstEventLogged = {};
-        (window as any).__tcFirstEventLogged[stdinId] = true;
+      if (!window.__tcFirstEventLogged?.[stdinId]) {
+        if (!window.__tcFirstEventLogged) window.__tcFirstEventLogged = {};
+        window.__tcFirstEventLogged[stdinId] = true;
         console.log('[bridge] first stream event received on:', channel, 'type:', event.payload?.type);
       }
       callback(event.payload);

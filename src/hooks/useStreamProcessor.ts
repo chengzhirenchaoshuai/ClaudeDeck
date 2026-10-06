@@ -11,6 +11,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useAgentStore, resolveAgentId, getAgentDepth } from '../stores/agentStore';
 import { useFileStore } from '../stores/fileStore';
 import { bridge, onClaudeStream, onClaudeStderr } from '../lib/tauri-bridge';
+import { releaseStreamListener, setStreamListener } from '../lib/stream-listeners';
 import { envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../lib/api-provider';
 import { useProviderStore } from '../stores/providerStore';
 import { t } from '../lib/i18n';
@@ -21,6 +22,7 @@ import {
   hasMeaningfulContextUsage,
   type TokenUsage,
 } from '../lib/context-usage';
+import { toolResultText, type StreamMessage } from '../lib/stream-message';
 
 // --- Error classification for user-facing messages ---
 // Each pattern maps to a friendly i18n key. Matched errors show the friendly
@@ -332,7 +334,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
    * 写入该标签页的状态。依赖 InputBar 实例状态（各种 ref）、agentStore（只保存当前
    * 标签页）或“当前选中标签页”的动作只在前台执行，见 isForeground 判断。
    */
-  const handleStreamMessage = useCallback((msg: any) => {
+  const handleStreamMessage = useCallback((msg: StreamMessage) => {
     if (!msg || !msg.type) return;
 
     // 出错时把错误写到消息所属的标签页；路由完成前退回当前选中的标签页
@@ -347,7 +349,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       'content_block_delta', 'rate_limit_event',
     ]);
     if (msg.type === 'system' || msg.type === 'process_exit') {
-      console.log('[ClaudeDeck:stream]', msg.type, msg.subtype || '', msg.__stdinId || '');
+      console.log('[ClaudeDeck:stream]', msg.type, msg.type === 'system' ? msg.subtype : '', msg.__stdinId || '');
     }
     if (!KNOWN_TYPES.has(msg.type)) {
       console.warn('[ClaudeDeck:stream] unhandled message type:', msg.type, msg);
@@ -716,8 +718,9 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         } else if (msg.subtype === 'compact_boundary') {
           // 压缩完成：CLI 会用这条事件给出压缩后的真实 token 数，
           // 不处理的话右上角的上下文占用会一直停留在压缩前的旧数值，直到下一轮真实对话才刷新
-          const postTokens = msg.compactMetadata?.postTokens;
-          const preTokens = msg.compactMetadata?.preTokens;
+          // 实时流里是蛇形命名 compact_metadata.post_tokens（驼峰的 compactMetadata 只出现在磁盘 JSONL 里）
+          const postTokens = msg.compact_metadata?.post_tokens;
+          const preTokens = msg.compact_metadata?.pre_tokens;
           if (typeof postTokens === 'number') {
             setSessionMeta({
               inputTokens: postTokens,
@@ -756,7 +759,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         // With --include-partial-messages, intermediate assistant messages arrive
         // frequently. We must NOT aggressively wipe streaming text state when the
         // message only contains a thinking block (no text block yet).
-        const hasTextBlock = content.some((b: any) => b.type === 'text' && b.text);
+        const hasTextBlock = content.some((b) => b.type === 'text' && b.text);
 
         if (hasTextBlock) {
           // Full clear — the text block supersedes streaming partial text
@@ -806,7 +809,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         // the interactive question UI makes them redundant and avoids
         // showing raw question descriptions alongside the rich UI.
         const hasAskUserQuestion = content.some(
-          (b: any) => b.type === 'tool_use' && b.name === 'AskUserQuestion',
+          (b) => b.type === 'tool_use' && b.name === 'AskUserQuestion',
         );
 
         for (let blockIdx = 0; blockIdx < content.length; blockIdx++) {
@@ -1013,7 +1016,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         {
           const content = msg.message?.content;
           const isToolResult = Array.isArray(content)
-            && content.some((b: any) => b.type === 'tool_result');
+            && content.some((b) => b.type === 'tool_result');
           if (msg.uuid && !isToolResult) {
             const allMsgs = useChatStore.getState().getTab(tabId)?.messages ?? [];
             for (let i = allMsgs.length - 1; i >= 0; i--) {
@@ -1030,11 +1033,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         if (Array.isArray(userContent)) {
           for (const block of userContent) {
             if (block.type === 'tool_result') {
-              const resultText = Array.isArray(block.content)
-                ? block.content.map((b: any) => typeof b.text === 'string' ? b.text : typeof b.content === 'string' ? b.content : '').join('')
-                : typeof block.content === 'string'
-                  ? block.content
-                  : '';
+              const resultText = toolResultText(block.content);
               const tuId = block.tool_use_id;
               if (tuId && resultText) {
                 const msgs = useChatStore.getState().getTab(tabId)?.messages ?? [];
@@ -1051,12 +1050,12 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           const resultText = typeof tur === 'string' ? tur
             : typeof tur.stdout === 'string' ? tur.stdout
             : typeof tur.content === 'string' ? tur.content
-            : Array.isArray(tur.content) ? tur.content.map((b: any) => typeof b.text === 'string' ? b.text : '').join('')
+            : Array.isArray(tur.content) ? tur.content.map((b) => typeof b.text === 'string' ? b.text : '').join('')
             : typeof tur.content === 'object' && tur.content?.text ? String(tur.content.text)
             : '';
           if (Array.isArray(userContent)) {
             for (const block of userContent) {
-              if (block.tool_use_id && resultText) {
+              if (block.type === 'tool_result' && block.tool_use_id && resultText) {
                 const msgs = useChatStore.getState().getTab(tabId)?.messages ?? [];
                 const parent = msgs.find((m) => m.id === block.tool_use_id);
                 if (parent) {
@@ -1070,11 +1069,9 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       }
 
       case 'tool_result': {
-        const resultContent = Array.isArray(msg.content)
-          ? msg.content.map((b: any) => typeof b.text === 'string' ? b.text : typeof b.content === 'string' ? b.content : '').join('')
-          : typeof msg.content === 'string'
-            ? msg.content
-            : msg.output || '';
+        const resultContent = Array.isArray(msg.content) || typeof msg.content === 'string'
+          ? toolResultText(msg.content)
+          : msg.output || '';
 
         const toolUseId = msg.tool_use_id;
         // Auto-refresh file tree when file-mutating tools complete
@@ -1174,10 +1171,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             const failedStdinId = meta.stdinId;
             if (failedStdinId) {
               bridge.killSession(failedStdinId).catch(() => {});
-              if ((window as any).__claudeUnlisteners?.[failedStdinId]) {
-                (window as any).__claudeUnlisteners[failedStdinId]();
-                delete (window as any).__claudeUnlisteners[failedStdinId];
-              }
+              releaseStreamListener(failedStdinId);
             }
 
             // Clear sessionId (abandon resume) and switch flags
@@ -1225,16 +1219,16 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
                   description: retryText.slice(0, 100),
                   phase: 'spawning', startTime: Date.now(), isMain: true,
                 });
-                const retryUnlisten = await onClaudeStream(retryId, (m: any) => {
+                const retryUnlisten = await onClaudeStream(retryId, (m: StreamMessage) => {
                   m.__stdinId = retryId;
                   handleStreamMessage(m);
                 });
                 const retryUnlistenStderr = await onClaudeStderr(retryId, (line: string) => {
                   handleStderrLineRef.current(line, retryId);
                 });
-                if (!(window as any).__claudeUnlisteners) (window as any).__claudeUnlisteners = {};
-                (window as any).__claudeUnlisteners[retryId] = () => { retryUnlisten(); retryUnlistenStderr(); };
-                (window as any).__claudeUnlisten = (window as any).__claudeUnlisteners[retryId];
+                const retryRelease = () => { retryUnlisten(); retryUnlistenStderr(); };
+                setStreamListener(retryId, retryRelease);
+                window.__claudeUnlisten = retryRelease;
 
                 const retryResolvedModel = resolveModelForProvider(selectedModel);
                 const retryContextWindowMode = useSettingsStore.getState().contextWindowMode;
@@ -1267,10 +1261,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
               } catch (retryErr) {
                 console.error('[ClaudeDeck] Provider-switch auto-retry failed:', retryErr);
                 // P0-5: Clean up the retry listeners on failure
-                if ((window as any).__claudeUnlisteners?.[retryId]) {
-                  (window as any).__claudeUnlisteners[retryId]();
-                  delete (window as any).__claudeUnlisteners[retryId];
-                }
+                releaseStreamListener(retryId);
                 setSessionStatus('error');
                 addMessage({
                   id: generateMessageId(),
@@ -1296,10 +1287,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           if (oldStdinId) {
             useChatStore.getState().setSessionMeta(tabId, { stdinId: undefined });
             bridge.killSession(oldStdinId).catch(() => {});
-            if ((window as any).__claudeUnlisteners?.[oldStdinId]) {
-              (window as any).__claudeUnlisteners[oldStdinId]();
-              delete (window as any).__claudeUnlisteners[oldStdinId];
-            }
+            releaseStreamListener(oldStdinId);
           }
           // Silently restart — no user message bubble
           silentRestartRef.current = true;
@@ -1611,12 +1599,9 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
 
         // P0-5: Clean up Tauri event listeners for this session to prevent leaks
         const exitingStdinId = msg.__stdinId || useChatStore.getState().getTab(tabId)?.sessionMeta.stdinId;
-        if (exitingStdinId && (window as any).__claudeUnlisteners?.[exitingStdinId]) {
-          (window as any).__claudeUnlisteners[exitingStdinId]();
-          delete (window as any).__claudeUnlisteners[exitingStdinId];
-        }
-        if (isForeground && (window as any).__claudeUnlisten) {
-          (window as any).__claudeUnlisten = null;
+        releaseStreamListener(exitingStdinId);
+        if (isForeground && window.__claudeUnlisten) {
+          window.__claudeUnlisten = null;
         }
 
         {
@@ -1680,7 +1665,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
 
     } catch (err) {
       // P1-4: catch-all for unexpected errors in stream message processing
-      console.error('[ClaudeDeck] handleStreamMessage error:', err, 'msg:', msg?.type, msg?.subtype);
+      console.error('[ClaudeDeck] handleStreamMessage error:', err, 'msg:', msg?.type, msg?.type === 'system' || msg?.type === 'result' ? msg.subtype : '');
       if (errTabId) {
         useChatStore.getState().addMessage(errTabId, {
           id: generateMessageId(),

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { bridge } from '../../lib/tauri-bridge';
+import { releaseStreamListener } from '../../lib/stream-listeners';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useChatStore, useActiveTab } from '../../stores/chatStore';
@@ -55,11 +56,7 @@ export function ProjectFolderPicker({ disabled = false }: { disabled?: boolean }
     const stdinId = tabId ? useChatStore.getState().getTab(tabId)?.sessionMeta.stdinId : undefined;
     if (tabId && stdinId) {
       bridge.killSession(stdinId).catch(() => {});
-      const unlisten = (window as any).__claudeUnlisteners?.[stdinId];
-      if (unlisten) {
-        unlisten();
-        delete (window as any).__claudeUnlisteners[stdinId];
-      }
+      releaseStreamListener(stdinId);
       useChatStore.getState().setSessionMeta(tabId, { stdinId: undefined, envFingerprint: undefined });
     }
     useSettingsStore.getState().setWorkingDirectory(path);

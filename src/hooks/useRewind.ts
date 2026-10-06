@@ -15,6 +15,7 @@ import { useChatStore, useActiveTab, getActiveTabState, generateMessageId } from
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { bridge } from '../lib/tauri-bridge';
+import { releaseStreamListener } from '../lib/stream-listeners';
 import { parseTurns, type Turn } from '../lib/turns';
 import { resolveResumeAt, recordUuidOf } from '../lib/rewind-point';
 import { t } from '../lib/i18n';
@@ -63,12 +64,9 @@ export function useRewind() {
     const stdinId = state.sessionMeta.stdinId;
     if (stdinId) {
       await bridge.killSession(stdinId).catch(() => {});
-      if ((window as any).__claudeUnlisteners?.[stdinId]) {
-        (window as any).__claudeUnlisteners[stdinId]();
-        delete (window as any).__claudeUnlisteners[stdinId];
-      }
-      if ((window as any).__claudeUnlisten) {
-        (window as any).__claudeUnlisten = null;
+      releaseStreamListener(stdinId);
+      if (window.__claudeUnlisten) {
+        window.__claudeUnlisten = null;
       }
     }
   }, []);

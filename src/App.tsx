@@ -14,6 +14,7 @@ import { useChatStore } from './stores/chatStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useAgentStore } from './stores/agentStore';
 import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath } from './lib/tauri-bridge';
+import { hasStreamListener, setStreamListener } from './lib/stream-listeners';
 import { useScrollZoom } from './lib/useScrollZoom';
 import { useT } from './lib/i18n';
 import { loadClaudeUuid } from './hooks/useStreamProcessor';
@@ -242,7 +243,7 @@ function App() {
         agentState.saveToCache(tabId);
 
         // Skip if listeners already exist (e.g. InputBar already set them up)
-        if ((window as any).__claudeUnlisteners?.[stdinId]) continue;
+        if (hasStreamListener(stdinId)) continue;
 
         // Re-register stream listener — handle text/thinking deltas, token tracking,
         // agent phase updates, and process exit.
@@ -322,11 +323,8 @@ function App() {
           }
         }).then((unlisten) => {
           // Store unlisten for cleanup
-          if (!(window as any).__claudeUnlisteners) {
-            (window as any).__claudeUnlisteners = {};
-          }
-          if (!(window as any).__claudeUnlisteners[stdinId]) {
-            (window as any).__claudeUnlisteners[stdinId] = unlisten;
+          if (!hasStreamListener(stdinId)) {
+            setStreamListener(stdinId, unlisten);
           }
         });
 
