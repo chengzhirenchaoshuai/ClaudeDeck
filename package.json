@@ -2,7 +2,7 @@
   "name": "claudedeck",
   "private": true,
   "author": "chengzhiren66",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",

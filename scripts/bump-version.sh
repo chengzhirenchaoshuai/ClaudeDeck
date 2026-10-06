@@ -2,57 +2,53 @@
 set -euo pipefail
 
 # ============================================================
-# Bump version across all three sources of truth:
+# 同步修改三处版本号：
 #   - package.json
 #   - src-tauri/tauri.conf.json
 #   - src-tauri/Cargo.toml
 #
-# Usage:
-#   ./scripts/bump-version.sh 0.9.0
+# 用法：
+#   scripts/bump-version.sh 1.1.0
+#
+# 只依赖 Node.js，Windows（Git Bash）与 macOS 均可运行。
 # ============================================================
 
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 <new-version>"
-  echo "Example: $0 0.9.0"
+  echo "用法：$0 <新版本号>"
+  echo "示例：$0 1.1.0"
   exit 1
 fi
 
 NEW_VERSION="$1"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Validate semver format (basic check)
 if ! echo "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "ERROR: Version must be semver format (e.g., 0.9.0)"
+  echo "错误：版本号必须是 x.y.z 格式（例如 1.1.0）"
   exit 1
 fi
 
-OLD_VERSION=$(python3 -c "import json; print(json.load(open('$PROJECT_DIR/package.json'))['version'])")
-echo "Bumping version: $OLD_VERSION → $NEW_VERSION"
+cd "$PROJECT_DIR"
+node - "$NEW_VERSION" <<'NODE'
+const fs = require('fs');
+const v = process.argv[2];
 
-# 1. package.json
-python3 -c "
-import json, pathlib
-p = pathlib.Path('$PROJECT_DIR/package.json')
-d = json.loads(p.read_text())
-d['version'] = '$NEW_VERSION'
-p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
-"
-echo "  package.json ✓"
+// JSON 文件：保持 2 空格缩进与末尾换行
+for (const p of ['package.json', 'src-tauri/tauri.conf.json']) {
+  const d = JSON.parse(fs.readFileSync(p, 'utf8'));
+  if (p === 'package.json') console.log(`版本号：${d.version} → ${v}`);
+  d.version = v;
+  fs.writeFileSync(p, JSON.stringify(d, null, 2) + '\n');
+  console.log(`  ${p} ✓`);
+}
 
-# 2. tauri.conf.json
-python3 -c "
-import json, pathlib
-p = pathlib.Path('$PROJECT_DIR/src-tauri/tauri.conf.json')
-d = json.loads(p.read_text())
-d['version'] = '$NEW_VERSION'
-p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
-"
-echo "  tauri.conf.json ✓"
-
-# 3. Cargo.toml (line-based replacement)
-sed -i '' "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" "$PROJECT_DIR/src-tauri/Cargo.toml"
-echo "  Cargo.toml ✓"
+// Cargo.toml：只替换 [package] 段里的第一处 version
+const cargo = 'src-tauri/Cargo.toml';
+const text = fs.readFileSync(cargo, 'utf8');
+const next = text.replace(/^version = "[^"]*"/m, `version = "${v}"`);
+if (next === text) throw new Error('Cargo.toml 中未找到 version 字段');
+fs.writeFileSync(cargo, next);
+console.log(`  ${cargo} ✓`);
+NODE
 
 echo ""
-echo "Done! Version bumped to $NEW_VERSION across all files."
-echo "Don't forget to update CHANGELOG.md with the new version header."
+echo "完成。别忘了更新 CHANGELOG.md 和 src/lib/changelog.ts。"

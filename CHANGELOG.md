@@ -3,7 +3,9 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
-## [未发布]
+## [1.1.0] - 2026-10-06
+
+自用版本的首个发布。
 
 ### 项目
 - 改名为 ClaudeDeck，不再跟随上游合并；作者信息改为自用版本维护者，保留原作者署名
@@ -21,6 +23,7 @@
 ### 远程主机
 - 新增 SSH 远程连接（远程 Windows 主机），侧栏切换本地/远程环境，连接配置可编辑
 - 远程会话支持新建、发消息、删除、改名、归档同步（远程为源端），“加载全部”与增量缓存
+- 远程项目中点开会话里的文件链接改走远程读取
 - 修复远程会话乱码、CLIXML 报错、PowerShell 吞掉 `--settings` 参数双引号等问题
 
 ### 用量与上下文

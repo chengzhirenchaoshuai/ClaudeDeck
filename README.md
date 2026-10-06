@@ -22,7 +22,7 @@ Claude Code CLI 的桌面图形界面（个人自用版）。
 
 前置条件：Windows 10 及以上，已安装 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)（未安装时应用内向导可引导安装和登录）。
 
-从本仓库的 Releases 下载 `.exe` 或 `.msi` 安装包运行即可。应用内自动更新已关闭，新版本需手动下载安装。
+从 [Releases](https://github.com/chengzhirenchaoshuai/ClaudeDeck/releases) 下载 `.exe` 或 `.msi` 安装包运行即可。应用内自动更新已关闭，新版本需手动下载安装。
 
 ## 开发
 
@@ -43,9 +43,9 @@ EDITION=alpha pnpm tauri build --config src-tauri/tauri.alpha.conf.json
 ### 发布
 
 ```bash
-scripts/bump-version.sh 1.0.9    # 同步修改 package.json / tauri.conf.json / Cargo.toml
-git commit -am "chore: 发布 v1.0.9"
-git tag v1.0.9                   # 带 -alpha 的 tag 构建 alpha 版
+scripts/bump-version.sh 1.1.1    # 同步修改 package.json / tauri.conf.json / Cargo.toml
+git commit -am "chore: 发布 v1.1.1"
+git tag v1.1.1                   # 带 -alpha 的 tag 构建 alpha 版
 git push origin main --tags      # GitHub Actions 自动构建 Windows 安装包并生成 Release 草稿
 ```
 

@@ -1,6 +1,6 @@
 [package]
 name = "claudedeck"
-version = "1.0.8"
+version = "1.1.0"
 description = "ClaudeDeck - personal Claude Code desktop client, forked from TOKENICODE by TinyZ"
 authors = ["chengzhiren66"]
 license = "Apache-2.0"

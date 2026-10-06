@@ -18,6 +18,50 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.1.0',
+    date: '2026-10-06',
+    highlights: {
+      zh: ['自用版本 ClaudeDeck 首个发布：会话同步、远程主机、用量显示'],
+      en: ['First ClaudeDeck release: session sync, remote hosts, usage display'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '会话列表以 CLI 的 projects 目录为准，按项目分组并实时同步',
+            'SSH 远程主机：侧栏切换本地/远程，远程会话可新建、改名、归档、删除',
+            '用量显示：token 统计、费用估算、5 小时 / 7 天真实用量状态条',
+            '直接编辑已发送的消息；未读标记与任务栏角标',
+            '系统托盘、关闭时最小化、开机自启动、界面设置页',
+          ],
+          en: [
+            'Session list follows the CLI projects directory, grouped by project with live sync',
+            'SSH remote hosts with a local/remote switch; create, rename, archive and delete remote sessions',
+            'Usage display: token stats, cost estimate, real 5-hour / 7-day usage bar',
+            'Edit sent messages; unread markers and taskbar badge',
+            'System tray, minimize on close, launch at startup, interface settings',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '项目改名为 ClaudeDeck，关闭应用内自动更新',
+            '模型、思考强度、权限模式选项与当前 Claude Code 保持一致',
+            '按模型识别上下文窗口与自动压缩阈值',
+          ],
+          en: [
+            'Renamed to ClaudeDeck; in-app updater disabled',
+            'Model, thinking and permission options match current Claude Code',
+            'Context window and auto-compact threshold follow the selected model',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.0.8',
     date: '2026-08-04',
     highlights: {
