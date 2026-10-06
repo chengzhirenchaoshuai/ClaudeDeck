@@ -3537,6 +3537,8 @@ fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
     let mut total_output_tokens: u64 = 0;
     let mut context_input_tokens: u64 = 0;
     let mut context_output_tokens: u64 = 0;
+    // 最后一次真实 API 调用的模型，前端据此判断上下文窗口（200K / 1M）
+    let mut model = String::new();
 
     for line in reader.lines().map_while(Result::ok) {
         let Ok(json) = serde_json::from_str::<Value>(&line) else {
@@ -3565,6 +3567,12 @@ fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
         // The latest assistant API call is the authoritative context snapshot.
         context_input_tokens = input + cache_read + cache_creation;
         context_output_tokens = output;
+        // CLI 自己合成的消息（如报错提示）模型名为 "<synthetic>"，不算真实模型
+        if let Some(m) = message["model"].as_str() {
+            if !m.is_empty() && m != "<synthetic>" {
+                model = m.to_string();
+            }
+        }
 
         let message_id = message["id"].as_str().unwrap_or_default();
         if !message_id.is_empty() && seen_message_ids.insert(message_id.to_string()) {
@@ -3578,6 +3586,7 @@ fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
         "totalOutputTokens": total_output_tokens,
         "contextInputTokens": context_input_tokens,
         "contextOutputTokens": context_output_tokens,
+        "model": model,
     })
 }
 

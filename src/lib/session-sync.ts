@@ -55,6 +55,9 @@ export async function applyDiskSession(
       contextOutputTokens: tokenUsage.contextOutputTokens,
       totalInputTokens: tokenUsage.totalInputTokens,
       totalOutputTokens: tokenUsage.totalOutputTokens,
+      // 记下会话实际使用的模型：否则上下文窗口会按当前选中的模型算，
+      // 1M 上下文的会话在选中 200K 模型时会被错误地显示成 100%
+      ...(tokenUsage.model ? { model: tokenUsage.model } : {}),
     });
   }
 

@@ -398,6 +398,8 @@ export const bridge = {
       totalOutputTokens: number;
       contextInputTokens: number;
       contextOutputTokens: number;
+      /** 会话最后一次 API 调用的模型（无记录时为空串） */
+      model: string;
     }>('get_session_tokens', { sessionId }),
 
   openInVscode: (path: string) =>
