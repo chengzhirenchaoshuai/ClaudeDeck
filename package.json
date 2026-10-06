@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:app": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

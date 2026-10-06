@@ -30,7 +30,7 @@ Claude Code CLI 的桌面图形界面（个人自用版）。
 
 ```bash
 pnpm install
-pnpm tauri dev      # 开发模式
+pnpm dev:app        # 开发模式：前端热更新、后端自动重编译，可与正式版同时运行
 pnpm tauri build    # 打包，产物在 src-tauri/target/release/bundle/
 ```
 

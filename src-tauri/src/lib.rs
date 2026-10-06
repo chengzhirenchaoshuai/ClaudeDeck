@@ -8723,9 +8723,13 @@ pub fn run() {
                 .first()
                 .cloned()
                 .ok_or("tauri.conf.json 中缺少主窗口配置")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
-                .data_directory(app_paths::webview_dir(&identifier)?)
-                .build()?;
+            let mut main_window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .data_directory(app_paths::webview_dir(&identifier)?);
+            // 开发版标题加后缀，和同时运行的正式版区分开
+            if cfg!(debug_assertions) {
+                main_window = main_window.title(format!("{} Dev", window_config.title));
+            }
+            main_window.build()?;
 
             // titleBarStyle: "Overlay" in tauri.conf.json handles macOS traffic lights
             // and native titlebar drag/double-click-to-maximize automatically.

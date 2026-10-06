@@ -7,7 +7,7 @@ ClaudeDeck：Claude Code CLI 的桌面 GUI（个人自用，fork 自 TOKENICODE�
 
 ```bash
 pnpm install
-pnpm tauri dev                           # 开发（beforeDevCommand: npm run dev，Vite 端口 1420）
+pnpm dev:app                             # 开发版（前端热更新、Rust 自动重编译；可与正式版同时运行）
 pnpm tauri build                         # 构建
 EDITION=alpha pnpm tauri build --config src-tauri/tauri.alpha.conf.json   # alpha 版
 pnpm build                               # tsc + vite build
@@ -58,10 +58,8 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 
 ## 调试开发版 UI（重要）
 
-用户可能正用旧版 ClaudeDeck 作为当前 Claude Code 的界面：
+用户可能正用正式版 ClaudeDeck 作为当前 Claude Code 的界面：
 
-1. **绝不杀用户的主 UI 进程**（通常是最早启动的 `claudedeck.exe`，用 `Get-Process claudedeck | Select Id,StartTime` 查看）。
-2. 启动前把 `src-tauri/tauri.conf.json` 的 identifier 临时改为 `com.chengzhiren66.claudedeck-dev`，否则单实例插件会直接唤起主 UI 而退出（WebView 数据目录 debug 构建已自动隔离）。**提交前必须改回。**
-3. 分开启动：后台运行 `npm run dev`，再运行 `./src-tauri/target/debug/claudedeck.exe`（不用 `pnpm tauri dev`，它会随窗口关闭退出）。
-4. 只清理开发版：`Get-Process claudedeck | Where-Object { $_.Id -ne <主UI PID> } | Stop-Process -Force`。
-5. 开发版与正式版共用 `config/`，测试时注意不要误改真实配置。
+1. **绝不杀用户的正式版进程**（`target/release` 或安装目录下的 `claudedeck.exe`）；清理时只按 `target/debug` 路径或 PID 结束开发版。
+2. 用 `pnpm dev:app` 启动：通过 `src-tauri/tauri.dev.conf.json` 覆盖 identifier（`...claudedeck-dev`），避开单实例插件；debug 构建自动使用 `webview-dev`，窗口标题带 “Dev”。无需修改 `tauri.conf.json`。
+3. 开发版与正式版共用 `config/`，测试时注意不要误改真实配置。
