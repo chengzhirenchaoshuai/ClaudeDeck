@@ -1287,8 +1287,8 @@ export function InputBar() {
   // Keep ref in sync so executeImmediateCommand can call latest handleSubmit
   handleSubmitRef.current = handleSubmit;
 
-  // handleStreamMessage and handleBackgroundStreamMessage are provided by
-  // useStreamProcessor hook (see src/hooks/useStreamProcessor.ts).
+  // handleStreamMessage 由 useStreamProcessor 提供（src/hooks/useStreamProcessor.ts），
+  // 前台、后台标签页的流消息都经它处理。
 
   // Handle stderr lines — detect permission prompts and other interactive requests
   const handleStderrLine = useCallback((line: string, sid: string) => {

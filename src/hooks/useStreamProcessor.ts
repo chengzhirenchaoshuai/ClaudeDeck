@@ -313,8 +313,8 @@ export interface StreamProcessorConfig {
 /**
  * useStreamProcessor — extracts stream message handling from InputBar.
  *
- * Returns handleStreamMessage (foreground) and handleBackgroundStreamMessage
- * (background tab routing) as stable callbacks.
+ * 返回 handleStreamMessage：所有会话的流消息都交给它，内部按 stdinId 路由到所属标签页，
+ * 前台、后台共用同一套处理逻辑。
  */
 export function useStreamProcessor(config: StreamProcessorConfig) {
   const {
@@ -328,520 +328,15 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
   } = config;
 
   /**
-   * Handle stream messages for a background (non-active) tab — route to cache.
-   */
-  const handleBackgroundStreamMessage = useCallback((msg: any, tabId: string) => {
-    const store = useChatStore.getState();
-
-    // Update lastProgressAt for stall detection on background tabs
-    store.setSessionMeta(tabId, { lastProgressAt: Date.now() });
-
-    switch (msg.type) {
-      case 'tokenicode_permission_request': {
-        // ExitPlanMode: auto-approve in non-plan modes; add plan_review card in plan mode
-        if (msg.tool_name === 'ExitPlanMode') {
-          const bgMeta = store.getTab(tabId)?.sessionMeta;
-          if (getEffectiveMode(bgMeta) !== 'plan') {
-            const stdinId = msg.__stdinId;
-            if (stdinId) {
-              bridge.respondPermission(stdinId, msg.request_id, true, undefined, msg.tool_use_id, msg.input);
-            }
-            return;
-          }
-          const bgTab = store.getTab(tabId);
-          const bgExisting = bgTab?.messages.find((m) => m.id === 'plan_review_current' && !m.resolved);
-          if (!bgExisting) {
-            let bgPlanContent = '';
-            if (bgTab) {
-              for (let i = bgTab.messages.length - 1; i >= 0; i--) {
-                if (bgTab.messages[i].role === 'assistant' && bgTab.messages[i].type === 'text' && bgTab.messages[i].content) {
-                  bgPlanContent = bgTab.messages[i].content;
-                  break;
-                }
-              }
-            }
-            store.addMessage(tabId, {
-              id: 'plan_review_current',
-              role: 'assistant', type: 'plan_review',
-              content: bgPlanContent, planContent: bgPlanContent,
-              resolved: false, timestamp: Date.now(),
-              permissionData: {
-                requestId: msg.request_id,
-                toolName: msg.tool_name,
-                input: msg.input,
-                toolUseId: msg.tool_use_id,
-              },
-            });
-          } else {
-            store.updateMessage(tabId, 'plan_review_current', {
-              permissionData: {
-                requestId: msg.request_id,
-                toolName: msg.tool_name,
-                input: msg.input,
-                toolUseId: msg.tool_use_id,
-              },
-            });
-          }
-          store.setActivityStatus(tabId, { phase: 'awaiting' });
-          return;
-        }
-        // AskUserQuestion: add question card to tab
-        if (msg.tool_name === 'AskUserQuestion') {
-          const bgTab = store.getTab(tabId);
-          const questionId = msg.tool_use_id || 'ask_question_current';
-          const existing = bgTab?.messages.find((m) => m.id === questionId && m.type === 'question')
-            || bgTab?.messages.find((m) => m.type === 'question' && !m.resolved && m.toolName === 'AskUserQuestion');
-          if (existing) {
-            store.updateMessage(tabId, existing.id, {
-              permissionData: {
-                requestId: msg.request_id,
-                toolName: msg.tool_name,
-                input: msg.input,
-                toolUseId: msg.tool_use_id,
-              },
-              toolInput: msg.input,
-            });
-            return;
-          }
-          const questions = msg.input?.questions;
-          store.addMessage(tabId, {
-            id: questionId,
-            role: 'assistant', type: 'question',
-            content: '', toolName: 'AskUserQuestion',
-            toolInput: msg.input,
-            questions: Array.isArray(questions) ? questions : [],
-            resolved: false, timestamp: Date.now(),
-            permissionData: {
-              requestId: msg.request_id,
-              toolName: msg.tool_name,
-              input: msg.input,
-              toolUseId: msg.tool_use_id,
-            },
-          });
-          store.setActivityStatus(tabId, { phase: 'awaiting' });
-          return;
-        }
-        // Regular permission: add permission card to tab
-        const bgTab = store.getTab(tabId);
-        const existingPerm = bgTab?.messages.find(
-          (m) => m.type === 'permission'
-            && m.permissionData?.requestId === msg.request_id
-            && m.interactionState !== 'failed'
-        );
-        if (existingPerm) return;
-        store.addMessage(tabId, {
-          id: generateMessageId(),
-          role: 'assistant', type: 'permission',
-          content: msg.description || `${msg.tool_name} wants to execute`,
-          permissionTool: msg.tool_name,
-          permissionDescription: msg.description || '',
-          timestamp: Date.now(),
-          interactionState: 'pending',
-          permissionData: {
-            requestId: msg.request_id,
-            toolName: msg.tool_name,
-            input: msg.input,
-            description: msg.description,
-            toolUseId: msg.tool_use_id,
-          },
-        });
-        store.setActivityStatus(tabId, { phase: 'awaiting' });
-        break;
-      }
-      case 'stream_event': {
-        const evt = msg.event;
-        if (!evt) break;
-        if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-          const text = evt.delta.text || '';
-          if (text) store.updatePartialMessage(tabId, text);
-        }
-        // Early detection: create plan_review card for background tab (Plan mode only).
-        // Bypass auto-approves via Rust backend — no UI card needed.
-        if (evt.type === 'content_block_start'
-            && evt.content_block?.type === 'tool_use'
-            && evt.content_block?.name === 'ExitPlanMode'
-            && getEffectiveMode(store.getTab(tabId)?.sessionMeta) === 'plan') {
-          const bgTab = store.getTab(tabId);
-          const bgExisting = bgTab?.messages.find((m) => m.id === 'plan_review_current');
-          if (!bgExisting || !bgExisting.resolved) {
-            let bgPlanContent = '';
-            if (bgTab) {
-              for (let i = bgTab.messages.length - 1; i >= 0; i--) {
-                const m = bgTab.messages[i];
-                if (m.type === 'tool_use' && m.toolName === 'Write' && m.toolInput?.content) {
-                  bgPlanContent = m.toolInput.content;
-                  break;
-                }
-              }
-            }
-            store.addMessage(tabId, {
-              id: 'plan_review_current',
-              role: 'assistant', type: 'plan_review',
-              content: bgPlanContent, planContent: bgPlanContent,
-              resolved: false, timestamp: Date.now(),
-            });
-            store.setActivityStatus(tabId, { phase: 'awaiting' });
-          }
-        }
-        // Track tokens in background sessions (per-turn + cumulative total)
-        if (evt.type === 'message_start' && evt.message?.usage) {
-          const bgTab = store.getTab(tabId);
-          const delta = evt.message.usage.input_tokens || 0;
-          const snapshot = contextSnapshot(evt.message.usage);
-          store.setSessionMeta(tabId, {
-            inputTokens: (bgTab?.sessionMeta.inputTokens || 0) + delta,
-            totalInputTokens: (bgTab?.sessionMeta.totalInputTokens || 0) + delta,
-            ...(snapshot ? { ...snapshot, contextOutputTokens: 0 } : {}),
-          });
-          const updatedMeta = store.getTab(tabId)?.sessionMeta;
-          if (updatedMeta) _persistTokenState(tabId, updatedMeta);
-        }
-        if (evt.type === 'message_delta' && evt.usage?.output_tokens) {
-          const bgTab = store.getTab(tabId);
-          const delta = evt.usage.output_tokens;
-          store.setSessionMeta(tabId, {
-            outputTokens: (bgTab?.sessionMeta.outputTokens || 0) + delta,
-            totalOutputTokens: (bgTab?.sessionMeta.totalOutputTokens || 0) + delta,
-            contextOutputTokens: getContextOutputTokens(evt.usage),
-          });
-          const updatedMeta2 = store.getTab(tabId)?.sessionMeta;
-          if (updatedMeta2) _persistTokenState(tabId, updatedMeta2);
-        }
-        break;
-      }
-      case 'assistant': {
-        const content = msg.message?.content;
-        if (!Array.isArray(content)) break;
-        // Selectively clear partial in tab — only wipe partialText if a text
-        // block is present (which supersedes streaming text). Otherwise, preserve
-        // it to avoid intermediate thinking-only messages destroying streaming text.
-        const bgHasTextBlock = content.some((b: any) => b.type === 'text' && b.text);
-        const bgTab = store.getTab(tabId);
-        if (bgTab) {
-          const newTabs = new Map(store.tabs);
-          if (bgHasTextBlock) {
-            newTabs.set(tabId, { ...bgTab, partialText: '', partialThinking: '', isStreaming: false });
-          } else if (bgTab.partialThinking) {
-            newTabs.set(tabId, { ...bgTab, partialThinking: '' });
-          }
-          useChatStore.setState({ tabs: newTabs, sessionCache: newTabs });
-        }
-        // Skip text blocks when AskUserQuestion is present — the
-        // interactive question UI makes them redundant.
-        const bgHasAskUserQuestion = content.some(
-          (b: any) => b.type === 'tool_use' && b.name === 'AskUserQuestion',
-        );
-        for (let blockIdx = 0; blockIdx < content.length; blockIdx++) {
-          const block = content[blockIdx];
-          if (block.type === 'text') {
-            if (bgHasAskUserQuestion) continue;
-            const textId = msg.uuid ? `${msg.uuid}_text_${blockIdx}` : generateMessageId();
-            store.addMessage(tabId, {
-              id: textId,
-              role: 'assistant', type: 'text',
-              content: block.text, timestamp: Date.now(),
-            });
-          } else if (block.type === 'tool_use') {
-            // Code mode: suppress EnterPlanMode/ExitPlanMode (transparent to user)
-            if (getEffectiveMode(store.getTab(tabId)?.sessionMeta) === 'code'
-                && (block.name === 'EnterPlanMode' || block.name === 'ExitPlanMode')) {
-              if (block.name === 'ExitPlanMode') exitPlanModeSeenRef.current = true;
-              continue;
-            }
-            if (block.name === 'AskUserQuestion') {
-              const questions = block.input?.questions;
-              const bgQuestionId = block.id || generateMessageId();
-              // Guard: skip if question already exists in background tab (resolved or not)
-              const bgSnap = store.getTab(tabId);
-              const bgExisting = bgSnap?.messages.find(
-                (m) => m.id === bgQuestionId && m.type === 'question',
-              );
-              if (bgExisting) break;
-
-              store.addMessage(tabId, {
-                id: bgQuestionId,
-                role: 'assistant', type: 'question',
-                content: '', toolName: block.name,
-                toolInput: block.input,
-                questions: Array.isArray(questions) ? questions : [],
-                resolved: false, timestamp: Date.now(),
-              });
-            } else if (block.name === 'TodoWrite' && block.input?.todos) {
-              store.addMessage(tabId, {
-                id: block.id || generateMessageId(),
-                role: 'assistant', type: 'todo',
-                content: '', toolName: block.name,
-                toolInput: block.input,
-                todoItems: block.input.todos,
-                timestamp: Date.now(),
-              });
-            } else if (block.name === 'ExitPlanMode') {
-              // Show as regular tool_use in plan/bypass modes
-              store.addMessage(tabId, {
-                id: block.id || generateMessageId(),
-                role: 'assistant', type: 'tool_use',
-                content: '', toolName: block.name,
-                toolInput: block.input, timestamp: Date.now(),
-              });
-              // Only create plan_review card in Plan mode.
-              // Bypass auto-approves via Rust backend — no UI card needed.
-              if (getEffectiveMode(store.getTab(tabId)?.sessionMeta) === 'plan') {
-                const bgSnap2 = store.getTab(tabId);
-                let bgPlanContent = '';
-                if (bgSnap2) {
-                  for (let i = bgSnap2.messages.length - 1; i >= 0; i--) {
-                    const m = bgSnap2.messages[i];
-                    if (m.type === 'tool_use' && m.toolName === 'Write' && m.toolInput?.content) {
-                      bgPlanContent = m.toolInput.content;
-                      break;
-                    }
-                  }
-                }
-                const bgToolExists = block.id && bgSnap2?.messages.some(
-                  (m) => m.id === block.id && m.toolName === 'ExitPlanMode',
-                );
-                const bgResolvedReview = bgSnap2?.messages.find(
-                  (m) => m.type === 'plan_review' && m.resolved,
-                );
-                if (!(bgToolExists && bgResolvedReview)) {
-                  store.addMessage(tabId, {
-                    id: 'plan_review_current',
-                    role: 'assistant', type: 'plan_review',
-                    content: bgPlanContent, planContent: bgPlanContent,
-                    resolved: false, timestamp: Date.now(),
-                  });
-                  store.setActivityStatus(tabId, { phase: 'awaiting' });
-                }
-              }
-            } else {
-              store.addMessage(tabId, {
-                id: block.id || generateMessageId(),
-                role: 'assistant', type: 'tool_use',
-                content: '', toolName: block.name,
-                toolInput: block.input, timestamp: Date.now(),
-              });
-            }
-          }
-        }
-        break;
-      }
-      case 'user':
-      case 'human': {
-        const userContent = msg.message?.content;
-        if (Array.isArray(userContent)) {
-          for (const block of userContent) {
-            if (block.type === 'tool_result') {
-              const resultText = Array.isArray(block.content)
-                ? block.content.map((b: any) => typeof b.text === 'string' ? b.text : typeof b.content === 'string' ? b.content : '').join('')
-                : typeof block.content === 'string' ? block.content : '';
-              if (block.tool_use_id && resultText) {
-                store.updateMessage(tabId, block.tool_use_id, { toolResultContent: resultText });
-              }
-            }
-          }
-        }
-        break;
-      }
-      case 'tool_result': {
-        const resultContent = Array.isArray(msg.content)
-          ? msg.content.map((b: any) => typeof b.text === 'string' ? b.text : typeof b.content === 'string' ? b.content : '').join('')
-          : typeof msg.content === 'string' ? msg.content : msg.output || '';
-        if (msg.tool_use_id) {
-          // Backfill AskUserQuestion type/questions in background tab
-          const bgTab = store.getTab(tabId);
-          const parentMsg = bgTab?.messages.find((m) => m.id === msg.tool_use_id);
-          const bgUpdates: Partial<ChatMessage> = { toolResultContent: resultContent };
-          if (parentMsg?.toolName === 'AskUserQuestion') {
-            if (parentMsg.type !== 'question') {
-              bgUpdates.type = 'question';
-              bgUpdates.resolved = false;
-            }
-            if (!parentMsg.questions || parentMsg.questions.length === 0) {
-              const qs = parentMsg.toolInput?.questions;
-              if (Array.isArray(qs) && qs.length > 0) {
-                bgUpdates.questions = qs;
-              }
-            }
-          }
-          store.updateMessage(tabId, msg.tool_use_id, bgUpdates);
-          // Auto-refresh file tree when file-mutating tools complete
-          _maybeRefreshFileTree(tabId, msg.tool_use_id, msg.tool_name);
-        }
-        break;
-      }
-      case 'result': {
-        commitPartialText(tabId, msg.__stdinId);
-        store.setSessionStatus(tabId, msg.subtype === 'success' ? 'completed' : 'error');
-        {
-          const bgTab = store.getTab(tabId);
-          const prevMeta = bgTab?.sessionMeta;
-          const resultInput = msg.usage?.input_tokens || 0;
-          const resultOutput = msg.usage?.output_tokens || 0;
-          const streamedInput = prevMeta?.inputTokens || 0;
-          const streamedOutput = prevMeta?.outputTokens || 0;
-          store.setSessionMeta(tabId, {
-            cost: msg.total_cost_usd,
-            duration: msg.duration_ms,
-            turns: msg.num_turns,
-            inputTokens: resultInput,
-            outputTokens: resultOutput,
-            totalInputTokens: (prevMeta?.totalInputTokens || 0) + (resultInput - streamedInput),
-            totalOutputTokens: (prevMeta?.totalOutputTokens || 0) + (resultOutput - streamedOutput),
-            turnStartTime: undefined,
-            lastProgressAt: undefined,
-          });
-          // Persist final token state for F5 recovery (background tab)
-          const bgResultMeta = store.getTab(tabId)?.sessionMeta;
-          if (bgResultMeta) _persistTokenState(tabId, bgResultMeta);
-        }
-        if (typeof msg.result === 'string' && msg.result) {
-          // Only add if not already delivered via 'assistant' event
-          const bgTab = store.getTab(tabId);
-          const bgIsDuplicate = bgTab?.messages.some(
-            (m) => m.role === 'assistant' && m.type === 'text'
-              && m.content === msg.result,
-          );
-          if (!bgIsDuplicate) {
-            store.addMessage(tabId, {
-              id: msg.uuid || generateMessageId(),
-              role: 'assistant', type: 'text',
-              content: msg.result, timestamp: Date.now(),
-            });
-          }
-        }
-        // FIFO drain for background tabs (#142/#70): same logic as foreground.
-        {
-          const bgDrainTab = store.getTab(tabId);
-          const bgNextMsg = store.shiftPendingMessage(tabId);
-          const bgFlushStdinId = bgDrainTab?.sessionMeta.stdinId;
-          if (bgNextMsg && bgFlushStdinId) {
-            store.setSessionStatus(tabId, 'running');
-            store.setSessionMeta(tabId, { turnStartTime: Date.now(), lastProgressAt: Date.now(), inputTokens: 0, outputTokens: 0 });
-            store.setActivityStatus(tabId, { phase: 'thinking' });
-            bridge.sendStdin(bgFlushStdinId, bgNextMsg).catch((err) => {
-              console.error('[TC:bg] Failed to send pending message:', err);
-              const bgRemaining = store.getTab(tabId)?.pendingUserMessages ?? [];
-              const bgAllFailed = [bgNextMsg, ...bgRemaining];
-              const bgDraft = store.getTab(tabId)?.inputDraft ?? '';
-              const bgFailedText = bgAllFailed.join('\n\n');
-              store.setInputDraft(tabId, bgDraft ? `${bgDraft}\n\n${bgFailedText}` : bgFailedText);
-              store.clearPendingMessages(tabId);
-              store.setSessionStatus(tabId, 'error');
-            });
-          }
-        }
-
-        useSessionStore.getState().fetchSessions();
-
-        // AI Title Generation for background tabs (same 3rd-turn logic)
-        if (msg.subtype === 'success') {
-          const customPreviews = useSessionStore.getState().customPreviews;
-          if (!customPreviews[tabId]) {
-            const bgTab = store.getTab(tabId);
-            const bgUserMsgs = bgTab?.messages.filter(
-              (m) => m.role === 'user' && m.type === 'text' && m.content,
-            ) || [];
-            const bgAssistantMsgs = bgTab?.messages.filter(
-              (m) => m.role === 'assistant' && m.type === 'text' && m.content,
-            ) || [];
-            if (bgUserMsgs.length >= 3 && bgAssistantMsgs.length >= 3) {
-              const userMsg = bgUserMsgs.map((m) => m.content).join('\n').slice(0, 500);
-              const assistantMsg = bgAssistantMsgs.map((m) => m.content).join('\n').slice(0, 500);
-              const bgTitleGenCwd = useSessionStore.getState().sessions.find((s) => s.id === tabId)?.project;
-              bridge.generateSessionTitle(userMsg, assistantMsg, useProviderStore.getState().activeProviderId || undefined, bgTitleGenCwd)
-                .then((title) => {
-                  if (title) {
-                    useSessionStore.getState().setCustomPreview(tabId, title);
-                  }
-                })
-                .catch((e) => {
-                  // Silently ignore SKIP errors (e.g. no haiku mapping for provider)
-                  if (!String(e).includes('SKIP:')) console.warn('Title gen failed:', e);
-                });
-            }
-          }
-        }
-        break;
-      }
-      case 'process_exit': {
-        // Preserve delta-only replies before status cleanup clears partialText.
-        commitPartialText(tabId, msg.__stdinId);
-
-        // P0-5: Clean up Tauri event listeners for background tab.
-        // __claudeUnlisteners is keyed by stdinId (desk_xxx), NOT tabId (session uuid).
-        // Use msg.__stdinId (tagged by the listener closure) to find the correct entry.
-        const bgStdinId = msg.__stdinId;
-        if (bgStdinId && (window as any).__claudeUnlisteners?.[bgStdinId]) {
-          (window as any).__claudeUnlisteners[bgStdinId]();
-          delete (window as any).__claudeUnlisteners[bgStdinId];
-        }
-        store.setSessionStatus(tabId, 'idle');
-        store.setSessionMeta(tabId, { stdinId: undefined });
-        // Clean up stdinToTab mapping to prevent memory leak
-        if (bgStdinId) {
-          useSessionStore.getState().unregisterStdinTab(bgStdinId);
-        }
-        // Restore pending messages to input draft (#142/#70)
-        const bgExitPending = store.getTab(tabId)?.pendingUserMessages ?? [];
-        if (bgExitPending.length > 0) {
-          const bgExitDraft = store.getTab(tabId)?.inputDraft ?? '';
-          const bgPendingText = bgExitPending.join('\n\n');
-          store.setInputDraft(tabId, bgExitDraft ? `${bgExitDraft}\n\n${bgPendingText}` : bgPendingText);
-          store.clearPendingMessages(tabId);
-        }
-        useSessionStore.getState().fetchSessions();
-        break;
-      }
-      case 'system':
-        if (msg.subtype === 'init') {
-          store.setSessionMeta(tabId, { model: msg.model });
-        } else if (msg.subtype === 'error') {
-          // FI-3: Surface system errors in background tabs too
-          store.addMessage(tabId, {
-            id: generateMessageId(),
-            role: 'system',
-            type: 'text',
-            content: formatErrorForUser(msg.message || msg.error || 'System error'),
-            timestamp: Date.now(),
-          });
-        } else if (msg.subtype === 'compact_boundary') {
-          // 后台标签页同样需要刷新压缩后的 token 数，逻辑与前台一致
-          const postTokens = msg.compactMetadata?.postTokens;
-          const preTokens = msg.compactMetadata?.preTokens;
-          if (typeof postTokens === 'number') {
-            store.setSessionMeta(tabId, {
-              inputTokens: postTokens,
-              outputTokens: 0,
-              contextInputTokens: postTokens,
-              contextOutputTokens: 0,
-            });
-            const boundaryMeta = store.getTab(tabId)?.sessionMeta;
-            if (boundaryMeta) _persistTokenState(tabId, boundaryMeta);
-
-            const boundaryCmdMsgId = boundaryMeta?.pendingCommandMsgId;
-            if (boundaryCmdMsgId) {
-              const boundaryCmdMsg = (store.getTab(tabId)?.messages ?? [])
-                .find((m) => m.id === boundaryCmdMsgId);
-              if (boundaryCmdMsg) {
-                store.updateMessage(tabId, boundaryCmdMsgId, {
-                  commandData: {
-                    ...boundaryCmdMsg.commandData,
-                    compactSummary: { preTokens, postTokens },
-                  },
-                });
-              }
-            }
-          }
-        }
-        break;
-    }
-  }, [exitPlanModeSeenRef]);
-
-  /**
-   * Handle stream messages for the foreground (active) tab.
+   * 处理一条流消息。前台、后台标签页共用同一套逻辑：按 stdinId 找到所属标签页后
+   * 写入该标签页的状态。依赖 InputBar 实例状态（各种 ref）、agentStore（只保存当前
+   * 标签页）或“当前选中标签页”的动作只在前台执行，见 isForeground 判断。
    */
   const handleStreamMessage = useCallback((msg: any) => {
     if (!msg || !msg.type) return;
+
+    // 出错时把错误写到消息所属的标签页；路由完成前退回当前选中的标签页
+    let errTabId: string | null = useSessionStore.getState().selectedSessionId;
 
     try { // P1-4: error boundary — prevent uncaught exceptions from crashing the stream pipeline
 
@@ -858,31 +353,23 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       console.warn('[ClaudeDeck:stream] unhandled message type:', msg.type, msg);
     }
 
-    // --- Background routing: detect if this stream belongs to a non-active tab ---
-    // MUST run before tokenicode_permission_request and all other handlers
-    // to prevent messages from background sessions leaking into the active tab.
+    // --- 路由：按 stdinId 找到消息所属的标签页 ---
+    // 必须在所有处理之前完成，避免后台会话的消息写进当前标签页。
     const msgStdinId = msg.__stdinId;
     const ownerTabId = msgStdinId
       ? useSessionStore.getState().getTabForStdin(msgStdinId)
       : undefined;
     const activeTabId = useSessionStore.getState().selectedSessionId;
-    const isBackground = ownerTabId && ownerTabId !== activeTabId;
-
-    // If stream belongs to a background tab, route key events to cache and return
-    if (isBackground) {
-      // Diagnostic: log background routing for non-trivial message types
-      if (msg.type !== 'stream_event') {
-        console.log('[ClaudeDeck:route] background:', msg.type, 'owner:', ownerTabId, 'active:', activeTabId);
-      }
-      handleBackgroundStreamMessage(msg, ownerTabId);
-      return;
+    const routedTabId = ownerTabId || activeTabId;
+    if (!routedTabId) return;
+    let tabId: string = routedTabId;
+    errTabId = tabId;
+    const isForeground = tabId === activeTabId;
+    if (!isForeground && msg.type !== 'stream_event') {
+      console.log('[ClaudeDeck:route] background:', msg.type, 'owner:', tabId, 'active:', activeTabId);
     }
 
-    // Resolve tabId once for all foreground store calls
-    const tabId = ownerTabId || activeTabId;
-    if (!tabId) return;
-
-    // Update lastProgressAt on every foreground stream event for stall detection
+    // Update lastProgressAt on every stream event for stall detection
     useChatStore.getState().setSessionMeta(tabId, { lastProgressAt: Date.now() });
 
     // --- SDK Permission Request (routed through stream channel for reliability) ---
@@ -894,7 +381,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         const tabState = useChatStore.getState().getTab(tabId);
         if (getEffectiveMode(tabState?.sessionMeta) !== 'plan') {
           // Auto-approve: CLI doesn't need user confirmation outside Plan mode
-          const stdinId = tabState?.sessionMeta.stdinId;
+          const stdinId = msgStdinId || tabState?.sessionMeta.stdinId;
           if (stdinId) {
             bridge.respondPermission(stdinId, msg.request_id, true, undefined, msg.tool_use_id, msg.input);
           }
@@ -1023,9 +510,10 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
     const setSessionStatus = (status: import('../stores/chatStore').SessionStatus) => cs.setSessionStatus(tabId, status);
     const setSessionMeta = (meta: Partial<import('../stores/chatStore').SessionMeta>) => cs.setSessionMeta(tabId, meta);
     const setActivityStatus = (status: import('../stores/chatStore').ActivityStatus) => cs.setActivityStatus(tabId, status);
-    const agentActions = useAgentStore.getState();
-    const agentId = resolveAgentId(msg.parent_tool_use_id, agentActions.agents);
-    const agentDepth = getAgentDepth(agentId, agentActions.agents);
+    // agentStore 只保存当前标签页的代理树，后台标签页不更新它
+    const agentActions = isForeground ? useAgentStore.getState() : null;
+    const agentId = agentActions ? resolveAgentId(msg.parent_tool_use_id, agentActions.agents) : 'main';
+    const agentDepth = agentActions ? getAgentDepth(agentId, agentActions.agents) : undefined;
 
     // Capture the CLI's own session ID from stream events (used for --resume)
     const cliSessionId = msg.session_id || msg.sessionId;
@@ -1050,6 +538,9 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           useSessionStore.getState().promoteDraft(tabId, cliSessionId);
           // Update UUID index: tab key changed from draft_* to the real UUID
           _persistClaudeUuid(cliSessionId, cliSessionId);
+          // 标签页已改用真实 ID，本条消息后续的写入也要跟着改
+          tabId = cliSessionId;
+          errTabId = tabId;
         }
 
         useSessionStore.getState().fetchSessions();
@@ -1059,7 +550,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
     // Helper: clear accumulated partial text (it will be replaced by the full message)
     const clearPartial = () => {
       // Flush any buffered text so the final tokens aren't lost
-      flushStreamBuffer();
+      flushStreamBuffer(msgStdinId);
       const tabData = useChatStore.getState().getTab(tabId);
       if (tabData && (tabData.isStreaming || tabData.partialText || tabData.partialThinking)) {
         const newTabs = new Map(useChatStore.getState().tabs);
@@ -1087,7 +578,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             const buf = _getBuffer(msgStdinId);
             buf.text += text;
             _scheduleStreamFlush(msgStdinId);
-            agentActions.updatePhase(agentId, 'writing');
+            agentActions?.updatePhase(agentId, 'writing');
           }
         } else if (evt.type === 'content_block_delta' && evt.delta?.type === 'thinking_delta') {
           const thinkingText = evt.delta.thinking || '';
@@ -1095,10 +586,10 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             const buf = _getBuffer(msgStdinId);
             buf.thinking += thinkingText;
             _scheduleStreamFlush(msgStdinId);
-            agentActions.updatePhase(agentId, 'thinking');
+            agentActions?.updatePhase(agentId, 'thinking');
           } else {
             setActivityStatus({ phase: 'thinking' });
-            agentActions.updatePhase(agentId, 'thinking');
+            agentActions?.updatePhase(agentId, 'thinking');
           }
         }
 
@@ -1107,7 +598,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         if (evt.type === 'content_block_start'
             && evt.content_block?.type === 'tool_use'
             && (evt.content_block?.name === 'Task' || evt.content_block?.name === 'Agent')) {
-          agentActions.upsertAgent({
+          agentActions?.upsertAgent({
             id: evt.content_block.id || `task_${Date.now()}`,
             parentId: agentId,
             description: '',
@@ -1122,7 +613,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         if (evt.type === 'content_block_start'
             && evt.content_block?.type === 'tool_use'
             && (evt.content_block?.name === 'TaskCreate' || evt.content_block?.name === 'SendMessage')) {
-          agentActions.upsertAgent({
+          agentActions?.upsertAgent({
             id: evt.content_block.id || `team_${Date.now()}`,
             parentId: agentId,
             description: '',
@@ -1323,7 +814,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           if (block.type === 'text') {
             if (hasAskUserQuestion) continue;
             setActivityStatus({ phase: 'writing' });
-            agentActions.updatePhase(agentId, 'writing');
+            agentActions?.updatePhase(agentId, 'writing');
             // Use msg.uuid + block index as stable ID so re-delivered
             // messages de-duplicate correctly in the store.
             const textId = msg.uuid ? `${msg.uuid}_text_${blockIdx}` : generateMessageId();
@@ -1340,12 +831,13 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             // Don't show tool cards; track ExitPlanMode for auto-restart if CLI exits.
             if (getEffectiveMode(useChatStore.getState().getTab(tabId)?.sessionMeta) === 'code'
                 && (block.name === 'EnterPlanMode' || block.name === 'ExitPlanMode')) {
-              if (block.name === 'ExitPlanMode') exitPlanModeSeenRef.current = true;
+              // 静默重启只支持前台标签页，后台不记录
+              if (block.name === 'ExitPlanMode' && isForeground) exitPlanModeSeenRef.current = true;
               continue;
             }
             setActivityStatus({ phase: 'tool', toolName: block.name });
             if (block.name === 'Task' || block.name === 'Agent') {
-              agentActions.upsertAgent({
+              agentActions?.upsertAgent({
                 id: block.id || generateMessageId(),
                 parentId: agentId,
                 description: block.input?.description || block.input?.prompt || '',
@@ -1357,7 +849,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
               // Agent Team tasks/messages: register as visible agents in the tree.
               // These run in separate CLI processes so we won't get progress events,
               // but showing them makes the team activity visible in the agent panel.
-              agentActions.upsertAgent({
+              agentActions?.upsertAgent({
                 id: block.id || `team_${Date.now()}`,
                 parentId: agentId,
                 description: block.input?.subject || block.input?.description || block.input?.recipient || '',
@@ -1366,7 +858,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
                 isMain: false,
               });
             } else {
-              agentActions.updatePhase(agentId, 'tool', block.name);
+              agentActions?.updatePhase(agentId, 'tool', block.name);
             }
 
             if (block.name === 'AskUserQuestion') {
@@ -1493,7 +985,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
               useChatStore.setState({ tabs: nt, sessionCache: nt });
             }
           }
-            agentActions.updatePhase(agentId, 'thinking');
+            agentActions?.updatePhase(agentId, 'thinking');
             addMessage({
               id: msg.uuid ? `${msg.uuid}_thinking_${blockIdx}` : generateMessageId(),
               role: 'assistant',
@@ -1616,8 +1108,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           }
         }
         // Complete Agent Team agents when their tool result arrives
-        if (toolUseId && agentActions.agents.has(toolUseId)) {
-          agentActions.completeAgent(toolUseId, 'completed');
+        if (toolUseId && agentActions?.agents.has(toolUseId)) {
+          agentActions?.completeAgent(toolUseId, 'completed');
         }
         addMessage({
           id: msg.uuid || generateMessageId(),
@@ -1641,8 +1133,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         // session. Without this guard, the first parallel sub-agent to complete would
         // call setSessionStatus('completed') and freeze the UI mid-run.
         if (msg.parent_tool_use_id) {
-          agentActions.completeAgent(
-            resolveAgentId(msg.parent_tool_use_id, agentActions.agents),
+          agentActions?.completeAgent(
+            resolveAgentId(msg.parent_tool_use_id, agentActions?.agents),
             msg.subtype === 'success' ? 'completed' : 'error',
           );
           break;
@@ -1656,7 +1148,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         // When user switches API provider or model mid-conversation, we attempt to resume
         // the session. If the new provider/model rejects the old thinking block signatures,
         // we automatically retry without resume to preserve UX continuity.
-        if (msg.subtype !== 'success') {
+        // 重试流程读取当前设置（工作目录、模型等）并注册到当前选中的标签页，只用于前台。
+        if (isForeground && msg.subtype !== 'success') {
           const meta = useChatStore.getState().getTab(tabId)?.sessionMeta ?? {};
           // Build a combined error string from all possible error fields
           const errorText = [msg.result, msg.error, msg.content]
@@ -1726,8 +1219,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
                   outputTokens: 0,
                 });
                 setActivityStatus({ phase: 'thinking' });
-                agentActions.clearAgents();
-                agentActions.upsertAgent({
+                agentActions?.clearAgents();
+                agentActions?.upsertAgent({
                   id: 'main', parentId: null,
                   description: retryText.slice(0, 100),
                   phase: 'spawning', startTime: Date.now(), isMain: true,
@@ -1794,7 +1287,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         // Code mode: Auto-restart when ExitPlanMode caused CLI exit.
         // In stream-json mode, ExitPlanMode is treated as a permission denial,
         // causing the CLI to exit. Silently restart with --resume to continue.
-        if (exitPlanModeSeenRef.current && getEffectiveMode(useChatStore.getState().getTab(tabId)?.sessionMeta) === 'code'
+        if (isForeground && exitPlanModeSeenRef.current && getEffectiveMode(useChatStore.getState().getTab(tabId)?.sessionMeta) === 'code'
             && msg.subtype !== 'success') {
           exitPlanModeSeenRef.current = false;
           console.log('[ClaudeDeck] Code mode ExitPlanMode exit detected — auto-restarting with --resume');
@@ -1815,7 +1308,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           requestAnimationFrame(() => handleSubmitRef.current());
           break;
         }
-        exitPlanModeSeenRef.current = false;
+        if (isForeground) exitPlanModeSeenRef.current = false;
 
         // Mark pending processing card (CLI slash command) as completed
         const pendingCmdMsgId = useChatStore.getState().getTab(tabId)?.sessionMeta.pendingCommandMsgId;
@@ -1925,7 +1418,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           const resultMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
           if (resultMeta) _persistTokenState(tabId, resultMeta);
         }
-        agentActions.completeAll(
+        agentActions?.completeAll(
           msg.subtype === 'success' ? 'completed' : 'error'
         );
         useSessionStore.getState().fetchSessions();
@@ -1933,7 +1426,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
 
         // --- AI Title Generation (TK-001): on 3rd successful turn, generate a title ---
         if (msg.subtype === 'success') {
-          const sessionId = useChatStore.getState().getTab(tabId)?.sessionMeta.sessionId;
+          const sessionId = useChatStore.getState().getTab(tabId)?.sessionMeta.sessionId || tabId;
           if (sessionId) {
             const customPreviews = useSessionStore.getState().customPreviews;
             if (!customPreviews[sessionId]) {
@@ -1982,7 +1475,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           compactMode,
           useSettingsStore.getState().autoCompactThresholdTokens,
         );
-        if (resultContextTokens > autoCompactThreshold && !autoCompactFiredRef.current && compactStdinId && msg.subtype === 'success') {
+        // autoCompactFiredRef 属于 InputBar 实例、不分标签页，自动压缩只对前台生效
+        if (isForeground && resultContextTokens > autoCompactThreshold && !autoCompactFiredRef.current && compactStdinId && msg.subtype === 'success') {
           autoCompactFiredRef.current = true;
           console.log('[ClaudeDeck] Auto-compact triggered:', { contextTokens: resultContextTokens, threshold: autoCompactThreshold });
           const compactMsgId = generateMessageId();
@@ -2043,8 +1537,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
               outputTokens: 0,
             });
             setActivityStatus({ phase: 'thinking' });
-            agentActions.clearAgents();
-            agentActions.upsertAgent({
+            agentActions?.clearAgents();
+            agentActions?.upsertAgent({
               id: 'main',
               parentId: null,
               description: nextMsg.slice(0, 100),
@@ -2091,7 +1585,8 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           const turnStartTime = exitTabData?.sessionMeta.turnStartTime ?? 0;
           const hasAssistantReply = hasAssistantReplyForTurn(exitMsgs, turnStartTime);
           if (!hasAssistantReply) {
-            if (lastStderrRef.current) {
+            // lastStderrRef 只记录前台会话的 stderr；后台会话的 stderr 已逐行显示在聊天中
+            if (isForeground && lastStderrRef.current) {
               const stderr = lastStderrRef.current;
               addMessage({
                 id: generateMessageId(),
@@ -2120,7 +1615,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           (window as any).__claudeUnlisteners[exitingStdinId]();
           delete (window as any).__claudeUnlisteners[exitingStdinId];
         }
-        if ((window as any).__claudeUnlisten) {
+        if (isForeground && (window as any).__claudeUnlisten) {
           (window as any).__claudeUnlisten = null;
         }
 
@@ -2137,7 +1632,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         }
 
         setSessionStatus('idle');
-        if (!document.hasFocus() && 'Notification' in window) {
+        if (isForeground && !document.hasFocus() && 'Notification' in window) {
           if (Notification.permission === 'granted') {
             new Notification('ClaudeDeck', { body: t('notification.chatComplete') });
           } else if (Notification.permission === 'default') {
@@ -2165,7 +1660,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           useChatStore.getState().clearPendingMessages(tabId);
         }
 
-        agentActions.completeAll();
+        agentActions?.completeAll();
         useSessionStore.getState().fetchSessions();
         break;
       }
@@ -2186,7 +1681,6 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
     } catch (err) {
       // P1-4: catch-all for unexpected errors in stream message processing
       console.error('[ClaudeDeck] handleStreamMessage error:', err, 'msg:', msg?.type, msg?.subtype);
-      const errTabId = useSessionStore.getState().selectedSessionId;
       if (errTabId) {
         useChatStore.getState().addMessage(errTabId, {
           id: generateMessageId(),
@@ -2197,7 +1691,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         });
       }
     }
-  }, [handleBackgroundStreamMessage, exitPlanModeSeenRef, autoCompactFiredRef, silentRestartRef, handleSubmitRef, handleStderrLineRef, setInputSync]);
+  }, [exitPlanModeSeenRef, autoCompactFiredRef, silentRestartRef, handleSubmitRef, handleStderrLineRef, setInputSync]);
 
-  return { handleStreamMessage, handleBackgroundStreamMessage };
+  return { handleStreamMessage };
 }

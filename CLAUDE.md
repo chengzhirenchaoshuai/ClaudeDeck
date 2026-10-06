@@ -27,7 +27,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - **远程主机**：项目路径用 `ssh://<主机别名>/<远端路径>`，由后端识别并经系统 ssh 在远端运行 claude，不注入本机服务商配置。
 - **多标签页**：`chatStore`/`agentStore` 用 `saveToCache`/`restoreFromCache` 切换；后台会话按 `sessionStore.stdinToTab` 路由，经 `*InCache()` 写缓存。
 - **回溯**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
-- **流解析**：`useStreamProcessor.ts` 逐行解析 NDJSON（前台 + 后台标签页）。
+- **流解析**：`useStreamProcessor.ts` 的 `handleStreamMessage` 逐行解析 NDJSON，按 stdinId 路由到所属标签页，前台、后台共用一套逻辑；依赖 InputBar 的 ref、`agentStore`（只存当前标签页）或当前选中标签页的动作用 `isForeground` 限定在前台。
 - **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `config/providers.json`。
 - **数据目录**：统一在 `%APPDATA%/ClaudeDeck/`（`src-tauri/src/app_paths.rs`）：`config/` 配置、`cache/` 缓存、`tools/` 自动安装的 CLI/Git/Node、`webview/` WebView2 数据（alpha 为 `webview-alpha`，debug 构建自动加 `-dev`）。主窗口在配置里 `create: false`，由 `setup` 指定数据目录创建；新窗口也必须在后端用 `data_directory` 创建。首次启动自动从 `~/.tokenicode` 和 `%LOCALAPPDATA%/<identifier>/EBWebView` 复制迁移。例外：会话名称留在 CLI 配置目录（远程客户端共享），附件在 `<项目>/.tokenicode/tmp`。
 - **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`）；`decode_project_name()` 靠逐段匹配文件系统还原，连字符有歧义。CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。
