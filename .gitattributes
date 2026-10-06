@@ -1,0 +1,15 @@
+# 统一换行符：仓库与工作区一律 LF（无论哪个工具在 Windows 上写出 CRLF，提交时都会被规范化）
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制素材
+*.png binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.woff binary
+*.woff2 binary

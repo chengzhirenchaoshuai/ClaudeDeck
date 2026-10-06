@@ -41,6 +41,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - 代码中残留的 `tokenicode` 命名（事件名、`tokenicode_session_names.json`、项目内 `.tokenicode/tmp`）是为兼容已有用户数据，不要改名。
 - 标题栏为 Overlay + hiddenTitle，macOS 下要避开红绿灯区域。
 - Windows：`.cmd`/`.bat` 需经 `cmd /C` 启动，子进程要加 CREATE_NO_WINDOW。
+- **换行符一律 LF**（`.gitattributes` 强制，`.bat/.cmd/.ps1` 除外）。用脚本改文件时不要引入 CRLF：Python 用 `read_bytes()/write_bytes()` 或 `open(..., newline="")`，不要用默认文本模式的 `write_text()`/`open("w")`（Windows 下会把 `\n` 写成 `\r\n`）；改完用 `git ls-files --eol | grep w/crlf` 自查，应无输出。
 
 ## 排查入口
 
