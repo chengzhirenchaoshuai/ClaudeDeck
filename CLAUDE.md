@@ -30,7 +30,8 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - **流解析**：`useStreamProcessor.ts` 逐行解析 NDJSON（前台 + 后台标签页）。
 - **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `~/.tokenicode/providers.json`。
 - **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`）；`decode_project_name()` 靠逐段匹配文件系统还原，连字符有歧义。CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。
-- **双版本**：`EDITION` 环境变量注入 `__APP_EDITION__`/`__APP_NAME__`（`vite.config.ts`、`src/lib/edition.ts`）；alpha 有独立 identifier 和图标，CI 中带 `-alpha` 的 tag 会构建 alpha 版。
+- **双版本**：`EDITION` 环境变量注入 `__APP_EDITION__`/`__APP_NAME__`（`vite.config.ts`、`src/lib/edition.ts`）；alpha 有独立 identifier 和图标。
+- **发布**：只维护 Windows 版，本地 `pnpm tauri build` 后用 `gh release create` 上传到 `chengzhirenchaoshuai/ClaudeDeck`（步骤见 README），无 CI。
 
 ## 约定
 

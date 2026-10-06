@@ -42,11 +42,18 @@ EDITION=alpha pnpm tauri build --config src-tauri/tauri.alpha.conf.json
 
 ### 发布
 
+本地打包后上传到 GitHub Release（需要已登录的 [gh](https://cli.github.com)）：
+
 ```bash
 scripts/bump-version.sh 1.1.1    # 同步修改 package.json / tauri.conf.json / Cargo.toml
+# 更新 CHANGELOG.md 与 src/lib/changelog.ts
 git commit -am "chore: 发布 v1.1.1"
-git tag v1.1.1                   # 带 -alpha 的 tag 构建 alpha 版
-git push origin main --tags      # GitHub Actions 自动构建 Windows 安装包并生成 Release 草稿
+git tag -a v1.1.1 -m "ClaudeDeck v1.1.1"
+git push origin main v1.1.1
+pnpm tauri build
+gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." \
+  src-tauri/target/release/bundle/nsis/ClaudeDeck_1.1.1_x64-setup.exe \
+  src-tauri/target/release/bundle/msi/ClaudeDeck_1.1.1_x64_en-US.msi
 ```
 
 ## 技术栈
