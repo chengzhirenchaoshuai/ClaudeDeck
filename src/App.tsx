@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { AppShell } from './components/layout/AppShell';
 import { Sidebar } from './components/layout/Sidebar';
 import { ChatPanel } from './components/chat/ChatPanel';
 import { SecondaryPanel } from './components/layout/SecondaryPanel';
 import { CommandPalette } from './components/commands/CommandPalette';
-import { SettingsPanel } from './components/settings/SettingsPanel';
-import { UsageModal } from './components/usage/UsageModal';
 import { ImageLightbox } from './components/shared/ImageLightbox';
 import { Toast } from './components/shared/Toast';
 import { useSettingsStore } from './stores/settingsStore';
@@ -29,6 +27,10 @@ import {
   hasMeaningfulContextUsage,
 } from './lib/context-usage';
 import './App.css';
+
+// 设置面板、用量统计打开时才加载
+const SettingsPanel = lazy(() => import('./components/settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
+const UsageModal = lazy(() => import('./components/usage/UsageModal').then((m) => ({ default: m.UsageModal })));
 
 // --- Token state cache (survives F5 via sessionStorage) ---
 // Primary F5 recovery: fast, real-time, covers active streaming sessions.
@@ -590,8 +592,10 @@ function App() {
         secondary={<SecondaryPanel />}
       />
       <CommandPalette />
-      {settingsOpen && <SettingsPanel />}
-      {usageOpen && <UsageModal />}
+      <Suspense fallback={null}>
+        {settingsOpen && <SettingsPanel />}
+        {usageOpen && <UsageModal />}
+      </Suspense>
       <ImageLightbox />
       <Toast />
     </>

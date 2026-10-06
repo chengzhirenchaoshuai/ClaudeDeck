@@ -2,7 +2,6 @@ import React, { memo, useState, useCallback, useMemo, useEffect, type ReactNode 
 import Markdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
-import rehypeKatex from 'rehype-katex';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useLightboxStore } from './ImageLightbox';
@@ -12,7 +11,6 @@ import { bridge } from '../../lib/tauri-bridge';
 import { rehypeKatexFix } from '../../lib/rehype-katex-fix';
 import { toSessionFilePath } from '../../lib/remote';
 import { useT } from '../../lib/i18n';
-import 'katex/dist/katex.min.css';
 
 /* ================================================================
    AsyncImage — loads local files via Rust base64 bridge
@@ -306,19 +304,46 @@ async function loadRemarkPlugins(): Promise<RemarkPlugin[]> {
   return remarkPluginsPromise;
 }
 
+// --- KaTeX 按需加载：rehype-katex 与样式表约 600KB，只在内容出现公式时才加载 ---
+// 加载完成后缓存“基础插件 + rehype-katex”的完整数组，所有气泡共用同一个引用
+let cachedKatexPlugins: any[] | null = null;
+let katexPluginsPromise: Promise<any[] | null> | null = null;
+
+function loadKatexPlugins(): Promise<any[] | null> {
+  if (!katexPluginsPromise) {
+    katexPluginsPromise = Promise.all([
+      import('rehype-katex'),
+      import('katex/dist/katex.min.css'),
+    ])
+      .then(([mod]) => {
+        cachedKatexPlugins = [...BASE_REHYPE_PLUGINS, mod.default];
+        return cachedKatexPlugins;
+      })
+      .catch((error) => {
+        console.warn('[ClaudeDeck] failed to load KaTeX, math will be shown as plain text', error);
+        return null;
+      });
+  }
+  return katexPluginsPromise;
+}
+
+/** remark-math 只识别 $...$ / $$...$$，没有 $ 就不会有公式节点 */
+function mayContainMath(content: string): boolean {
+  return content.includes('$');
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // Pipeline order is critical:
 //  1. rehypeRaw       — parse raw HTML in markdown
 //  2. rehypeKatexFix  — fix common LaTeX syntax before sanitize
 //  3. rehypeSanitize   — sanitize with KaTeX-friendly schema
 //  4. rehypeHighlight — highlight code blocks (not math)
-//  5. rehypeKatex     — render KaTeX math nodes LAST
-const REHYPE_PLUGINS: any[] = [
+//  5. rehypeKatex     — render KaTeX math nodes LAST（按需加载，加载完成前公式显示为原文）
+const BASE_REHYPE_PLUGINS: any[] = [
   rehypeRaw,
   rehypeKatexFix,
   [rehypeSanitize, SANITIZE_SCHEMA],
   rehypeHighlight,
-  rehypeKatex,
 ];
 
 /** Error boundary scoped to a single markdown block.
@@ -371,6 +396,20 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
 
   // Pre-process: wrap bare file paths in backticks so `code` handler makes them clickable
   const processedContent = useMemo(() => wrapBareFilePaths(content), [content]);
+
+  const needsMath = mayContainMath(processedContent);
+  const [katexPlugins, setKatexPlugins] = useState<any[] | null>(() => cachedKatexPlugins);
+  useEffect(() => {
+    if (!needsMath || katexPlugins) return;
+    let cancelled = false;
+    loadKatexPlugins().then((plugins) => {
+      if (!cancelled && plugins) setKatexPlugins(plugins);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsMath, katexPlugins]);
+  const rehypePlugins = katexPlugins ?? BASE_REHYPE_PLUGINS;
 
   // Stable components object — only recreated if `t` or resolveBase changes
   const components = useMemo(() => ({
@@ -554,7 +593,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
       <MarkdownErrorBoundary fallback={content}>
         <Markdown
           remarkPlugins={remarkPlugins}
-          rehypePlugins={REHYPE_PLUGINS}
+          rehypePlugins={rehypePlugins}
           components={components}
         >
           {processedContent}

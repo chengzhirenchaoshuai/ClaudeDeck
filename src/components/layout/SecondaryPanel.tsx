@@ -1,9 +1,12 @@
+import { lazy, Suspense } from 'react';
 import { useSettingsStore, SecondaryPanelTab } from '../../stores/settingsStore';
 import { FileExplorer } from '../files/FileExplorer';
-import { SkillsPanel } from '../skills/SkillsPanel';
-import { PluginsPanel } from '../plugins/PluginsPanel';
 import { PreviewPanel } from '../preview/PreviewPanel';
 import { useT } from '../../lib/i18n';
+
+// 技能、插件面板切到对应标签页时才加载
+const SkillsPanel = lazy(() => import('../skills/SkillsPanel').then((m) => ({ default: m.SkillsPanel })));
+const PluginsPanel = lazy(() => import('../plugins/PluginsPanel').then((m) => ({ default: m.PluginsPanel })));
 
 const tabs: { id: SecondaryPanelTab; labelKey: string; icon: string }[] = [
   { id: 'files', labelKey: 'panel.files', icon: 'M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3z' },
@@ -60,8 +63,10 @@ export function SecondaryPanel() {
       <div className="flex-1 overflow-hidden">
         {activeTab === 'files' && <FileExplorer />}
         {activeTab === 'preview' && <PreviewPanel />}
-        {activeTab === 'skills' && <SkillsPanel />}
-        {activeTab === 'plugins' && <PluginsPanel />}
+        <Suspense fallback={null}>
+          {activeTab === 'skills' && <SkillsPanel />}
+          {activeTab === 'plugins' && <PluginsPanel />}
+        </Suspense>
       </div>
     </div>
   );

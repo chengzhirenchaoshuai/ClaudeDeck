@@ -1,7 +1,9 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState, lazy, Suspense } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useFileStore } from '../../stores/fileStore';
-import { FilePreview } from '../files/FilePreview';
+
+// 文件预览带 CodeMirror 及各语言包（体积最大的一块），按需加载
+const FilePreview = lazy(() => import('../files/FilePreview').then((m) => ({ default: m.FilePreview })));
 
 interface AppShellProps {
   sidebar: React.ReactNode;
@@ -33,6 +35,9 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
   /* File preview state — when a file is selected, we enter "preview mode" */
   const selectedFile = useFileStore((s) => s.selectedFile);
   const isFilePreviewMode = !!selectedFile;
+  // 首次进入预览模式时才挂载 FilePreview（触发加载），之后保持挂载以保留收起动画
+  const [previewMounted, setPreviewMounted] = useState(false);
+  if (isFilePreviewMode && !previewMounted) setPreviewMounted(true);
 
   // 拖动调整宽度期间关闭面板的宽度动画：外层容器有 300ms 宽度过渡而内容宽度是即时的，
   // 不关的话拖动时内容先变、外框再慢慢跟上，看起来像分两段
@@ -269,7 +274,11 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       >
         <div className="h-full overflow-hidden flex flex-col bg-bg-chat"
           style={{ width: `${previewWidth}px` }}>
-          <FilePreview />
+          {previewMounted && (
+            <Suspense fallback={null}>
+              <FilePreview />
+            </Suspense>
+          )}
         </div>
       </div>
 
