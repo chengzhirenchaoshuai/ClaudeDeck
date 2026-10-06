@@ -223,12 +223,6 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
 
   return (
     <div className="flex h-full w-full overflow-hidden gradient-bg">
-      {/* Drag region — data-tauri-drag-region handles both drag and double-click-to-maximize natively */}
-      <div
-        data-tauri-drag-region
-        className="fixed top-0 left-0 right-0 h-[28px] z-50"
-      />
-
       {/* Sidebar — animates to w-0 when hidden or preview mode */}
       <div
         className={`flex-shrink-0 overflow-hidden ${panelTransition}`}

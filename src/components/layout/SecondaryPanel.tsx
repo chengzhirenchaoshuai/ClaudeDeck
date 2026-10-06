@@ -25,9 +25,9 @@ export function SecondaryPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tab bar — extra top padding for macOS traffic lights */}
+      {/* Tab bar — 底边与聊天顶栏对齐 */}
       <div
-        className="flex items-center justify-between px-2 pt-6 pb-2
+        className="flex items-center justify-between px-2 pt-1 pb-2
         border-b border-border-subtle cursor-default">
         <div className="flex gap-1 min-w-0 overflow-hidden">
           {tabs.map((tab) => (

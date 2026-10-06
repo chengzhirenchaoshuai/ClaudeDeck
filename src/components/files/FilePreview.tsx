@@ -287,8 +287,8 @@ export function FilePreview() {
 
   return (
     <div className="flex flex-col h-full bg-bg-primary" onKeyDown={handleKeyDown}>
-      {/* Header bar — pt-6 for macOS traffic lights, z-10 above iframe content */}
-      <div className="flex items-center justify-between px-3 pt-6 pb-2
+      {/* Header bar — 底边与聊天顶栏对齐，z-10 above iframe content */}
+      <div className="flex items-center justify-between px-3 pt-1 pb-2
         border-b border-border-subtle bg-bg-secondary/50 flex-shrink-0 relative z-10">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <FileIcon name={fileName} size={16} className="flex-shrink-0 text-text-muted" />
