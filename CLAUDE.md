@@ -9,7 +9,6 @@ ClaudeDeck：Claude Code CLI 的桌面 GUI（个人自用，fork 自 TOKENICODE�
 pnpm install
 pnpm dev:app                             # 开发版（前端热更新、Rust 自动重编译；可与正式版同时运行）
 pnpm tauri build                         # 构建
-EDITION=alpha pnpm tauri build --config src-tauri/tauri.alpha.conf.json   # alpha 版
 pnpm build                               # tsc + vite build
 pnpm vitest run                          # 测试在 src/**/__tests__/
 cd src-tauri && cargo check && cargo clippy
@@ -29,14 +28,13 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - **回溯**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
 - **流解析**：`useStreamProcessor.ts` 的 `handleStreamMessage` 逐行解析 NDJSON，按 stdinId 路由到所属标签页，前台、后台共用一套逻辑；依赖 InputBar 的 ref、`agentStore`（只存当前标签页）或当前选中标签页的动作用 `isForeground` 限定在前台。 消息类型见 `src/lib/stream-message.ts`（依据 Agent SDK 的 `SDKMessage`）：**实时 stream-json 用蛇形字段（如 `compact_metadata.pre_tokens`），磁盘会话 JSONL 用驼峰（`compactMetadata.preTokens`）**，两者不要混用。各会话的流监听器经 `src/lib/stream-listeners.ts` 登记/释放。
 - **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `config/providers.json`。
-- **数据目录**：统一在 `%APPDATA%/ClaudeDeck/`（`src-tauri/src/app_paths.rs`）：`config/` 配置、`cache/` 缓存、`tools/` 自动安装的 CLI/Git/Node、`webview/` WebView2 数据（alpha 为 `webview-alpha`，debug 构建自动加 `-dev`）。主窗口在配置里 `create: false`，由 `setup` 指定数据目录创建；新窗口也必须在后端用 `data_directory` 创建。首次启动自动从 `~/.tokenicode` 和 `%LOCALAPPDATA%/<identifier>/EBWebView` 复制迁移。例外：会话名称留在 CLI 配置目录（远程客户端共享），附件在 `<项目>/.tokenicode/tmp`。
+- **数据目录**：统一在 `%APPDATA%/ClaudeDeck/`（`src-tauri/src/app_paths.rs`）：`config/` 配置、`cache/` 缓存、`tools/` 自动安装的 CLI/Git/Node、`webview/` WebView2 数据（debug 构建自动加 `-dev`）。主窗口在配置里 `create: false`，由 `setup` 指定数据目录创建；新窗口也必须在后端用 `data_directory` 创建。首次启动自动从 `~/.tokenicode` 和 `%LOCALAPPDATA%/<identifier>/EBWebView` 复制迁移。例外：会话名称留在 CLI 配置目录（远程客户端共享），附件在 `<项目>/.tokenicode/tmp`。
 - **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`）；`decode_project_name()` 靠逐段匹配文件系统还原，连字符有歧义。CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。
-- **双版本**：`EDITION` 环境变量注入 `__APP_EDITION__`/`__APP_NAME__`（`vite.config.ts`、`src/lib/edition.ts`）；alpha 有独立 identifier 和图标。
 - **发布**：只维护 Windows 版，本地 `pnpm tauri build`（只出 MSI），连同 `target/release/claudedeck.exe`（免安装版）用 `gh release create` 上传到 `chengzhirenchaoshuai/ClaudeDeck`（步骤见 README），无 CI。
 
 ## 约定
 
-- 素材统一放在 `assets/`：`icons/`（应用图标 + 托盘图标）、`icons-alpha/`、`public/`（Vite publicDir）。
+- 素材统一放在 `assets/`：`icons/`（应用图标 + 托盘图标）、`public/`（Vite publicDir）。
 - 面向用户的文案全部走 `src/lib/i18n.ts`（zh/en，默认 zh）。
 - 代码中残留的 `tokenicode` 命名（事件名、`tokenicode_session_names.json`、项目内 `.tokenicode/tmp`）是为兼容已有用户数据，不要改名。
 - Windows：`.cmd`/`.bat` 需经 `cmd /C` 启动，子进程要加 CREATE_NO_WINDOW。

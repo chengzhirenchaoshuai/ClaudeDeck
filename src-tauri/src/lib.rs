@@ -479,7 +479,7 @@ pub fn run() {
                 .cloned()
                 .ok_or("tauri.conf.json 中缺少主窗口配置")?;
             let mut main_window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
-                .data_directory(app_paths::webview_dir(&identifier)?);
+                .data_directory(app_paths::webview_dir()?);
             // 开发版标题加后缀，和同时运行的正式版区分开
             if cfg!(debug_assertions) {
                 main_window = main_window.title(format!("{} Dev", window_config.title));

@@ -6,7 +6,6 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { ConversationList } from '../conversations/ConversationList';
 import { useT } from '../../lib/i18n';
 import { useAgentStore } from '../../stores/agentStore';
-import { IS_ALPHA } from '../../lib/edition';
 import { EnvSwitcher, RemotePathInput } from './EnvSwitcher';
 import { LOCAL_ENV } from '../../lib/remote';
 import { refreshAll } from '../../lib/session-sync';
@@ -72,32 +71,20 @@ export function Sidebar() {
       <div
         className="flex items-center justify-between mb-6 px-5 cursor-default">
         <div className="flex items-center">
-          {IS_ALPHA ? (
-            <>
-              <span className="text-[14px] font-bold tracking-tight text-text-primary">
-                CD<span style={{color: 'var(--color-accent)'}}>/</span>Alpha
-              </span>
-              <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase
-                bg-accent/15 text-accent leading-none">
-                alpha
-              </span>
-            </>
-          ) : (
-            /* Text logo — Claude/Deck, slash uses theme accent */
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => toggleUsage('activity')}
-                className="rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
-                title="活动记录"
-              >
-                <img src="/app-icon.png" alt="" className="w-8 h-8 rounded-lg shadow-sm" />
-              </button>
-              <span className="text-[18px] font-bold tracking-wide text-text-primary">
-                Claude<span className="text-accent">/</span>Deck
-              </span>
-              <span className="text-[16px] text-success">♧</span>
-            </div>
-          )}
+          {/* Text logo — Claude/Deck, slash uses theme accent */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => toggleUsage('activity')}
+              className="rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
+              title="活动记录"
+            >
+              <img src="/app-icon.png" alt="" className="w-8 h-8 rounded-lg shadow-sm" />
+            </button>
+            <span className="text-[18px] font-bold tracking-wide text-text-primary">
+              Claude<span className="text-accent">/</span>Deck
+            </span>
+            <span className="text-[16px] text-success">♧</span>
+          </div>
         </div>
         <button onClick={toggleSidebar}
           className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary

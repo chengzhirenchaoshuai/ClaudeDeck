@@ -34,12 +34,6 @@ pnpm dev:app        # 开发模式：前端热更新、后端自动重编译，�
 pnpm tauri build    # 打包，产物在 src-tauri/target/release/bundle/
 ```
 
-alpha 版（独立 identifier 与图标，可与正式版并存）：
-
-```bash
-EDITION=alpha pnpm tauri build --config src-tauri/tauri.alpha.conf.json
-```
-
 ### 发布
 
 本地打包后上传到 GitHub Release（需要已登录的 [gh](https://cli.github.com)）：

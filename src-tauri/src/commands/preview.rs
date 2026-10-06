@@ -75,7 +75,7 @@ pub(crate) async fn open_browser_window(app: AppHandle, url: String) -> Result<(
         return Err("只支持 http/https 网址".to_string());
     }
     let label = format!("browser-{}", uuid::Uuid::new_v4().simple());
-    let data_dir = app_paths::webview_dir(&app.config().identifier)?;
+    let data_dir = app_paths::webview_dir()?;
     tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
         .title(&url)
         .inner_size(1100.0, 760.0)

@@ -51,12 +51,9 @@ pub fn cache_path(name: &str) -> Result<PathBuf, String> {
 }
 
 /// WebView2 数据目录。同一目录不能被两个运行中的实例同时使用，
-/// 所以 alpha 版、开发版（debug 构建）各用一个独立目录。
-pub fn webview_dir(identifier: &str) -> Result<PathBuf, String> {
+/// 所以开发版（debug 构建）用独立目录，可与正式版同时运行。
+pub fn webview_dir() -> Result<PathBuf, String> {
     let mut name = String::from("webview");
-    if identifier.ends_with(".alpha") {
-        name.push_str("-alpha");
-    }
     if cfg!(debug_assertions) {
         name.push_str("-dev");
     }
@@ -90,7 +87,7 @@ pub fn migrate_legacy(identifier: &str) {
         }
     }
 
-    let Ok(webview) = webview_dir(identifier) else { return };
+    let Ok(webview) = webview_dir() else { return };
     let new_ebw = webview.join("EBWebView");
     if !new_ebw.exists() {
         if let Some(old_ebw) = dirs::data_local_dir().map(|d| d.join(identifier).join("EBWebView")) {
