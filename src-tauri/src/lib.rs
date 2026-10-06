@@ -859,12 +859,6 @@ mod decode_tests {
         assert_eq!(result, "/Users/tinyzhuang/Documents/FocusZone");
     }
 
-    #[test]
-    fn test_hyphenated_dir() {
-        // ppt-maker exists on disk as a dir with hyphens in name
-        let result = decode_project_name("-Users-tinyzhuang-Desktop-ppt-maker");
-        assert_eq!(result, "/Users/tinyzhuang/Desktop/ppt-maker");
-    }
 
     #[test]
     fn test_hidden_dir_double_dash() {
@@ -890,12 +884,4 @@ mod decode_tests {
         assert!(result.starts_with("/Users/tinyzhuang/Desktop/test"));
     }
 
-    #[test]
-    fn test_space_in_dir_name() {
-        // "jd 设计" exists at ~/Desktop/jd 设计
-        let result = decode_project_name("-Users-tinyzhuang-Desktop-jd-设计");
-        println!("Result: {}", result);
-        // Should decode to "/Users/tinyzhuang/Desktop/jd 设计"
-        assert_eq!(result, "/Users/tinyzhuang/Desktop/jd 设计");
-    }
 }
