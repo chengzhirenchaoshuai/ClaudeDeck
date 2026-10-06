@@ -87,16 +87,20 @@ pub(crate) async fn rewind_files(
         ));
     }
 
-    let claude_bin = find_claude_binary().unwrap_or_else(|| {
-        {
-            "claude.cmd".to_string()
-        }
-    });
+    let claude_bin = find_claude_binary().unwrap_or_else(|| "claude.cmd".to_string());
 
     let enriched_path = build_enriched_path();
 
-    let mut rewind_cmd = tokio::process::Command::new(&claude_bin);
-    rewind_cmd.args(&["--resume", &session_id, "--rewind-files", &checkpoint_uuid])
+    // .cmd/.bat 需经 cmd /C 启动；不弹出控制台窗口
+    let mut rewind_cmd = if claude_needs_cmd_wrapper(&claude_bin) {
+        let mut c = tokio::process::Command::new("cmd");
+        c.arg("/C").arg(&claude_bin);
+        c
+    } else {
+        tokio::process::Command::new(&claude_bin)
+    };
+    rewind_cmd.creation_flags(0x08000000);
+    rewind_cmd.args(["--resume", &session_id, "--rewind-files", &checkpoint_uuid])
         .current_dir(&cwd)
         .env("PATH", &enriched_path)
         .env("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1")
