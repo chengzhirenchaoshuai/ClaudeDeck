@@ -1,6 +1,8 @@
 pub mod claude_process;
 pub mod cli_resolver;
 pub mod remote;
+pub mod network;
+pub mod session_process;
 pub mod files;
 pub mod sessions;
 pub mod toolchain;

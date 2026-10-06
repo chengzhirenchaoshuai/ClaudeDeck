@@ -19,7 +19,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 ## 架构要点
 
 - **IPC**：前端调用后端一律经 `src/lib/tauri-bridge.ts`；后端到前端用事件 `claude:stream|stderr|exit|permission_request:{stdinId}`、`fs:change`、`setup:*`。
-- **后端**：命令几乎都在 `src-tauri/src/lib.rs`（约 9000 行，列表见 `generate_handler!`）；`commands/claude_process.rs`（ProcessManager/StdinManager）、`commands/cli_resolver.rs`（CLI 查找/诊断/固定版本）、`commands/remote.rs`（SSH 远程）、`protocol.rs`（SDK 控制协议类型）。
+- **后端**：`src-tauri/src/lib.rs` 只留公共辅助（找 CLI、PATH、配置目录、JSON 截断）、托盘与 `run()`（命令列表见 `generate_handler!`）；命令按领域分在 `commands/`：`session_process`（启动会话/stdin/权限/控制请求）、`claude_process`（ProcessManager/StdinManager）、`sessions`（会话列表/搜索/导出/元数据/标题）、`files`、`providers`、`skills`、`cli_setup`（CLI 安装/更新/登录）、`cli_resolver`（CLI 查找/诊断/固定版本）、`toolchain`（Node/Git 部署）、`network`（代理与 HTTP 客户端）、`usage`、`git`、`local_models`、`preview`、`remote`（SSH 远程）；`protocol.rs` 为 SDK 控制协议类型。新模块以 `use crate::*;` 继承根模块导入，条目用 `pub(crate)`。
 - **CLI 进程**：首条消息由 `start_claude_session` 启动 CLI（`--input-format/--output-format stream-json --verbose --include-partial-messages --replay-user-messages --permission-mode <mode> --permission-prompt-tool stdio --settings <JSON>`，可选 `--resume` / `--resume-session-at --fork-session` / `--model`）；后续消息经 StdinManager 写 stdin，不新建进程。
 - **SDK 控制协议**：权限请求（`can_use_tool`）由 Rust 拦截后发给前端 `PermissionCard`，响应经 stdin 回写；运行时 `set_permission_mode`、`set_model`、`interrupt`、`rewind_files` 同样走 stdin。bypass 模式也走此协议，只是 CLI 自动批准工具权限。
 - **模式映射**：`code/ask/plan/bypass` → `acceptEdits/default/plan/bypassPermissions`（`mapSessionModeToPermissionMode()`）。
@@ -46,8 +46,8 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 
 | 现象 | 位置 |
 |------|------|
-| 消息不显示/流卡住 | `useStreamProcessor.ts`、`chatStore.ts`、`lib.rs` 的 stdout 读取循环 |
-| 发送无响应/恢复失败 | `InputBar.tsx`、`tauri-bridge.ts`、`lib.rs` 的 `start_claude_session` |
+| 消息不显示/流卡住 | `useStreamProcessor.ts`、`chatStore.ts`、`session_process.rs` 的 stdout 读取循环 |
+| 发送无响应/恢复失败 | `InputBar.tsx`、`tauri-bridge.ts`、`session_process.rs` 的 `start_claude_session` |
 | 权限弹窗 | `PermissionCard.tsx`、`protocol.rs`、`respond_permission` |
 | 切标签丢状态 | `chatStore.ts`/`agentStore.ts` 的缓存方法 |
 | 服务商/API | `providerStore.ts`、`api-provider.ts`、`test_provider_connection` |
