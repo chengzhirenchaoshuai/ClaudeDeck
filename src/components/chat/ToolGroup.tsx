@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { type ChatMessage } from '../../stores/chatStore';
-import { ToolUseMsg } from './MessageBubble';
+import { ToolUseMsg } from './ToolMessages';
 import { useT } from '../../lib/i18n';
 
 interface Props {
