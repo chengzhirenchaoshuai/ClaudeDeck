@@ -298,24 +298,27 @@ export function InputBar() {
 
   const { files, setFiles, isProcessing, addFiles, removeFile, clearFiles } = useFileAttachments();
 
-  // Sync files → store.pendingAttachments so tab switch can persist them
+  // 本地 files 与 store.pendingAttachments 双向同步（切换标签页时保留附件）。
+  // 用 lastSyncedRef 记住最近一次同步过的数组：同一个值不再反向写回。
+  // 否则同一次渲染里两边都变了（如发送后清空附件 + 同时切换/改名标签页）时，
+  // 两个 effect 会把两个值来回互换，形成无限更新（Maximum update depth exceeded）。
+  // 初始值取挂载时的 files：挂载那一刻不把空数组写进 store，而是由下面的 effect 从 store 恢复
+  const lastSyncedRef = useRef(files);
   const setPendingAttachmentsStore = useChatStore((s) => s.setPendingAttachments);
   useEffect(() => {
+    if (files === lastSyncedRef.current) return;
+    lastSyncedRef.current = files;
     const tid = useSessionStore.getState().selectedSessionId;
     if (tid) setPendingAttachmentsStore(tid, files);
   }, [files, setPendingAttachmentsStore]);
 
-  // Restore files from store when tab switches back (pendingAttachments → local files)
+  // 标签页切换回来时从 store 恢复附件（pendingAttachments → 本地 files）
   const pendingAttachments = useActiveTab((t) => t.pendingAttachments);
-  const prevAttachmentsRef = useRef(pendingAttachments);
   useEffect(() => {
-    // Only restore when store value changes externally (e.g. restoreFromCache)
-    // and differs from current files
-    if (prevAttachmentsRef.current !== pendingAttachments && pendingAttachments !== files) {
-      setFiles(pendingAttachments);
-    }
-    prevAttachmentsRef.current = pendingAttachments;
-  }, [pendingAttachments, setFiles]); // intentionally exclude `files` to avoid loop
+    if (pendingAttachments === lastSyncedRef.current) return;
+    lastSyncedRef.current = pendingAttachments;
+    setFiles(pendingAttachments);
+  }, [pendingAttachments, setFiles]);
 
   // Inline file insertion: drop or drag → insert a file chip at cursor
   useEffect(() => {
