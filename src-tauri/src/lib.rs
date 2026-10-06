@@ -31,6 +31,19 @@ fn claude_needs_cmd_wrapper(bin: &str) -> bool {
 }
 
 /// Strip ANSI escape sequences from a string (terminal color/cursor codes).
+/// 逐行读取 JSONL：跳过不是合法 UTF-8 的坏行，遇到真正的 I/O 错误则停止读取
+/// （`lines().flatten()` 在持续出错时会无限循环，`map_while(Result::ok)` 又会因一行坏数据丢掉后面全部内容）。
+fn jsonl_lines<R: std::io::BufRead>(reader: R) -> impl Iterator<Item = String> {
+    reader
+        .lines()
+        .map_while(|line| match line {
+            Ok(l) => Some(Some(l)),
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => Some(None),
+            Err(_) => None,
+        })
+        .flatten()
+}
+
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -216,46 +229,44 @@ pub(crate) fn build_enriched_path() -> String {
     }
 
     // App-local Git (PortableGit) bin directory (Windows only)
-    {
-        if let Ok(git_dir) = git_download_dir() {
-            let git_bin = git_dir.join("bin");
-            if git_bin.exists() {
-                paths.push(git_bin.to_string_lossy().to_string());
-            }
-            // Also add cmd/ for git.exe
-            let git_cmd = git_dir.join("cmd");
-            if git_cmd.exists() {
-                paths.push(git_cmd.to_string_lossy().to_string());
-            }
-            // Also add usr/bin/ for cygpath.exe (required by Claude CLI for path conversion)
-            let git_usr_bin = git_dir.join("usr").join("bin");
-            if git_usr_bin.exists() {
-                paths.push(git_usr_bin.to_string_lossy().to_string());
-            }
+    if let Ok(git_dir) = git_download_dir() {
+        let git_bin = git_dir.join("bin");
+        if git_bin.exists() {
+            paths.push(git_bin.to_string_lossy().to_string());
         }
+        // Also add cmd/ for git.exe
+        let git_cmd = git_dir.join("cmd");
+        if git_cmd.exists() {
+            paths.push(git_cmd.to_string_lossy().to_string());
+        }
+        // Also add usr/bin/ for cygpath.exe (required by Claude CLI for path conversion)
+        let git_usr_bin = git_dir.join("usr").join("bin");
+        if git_usr_bin.exists() {
+            paths.push(git_usr_bin.to_string_lossy().to_string());
+        }
+    }
 
-        // Also check system-installed Git (not just app-local PortableGit)
-        // to find usr/bin/cygpath.exe which Claude CLI needs for path conversion.
-        if let Some(git_bash_path) = find_git_bash() {
-            // git_bash_path is like "D:\Program Files\Git\bin\bash.exe"
-            // We need the parent's parent to get the Git root, then add usr/bin
-            let bash_path = std::path::Path::new(&git_bash_path);
-            if let Some(git_root) = bash_path.parent().and_then(|p| p.parent()) {
-                let usr_bin = git_root.join("usr").join("bin");
-                if usr_bin.exists() {
-                    let usr_bin_str = usr_bin.to_string_lossy().to_string();
-                    if !paths.contains(&usr_bin_str) {
-                        paths.push(usr_bin_str);
-                    }
+    // Also check system-installed Git (not just app-local PortableGit)
+    // to find usr/bin/cygpath.exe which Claude CLI needs for path conversion.
+    if let Some(git_bash_path) = find_git_bash() {
+        // git_bash_path is like "D:\Program Files\Git\bin\bash.exe"
+        // We need the parent's parent to get the Git root, then add usr/bin
+        let bash_path = std::path::Path::new(&git_bash_path);
+        if let Some(git_root) = bash_path.parent().and_then(|p| p.parent()) {
+            let usr_bin = git_root.join("usr").join("bin");
+            if usr_bin.exists() {
+                let usr_bin_str = usr_bin.to_string_lossy().to_string();
+                if !paths.contains(&usr_bin_str) {
+                    paths.push(usr_bin_str);
                 }
-                // Also ensure Git bin/ and cmd/ are in PATH
-                for sub in &["bin", "cmd"] {
-                    let dir = git_root.join(sub);
-                    if dir.exists() {
-                        let dir_str = dir.to_string_lossy().to_string();
-                        if !paths.contains(&dir_str) {
-                            paths.push(dir_str);
-                        }
+            }
+            // Also ensure Git bin/ and cmd/ are in PATH
+            for sub in &["bin", "cmd"] {
+                let dir = git_root.join(sub);
+                if dir.exists() {
+                    let dir_str = dir.to_string_lossy().to_string();
+                    if !paths.contains(&dir_str) {
+                        paths.push(dir_str);
                     }
                 }
             }
@@ -263,80 +274,78 @@ pub(crate) fn build_enriched_path() -> String {
     }
 
     if let Some(home) = dirs::home_dir() {
-        {
-            if let Some(app_data) = dirs::data_dir() {
-                paths.push(app_data.join("npm").to_string_lossy().to_string());
-            }
-            if let Some(local_app) = dirs::data_local_dir() {
-                paths.push(
-                    local_app
-                        .join("Programs")
-                        .join("claude-code")
-                        .to_string_lossy()
-                        .to_string(),
-                );
-            }
+        if let Some(app_data) = dirs::data_dir() {
+            paths.push(app_data.join("npm").to_string_lossy().to_string());
+        }
+        if let Some(local_app) = dirs::data_local_dir() {
             paths.push(
-                home.join("scoop")
-                    .join("shims")
+                local_app
+                    .join("Programs")
+                    .join("claude-code")
                     .to_string_lossy()
                     .to_string(),
             );
-            paths.push(
-                home.join(".cargo")
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            paths.push(
-                home.join(".volta")
-                    .join("bin")
-                    .to_string_lossy()
-                    .to_string(),
-            );
+        }
+        paths.push(
+            home.join("scoop")
+                .join("shims")
+                .to_string_lossy()
+                .to_string(),
+        );
+        paths.push(
+            home.join(".cargo")
+                .join("bin")
+                .to_string_lossy()
+                .to_string(),
+        );
+        paths.push(
+            home.join(".volta")
+                .join("bin")
+                .to_string_lossy()
+                .to_string(),
+        );
 
-            // nvm-windows: version dirs inside %NVM_HOME% (or %APPDATA%\nvm)
-            let nvm_home = std::env::var("NVM_HOME")
-                .map(std::path::PathBuf::from)
-                .or_else(|_| dirs::config_dir().map(|d| d.join("nvm")).ok_or(()))
-                .ok();
-            if let Some(ref nvm_dir) = nvm_home {
-                if nvm_dir.is_dir() {
-                    if let Ok(entries) = std::fs::read_dir(nvm_dir) {
-                        let mut version_dirs: Vec<std::path::PathBuf> = entries
-                            .flatten()
-                            .filter(|e| {
-                                e.path().is_dir()
-                                    && e.file_name().to_string_lossy().starts_with('v')
-                            })
-                            .map(|e| e.path())
-                            .collect();
-                        version_dirs.sort();
-                        if let Some(latest) = version_dirs.last() {
-                            paths.push(latest.to_string_lossy().to_string());
-                        }
+        // nvm-windows: version dirs inside %NVM_HOME% (or %APPDATA%\nvm)
+        let nvm_home = std::env::var("NVM_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|_| dirs::config_dir().map(|d| d.join("nvm")).ok_or(()))
+            .ok();
+        if let Some(ref nvm_dir) = nvm_home {
+            if nvm_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(nvm_dir) {
+                    let mut version_dirs: Vec<std::path::PathBuf> = entries
+                        .flatten()
+                        .filter(|e| {
+                            e.path().is_dir()
+                                && e.file_name().to_string_lossy().starts_with('v')
+                        })
+                        .map(|e| e.path())
+                        .collect();
+                    version_dirs.sort();
+                    if let Some(latest) = version_dirs.last() {
+                        paths.push(latest.to_string_lossy().to_string());
                     }
                 }
             }
-            // nvm-windows symlink (typically C:\Program Files\nodejs)
-            if let Ok(symlink) = std::env::var("NVM_SYMLINK") {
-                paths.push(symlink);
-            }
+        }
+        // nvm-windows symlink (typically C:\Program Files\nodejs)
+        if let Ok(symlink) = std::env::var("NVM_SYMLINK") {
+            paths.push(symlink);
+        }
 
-            // fnm on Windows
-            paths.push(
-                home.join(".fnm")
-                    .join("aliases")
-                    .join("default")
-                    .to_string_lossy()
-                    .to_string(),
-            );
+        // fnm on Windows
+        paths.push(
+            home.join(".fnm")
+                .join("aliases")
+                .join("default")
+                .to_string_lossy()
+                .to_string(),
+        );
 
-            // Standard Node.js install path
-            if let Ok(pf) = std::env::var("ProgramFiles") {
-                let node_path = format!("{}\\nodejs", pf);
-                paths.push(node_path);
-            }
+        // Standard Node.js install path
+        if let Ok(pf) = std::env::var("ProgramFiles") {
+            let node_path = format!("{}\\nodejs", pf);
+            paths.push(node_path);
         }
     }
 

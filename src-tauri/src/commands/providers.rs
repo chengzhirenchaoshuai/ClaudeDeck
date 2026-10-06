@@ -253,10 +253,9 @@ pub(crate) fn provider_messages_endpoint(base_url: &str, api_format: &str) -> St
     let base = base_url.trim().trim_end_matches('/');
     let lower = base.to_lowercase();
     if api_format.eq_ignore_ascii_case("openai") {
+        // 已是完整地址则原样使用，否则（包括以 /v1 结尾的）补上 /chat/completions
         if lower.ends_with("/chat/completions") {
             base.to_string()
-        } else if lower.ends_with("/v1") {
-            format!("{}/chat/completions", base)
         } else {
             format!("{}/chat/completions", base)
         }
@@ -406,7 +405,7 @@ pub(crate) async fn test_provider_connection(
                         StepResult { ok: false, message: format!("HTTP 403 — {}", text.chars().take(200).collect::<String>()) },
                     )
                 }
-            } else if status >= 200 && status < 300 {
+            } else if (200..300).contains(&status) {
                 (
                     StepResult { ok: true, message: format!("Authenticated (HTTP {})", status) },
                     StepResult { ok: true, message: format!("Model OK (HTTP {})", status) },
@@ -446,11 +445,14 @@ pub(crate) async fn test_provider_connection(
     })
 }
 
+/// (extra_env, keys_to_remove, extra_args)
+pub(crate) type ProviderEnv = (HashMap<String, String>, Vec<String>, Vec<String>);
+
 /// Resolve provider env vars and CLI args from a provider_id.
 /// Returns (extra_env, keys_to_remove, extra_args).
 pub(crate) fn resolve_provider_env(
     provider_id: Option<&str>,
-) -> Result<(HashMap<String, String>, Vec<String>, Vec<String>), String> {
+) -> Result<ProviderEnv, String> {
     let Some(pid) = provider_id else {
         return Ok((HashMap::new(), vec![], vec![]));
     };

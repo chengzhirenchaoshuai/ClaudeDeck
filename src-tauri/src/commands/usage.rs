@@ -123,7 +123,7 @@ pub(crate) fn compute_usage_stats() -> Result<Value, String> {
             };
             for child in children.flatten() {
                 let path = child.path();
-                if !path.extension().map_or(false, |e| e == "jsonl") {
+                if !path.extension().is_some_and(|e| e == "jsonl") {
                     continue;
                 }
                 let stem = path
@@ -241,8 +241,6 @@ pub(crate) fn cache_creation_tokens(usage: &Value) -> u64 {
 #[tauri::command]
 pub(crate) async fn get_profile_stats() -> Result<Value, String> {
     use std::collections::{HashMap, HashSet};
-    use std::io::BufRead;
-
     let claude_dir = claude_projects_dir()?;
     if !claude_dir.exists() {
         return Ok(serde_json::json!({
@@ -279,7 +277,7 @@ pub(crate) async fn get_profile_stats() -> Result<Value, String> {
             };
             for file in files.flatten() {
                 let path = file.path();
-                if !path.extension().map_or(false, |e| e == "jsonl") {
+                if !path.extension().is_some_and(|e| e == "jsonl") {
                     continue;
                 }
                 let Some(name) = path.file_stem() else {
@@ -297,7 +295,7 @@ pub(crate) async fn get_profile_stats() -> Result<Value, String> {
                 let reader = std::io::BufReader::new(file);
                 let mut seen_message_ids: HashSet<String> = HashSet::new();
 
-                for line in reader.lines().flatten() {
+                for line in jsonl_lines(reader) {
                     let Ok(value) = serde_json::from_str::<Value>(&line) else {
                         continue;
                     };
@@ -368,7 +366,7 @@ pub(crate) async fn get_profile_stats() -> Result<Value, String> {
     let peak_day_tokens = daily_values.iter().map(|d| d.total_tokens).max().unwrap_or(0);
 
     let mut model_values: Vec<ProfileModelStats> = models.into_values().collect();
-    model_values.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    model_values.sort_by_key(|m| std::cmp::Reverse(m.total_tokens));
     model_values.truncate(8);
 
     Ok(serde_json::json!({

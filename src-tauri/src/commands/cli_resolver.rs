@@ -83,16 +83,14 @@ pub fn is_native_binary(path: &Path) -> bool {
     if !path.exists() {
         return false;
     }
-    {
-        if let Ok(mut f) = std::fs::File::open(path) {
-            use std::io::Read;
-            let mut magic = [0u8; 2];
-            if f.read_exact(&mut magic).is_ok() {
-                return magic == [0x4D, 0x5A]; // MZ (PE header)
-            }
+    if let Ok(mut f) = std::fs::File::open(path) {
+        use std::io::Read;
+        let mut magic = [0u8; 2];
+        if f.read_exact(&mut magic).is_ok() {
+            return magic == [0x4D, 0x5A]; // MZ (PE header)
         }
-        false
     }
+    false
 }
 
 /// Validate that a file is a real, launchable executable.
@@ -100,24 +98,22 @@ pub fn is_valid_executable(path: &Path) -> bool {
     if !path.exists() {
         return false;
     }
-    {
-        // Script wrappers (.cmd, .bat, .ps1) are valid if they exist
-        if let Some(ext) = path.extension() {
-            let ext_lower = ext.to_string_lossy().to_lowercase();
-            if matches!(ext_lower.as_str(), "cmd" | "bat" | "ps1") {
-                return true;
-            }
+    // Script wrappers (.cmd, .bat, .ps1) are valid if they exist
+    if let Some(ext) = path.extension() {
+        let ext_lower = ext.to_string_lossy().to_lowercase();
+        if matches!(ext_lower.as_str(), "cmd" | "bat" | "ps1") {
+            return true;
         }
-        // Binary executables — check MZ magic bytes (PE header)
-        if let Ok(mut f) = std::fs::File::open(path) {
-            use std::io::Read;
-            let mut magic = [0u8; 2];
-            if f.read_exact(&mut magic).is_ok() {
-                return magic == [0x4D, 0x5A];
-            }
-        }
-        false
     }
+    // Binary executables — check MZ magic bytes (PE header)
+    if let Ok(mut f) = std::fs::File::open(path) {
+        use std::io::Read;
+        let mut magic = [0u8; 2];
+        if f.read_exact(&mut magic).is_ok() {
+            return magic == [0x4D, 0x5A];
+        }
+    }
+    false
 }
 
 /// Search a versioned directory for the newest version containing the given binary name.
@@ -206,14 +202,12 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
     if let Some(home) = dirs::home_dir() {
         // ── Tier 0: Official ───────────────────────────────
 
-        {
-            for base_fn in [dirs::data_local_dir, dirs::data_dir] {
-                if let Some(base) = base_fn() {
-                    let vdir = base.join("Claude").join("claude-code");
-                    if let Some(bin) = find_newest_version_bin(&vdir, bin_name) {
-                        if let Some(p) = Path::new(&bin).parent() {
-                            push(p.to_string_lossy().to_string(), CliSource::Official);
-                        }
+        for base_fn in [dirs::data_local_dir, dirs::data_dir] {
+            if let Some(base) = base_fn() {
+                let vdir = base.join("Claude").join("claude-code");
+                if let Some(bin) = find_newest_version_bin(&vdir, bin_name) {
+                    if let Some(p) = Path::new(&bin).parent() {
+                        push(p.to_string_lossy().to_string(), CliSource::Official);
                     }
                 }
             }
@@ -226,37 +220,33 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
 
         // ── Tier 1: System ─────────────────────────────────
 
-        {
-            if let Some(app_data) = dirs::data_dir() {
-                push(
-                    app_data.join("npm").to_string_lossy().to_string(),
-                    CliSource::System,
-                );
-            }
-            if let Some(local_data) = dirs::data_local_dir() {
-                push(
-                    local_data
-                        .join("Programs\\claude-code")
-                        .to_string_lossy()
-                        .to_string(),
-                    CliSource::System,
-                );
-            }
+        if let Some(app_data) = dirs::data_dir() {
             push(
-                home.join("scoop\\shims").to_string_lossy().to_string(),
-                CliSource::System,
-            );
-            push(
-                home.join(".cargo\\bin").to_string_lossy().to_string(),
+                app_data.join("npm").to_string_lossy().to_string(),
                 CliSource::System,
             );
         }
-        {
-            let root = cmd_with_timeout("cmd", &["/C", "npm", "root", "-g"], 3);
-            if !root.is_empty() {
-                if let Some(lib_dir) = Path::new(&root).parent() {
-                    push(lib_dir.to_string_lossy().to_string(), CliSource::System);
-                }
+        if let Some(local_data) = dirs::data_local_dir() {
+            push(
+                local_data
+                    .join("Programs\\claude-code")
+                    .to_string_lossy()
+                    .to_string(),
+                CliSource::System,
+            );
+        }
+        push(
+            home.join("scoop\\shims").to_string_lossy().to_string(),
+            CliSource::System,
+        );
+        push(
+            home.join(".cargo\\bin").to_string_lossy().to_string(),
+            CliSource::System,
+        );
+        let root = cmd_with_timeout("cmd", &["/C", "npm", "root", "-g"], 3);
+        if !root.is_empty() {
+            if let Some(lib_dir) = Path::new(&root).parent() {
+                push(lib_dir.to_string_lossy().to_string(), CliSource::System);
             }
         }
 
@@ -271,34 +261,32 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
 
         // ── Tier 3: Version Managers ───────────────────────
 
-        {
+        push(
+            home.join(".volta\\bin").to_string_lossy().to_string(),
+            CliSource::VersionManager,
+        );
+        push(
+            home.join(".bun\\bin").to_string_lossy().to_string(),
+            CliSource::VersionManager,
+        );
+        // nvm-windows
+        let nvm_dir = std::env::var("NVM_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| dirs::config_dir().map(|d| d.join("nvm")).ok_or(()))
+            .ok()
+            .unwrap_or_else(|| home.join("AppData\\Roaming\\nvm"));
+        if let Some(bin) = find_newest_version_bin(&nvm_dir, bin_name) {
+            if let Some(p) = Path::new(&bin).parent() {
+                push(p.to_string_lossy().to_string(), CliSource::VersionManager);
+            }
+        }
+        // fnm on Windows
+        let fnm_default = home.join(".fnm\\aliases\\default");
+        if fnm_default.exists() {
             push(
-                home.join(".volta\\bin").to_string_lossy().to_string(),
+                fnm_default.to_string_lossy().to_string(),
                 CliSource::VersionManager,
             );
-            push(
-                home.join(".bun\\bin").to_string_lossy().to_string(),
-                CliSource::VersionManager,
-            );
-            // nvm-windows
-            let nvm_dir = std::env::var("NVM_HOME")
-                .map(PathBuf::from)
-                .or_else(|_| dirs::config_dir().map(|d| d.join("nvm")).ok_or(()))
-                .ok()
-                .unwrap_or_else(|| home.join("AppData\\Roaming\\nvm"));
-            if let Some(bin) = find_newest_version_bin(&nvm_dir, bin_name) {
-                if let Some(p) = Path::new(&bin).parent() {
-                    push(p.to_string_lossy().to_string(), CliSource::VersionManager);
-                }
-            }
-            // fnm on Windows
-            let fnm_default = home.join(".fnm\\aliases\\default");
-            if fnm_default.exists() {
-                push(
-                    fnm_default.to_string_lossy().to_string(),
-                    CliSource::VersionManager,
-                );
-            }
         }
     }
 
@@ -312,14 +300,12 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
         }
     }
 
-    {
-        let result = cmd_with_timeout("cmd", &["/C", "where", bin_name], 3);
-        if let Some(line) = result.lines().next() {
-            let p = line.trim().to_string();
-            if !p.is_empty() {
-                if let Some(dir) = Path::new(&p).parent() {
-                    push(dir.to_string_lossy().to_string(), CliSource::Dynamic);
-                }
+    let result = cmd_with_timeout("cmd", &["/C", "where", bin_name], 3);
+    if let Some(line) = result.lines().next() {
+        let p = line.trim().to_string();
+        if !p.is_empty() {
+            if let Some(dir) = Path::new(&p).parent() {
+                push(dir.to_string_lossy().to_string(), CliSource::Dynamic);
             }
         }
     }
@@ -331,9 +317,7 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
 
 /// Binary names to search for, platform-specific.
 fn bin_names() -> &'static [&'static str] {
-    {
-        &["claude.exe", "claude.cmd"]
-    }
+    &["claude.exe", "claude.cmd"]
 }
 
 /// Resolve the best CLI binary, respecting tier priority.
@@ -549,11 +533,9 @@ pub fn cleanup(targets: &[String]) -> CleanupResult {
                 }
             }
             // Windows: npm_global_dir is flat, no lib/node_modules
-            {
-                let claude_pkg_win = npm_dir.join("node_modules").join("@anthropic-ai").join("claude-code");
-                if claude_pkg_win.exists() {
-                    let _ = std::fs::remove_dir_all(&claude_pkg_win);
-                }
+            let claude_pkg_win = npm_dir.join("node_modules").join("@anthropic-ai").join("claude-code");
+            if claude_pkg_win.exists() {
+                let _ = std::fs::remove_dir_all(&claude_pkg_win);
             }
         }
     }

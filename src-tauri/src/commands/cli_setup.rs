@@ -34,11 +34,9 @@ pub(crate) async fn run_claude_command(subcommand: String, cwd: Option<String>) 
     cmd.env("PATH", &enriched_path);
     cmd.env_remove("CLAUDECODE");
     cmd.stdin(Stdio::null());
-    {
-        cmd.creation_flags(0x08000000);
-        // Disable MSYS2 auto path conversion on Windows (Chinese path fix)
-        cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
-    }
+    cmd.creation_flags(0x08000000);
+    // Disable MSYS2 auto path conversion on Windows (Chinese path fix)
+    cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
     if let Some(ref dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -109,10 +107,8 @@ pub(crate) async fn run_claude_plugin_command(args: Vec<String>, cwd: Option<Str
     cmd.env("PATH", &enriched_path);
     cmd.env_remove("CLAUDECODE");
     cmd.stdin(Stdio::null());
-    {
-        cmd.creation_flags(0x08000000);
-        cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
-    }
+    cmd.creation_flags(0x08000000);
+    cmd.env("MSYS_NO_PATHCONV", "1").env("MSYS2_ARG_CONV_EXCL", "*");
     if let Some(ref dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -214,32 +210,30 @@ pub(crate) async fn check_claude_cli() -> Result<CliStatus, String> {
                     eprintln!("check_claude_cli: failed to execute '{}': {}", path, e);
                     // On Windows, error 193 means the binary is corrupt/incompatible.
                     // Delete it and try to find a working alternative.
-                    {
-                        if e.raw_os_error() == Some(193) {
-                            eprintln!("error 193: removing corrupt binary and re-searching...");
-                            if let Some(cli_dir) = cli_download_dir() {
-                                let suspect = cli_dir.join("claude.exe");
-                                if suspect.exists() {
-                                    let _ = std::fs::remove_file(&suspect);
-                                }
+                    if e.raw_os_error() == Some(193) {
+                        eprintln!("error 193: removing corrupt binary and re-searching...");
+                        if let Some(cli_dir) = cli_download_dir() {
+                            let suspect = cli_dir.join("claude.exe");
+                            if suspect.exists() {
+                                let _ = std::fs::remove_file(&suspect);
                             }
-                            let alt = find_claude_binary();
-                            let git_bash_missing = find_git_bash().is_none();
-                            return match alt {
-                                Some(alt_path) => Ok(CliStatus {
-                                    installed: true,
-                                    path: Some(alt_path),
-                                    version: None,
-                                    git_bash_missing,
-                                }),
-                                None => Ok(CliStatus {
-                                    installed: false,
-                                    path: None,
-                                    version: None,
-                                    git_bash_missing: false,
-                                }),
-                            };
                         }
+                        let alt = find_claude_binary();
+                        let git_bash_missing = find_git_bash().is_none();
+                        return match alt {
+                            Some(alt_path) => Ok(CliStatus {
+                                installed: true,
+                                path: Some(alt_path),
+                                version: None,
+                                git_bash_missing,
+                            }),
+                            None => Ok(CliStatus {
+                                installed: false,
+                                path: None,
+                                version: None,
+                                git_bash_missing: false,
+                            }),
+                        };
                     }
                     // TK-319: Binary found but can't be executed → report as not installed
                     let git_bash_missing = find_git_bash().is_none();
@@ -674,7 +668,7 @@ pub(crate) async fn try_native_cli_update(china: bool) -> Result<String, String>
     }
 
     // On Windows the running binary may be locked; try rename, then copy+delete
-    if let Err(_) = std::fs::rename(&tmp_path, &dest_path) {
+    if std::fs::rename(&tmp_path, &dest_path).is_err() {
         std::fs::copy(&tmp_path, &dest_path)
             .map_err(|e| format!("Cannot install binary: {e}"))?;
         let _ = std::fs::remove_file(&tmp_path);
@@ -920,24 +914,22 @@ pub(crate) async fn install_claude_cli(app: AppHandle) -> Result<(), String> {
     let china = is_china_network().await;
 
     // Phase 1 (Windows only): Ensure git-bash is available
-    {
-        if find_git_bash().is_none() {
-            eprintln!("git-bash not found, auto-installing PortableGit...");
-            install_git_bash_inner(&app, china).await.map_err(|e| {
-                format!(
-                    "Failed to install Git for Windows: {}. \
-                     Please install Git for Windows manually: https://git-scm.com/downloads/win",
-                    e
-                )
-            })?;
-        }
+    if find_git_bash().is_none() {
+        eprintln!("git-bash not found, auto-installing PortableGit...");
+        install_git_bash_inner(&app, china).await.map_err(|e| {
+            format!(
+                "Failed to install Git for Windows: {}. \
+                 Please install Git for Windows manually: https://git-scm.com/downloads/win",
+                e
+            )
+        })?;
+    }
 
-        // If CLI is already installed (only git-bash was missing), skip download phases
-        if find_claude_binary().is_some() {
-            eprintln!("CLI already installed, git-bash was the only missing dependency");
-            finalize_cli_install_paths(&app);
-            return Ok(());
-        }
+    // If CLI is already installed (only git-bash was missing), skip download phases
+    if find_claude_binary().is_some() {
+        eprintln!("CLI already installed, git-bash was the only missing dependency");
+        finalize_cli_install_paths(&app);
+        return Ok(());
     }
 
     // Phase 2: Ensure npm is available
@@ -965,79 +957,77 @@ pub(crate) async fn install_claude_cli(app: AppHandle) -> Result<(), String> {
 
 /// Post-install: add relevant directories to Windows user PATH and emit completion.
 pub(crate) fn finalize_cli_install_paths(app: &AppHandle) {
-    {
-        // Collect all directories that should be on PATH
-        let mut dirs_to_add: Vec<String> = vec![];
+    // Collect all directories that should be on PATH
+    let mut dirs_to_add: Vec<String> = vec![];
 
-        if let Some(cli_dir) = cli_download_dir() {
-            dirs_to_add.push(cli_dir.to_string_lossy().to_string());
+    if let Some(cli_dir) = cli_download_dir() {
+        dirs_to_add.push(cli_dir.to_string_lossy().to_string());
+    }
+    if let Some(node_bin) = get_local_node_bin() {
+        dirs_to_add.push(node_bin.to_string_lossy().to_string());
+    }
+    if let Some(npm_bin) = get_npm_global_bin() {
+        dirs_to_add.push(npm_bin.to_string_lossy().to_string());
+    }
+    // Include local PortableGit bin and cmd directories
+    if let Ok(git_dir) = git_download_dir() {
+        let git_bin = git_dir.join("bin");
+        if git_bin.exists() {
+            dirs_to_add.push(git_bin.to_string_lossy().to_string());
         }
-        if let Some(node_bin) = get_local_node_bin() {
-            dirs_to_add.push(node_bin.to_string_lossy().to_string());
+        let git_cmd = git_dir.join("cmd");
+        if git_cmd.exists() {
+            dirs_to_add.push(git_cmd.to_string_lossy().to_string());
         }
-        if let Some(npm_bin) = get_npm_global_bin() {
-            dirs_to_add.push(npm_bin.to_string_lossy().to_string());
-        }
-        // Include local PortableGit bin and cmd directories
-        if let Ok(git_dir) = git_download_dir() {
-            let git_bin = git_dir.join("bin");
-            if git_bin.exists() {
-                dirs_to_add.push(git_bin.to_string_lossy().to_string());
-            }
-            let git_cmd = git_dir.join("cmd");
-            if git_cmd.exists() {
-                dirs_to_add.push(git_cmd.to_string_lossy().to_string());
-            }
-        }
+    }
 
-        for dir in &dirs_to_add {
-            let ps_script = format!(
-                "$old = [Environment]::GetEnvironmentVariable('Path','User'); \
-                 if ($old -and -not $old.Contains('{}')) {{ \
-                   [Environment]::SetEnvironmentVariable('Path', $old + ';{}', 'User') \
-                 }} elseif (-not $old) {{ \
-                   [Environment]::SetEnvironmentVariable('Path', '{}', 'User') \
-                 }}",
-                dir.replace('\'', "''"),
-                dir.replace('\'', "''"),
-                dir.replace('\'', "''"),
-            );
-            let path_result = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-                .creation_flags(0x08000000)
-                .output();
-            match path_result {
-                Ok(output) if output.status.success() => {
-                    eprintln!("Added to user PATH: {}", dir);
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    eprintln!("Failed to add to PATH: {}", stderr);
-                }
-                Err(e) => eprintln!("Failed to run PowerShell for PATH: {}", e),
+    for dir in &dirs_to_add {
+        let ps_script = format!(
+            "$old = [Environment]::GetEnvironmentVariable('Path','User'); \
+             if ($old -and -not $old.Contains('{}')) {{ \
+               [Environment]::SetEnvironmentVariable('Path', $old + ';{}', 'User') \
+             }} elseif (-not $old) {{ \
+               [Environment]::SetEnvironmentVariable('Path', '{}', 'User') \
+             }}",
+            dir.replace('\'', "''"),
+            dir.replace('\'', "''"),
+            dir.replace('\'', "''"),
+        );
+        let path_result = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .creation_flags(0x08000000)
+            .output();
+        match path_result {
+            Ok(output) if output.status.success() => {
+                eprintln!("Added to user PATH: {}", dir);
             }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!("Failed to add to PATH: {}", stderr);
+            }
+            Err(e) => eprintln!("Failed to run PowerShell for PATH: {}", e),
         }
+    }
 
-        // Set CLAUDE_CODE_GIT_BASH_PATH user env var so `claude` works from any terminal
-        if let Some(bash_path) = find_git_bash() {
-            let ps_script = format!(
-                "[Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', '{}', 'User')",
-                bash_path.replace('\'', "''"),
-            );
-            let result = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-                .creation_flags(0x08000000)
-                .output();
-            match result {
-                Ok(output) if output.status.success() => {
-                    eprintln!("Set CLAUDE_CODE_GIT_BASH_PATH={}", bash_path);
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    eprintln!("Failed to set CLAUDE_CODE_GIT_BASH_PATH: {}", stderr);
-                }
-                Err(e) => eprintln!("Failed to run PowerShell for env var: {}", e),
+    // Set CLAUDE_CODE_GIT_BASH_PATH user env var so `claude` works from any terminal
+    if let Some(bash_path) = find_git_bash() {
+        let ps_script = format!(
+            "[Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', '{}', 'User')",
+            bash_path.replace('\'', "''"),
+        );
+        let result = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .creation_flags(0x08000000)
+            .output();
+        match result {
+            Ok(output) if output.status.success() => {
+                eprintln!("Set CLAUDE_CODE_GIT_BASH_PATH={}", bash_path);
             }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!("Failed to set CLAUDE_CODE_GIT_BASH_PATH: {}", stderr);
+            }
+            Err(e) => eprintln!("Failed to run PowerShell for env var: {}", e),
         }
     }
 
@@ -1153,9 +1143,7 @@ pub(crate) struct AuthStatus {
 #[tauri::command]
 pub(crate) async fn check_claude_auth() -> Result<AuthStatus, String> {
     let claude_bin = find_claude_binary().unwrap_or_else(|| {
-        {
-            "claude.cmd".to_string()
-        }
+        "claude.cmd".to_string()
     });
     let enriched_path = build_enriched_path();
 
@@ -1243,18 +1231,16 @@ pub(crate) async fn open_terminal_login() -> Result<(), String> {
         "Claude CLI not found. Please install it first via the Setup Wizard.".to_string()
     })?;
 
-    {
-        // Spawn cmd /k with CREATE_NEW_CONSOLE to open a visible terminal window.
-        // This avoids the `start` command's tricky quoting rules.
-        let enriched_path = build_enriched_path();
-        std::process::Command::new("cmd")
-            .arg("/k")
-            .arg(&format!("\"{}\" login", claude_bin))
-            .env("PATH", &enriched_path)
-            .creation_flags(0x00000010) // CREATE_NEW_CONSOLE
-            .spawn()
-            .map_err(|e| format!("Failed to open terminal: {}", e))?;
-    }
+    // Spawn cmd /k with CREATE_NEW_CONSOLE to open a visible terminal window.
+    // This avoids the `start` command's tricky quoting rules.
+    let enriched_path = build_enriched_path();
+    std::process::Command::new("cmd")
+        .arg("/k")
+        .arg(format!("\"{}\" login", claude_bin))
+        .env("PATH", &enriched_path)
+        .creation_flags(0x00000010) // CREATE_NEW_CONSOLE
+        .spawn()
+        .map_err(|e| format!("Failed to open terminal: {}", e))?;
 
     Ok(())
 }

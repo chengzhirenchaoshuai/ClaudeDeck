@@ -617,6 +617,7 @@ fn remote_cache_path(uri: &str) -> Result<std::path::PathBuf, String> {
 /// - 远端文件长度和缓存一致 → 内容没变，完全不用传输；
 /// - 远端更长 → 只把新增的那一段（从缓存长度处开始）gzip 压缩后传回来，追加到缓存；
 /// - 远端反而更短（文件被替换/重建等极少数情况）→ 放弃增量，整份重新下载覆盖缓存。
+///
 /// 网速差、会话大、反复打开同一会话时收益最明显。
 pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
     let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;

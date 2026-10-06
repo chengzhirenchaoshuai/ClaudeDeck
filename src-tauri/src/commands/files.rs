@@ -27,62 +27,54 @@ pub(crate) async fn open_in_vscode(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub(crate) async fn reveal_in_finder(path: String) -> Result<(), String> {
-    {
-        let mut cmd = Command::new("explorer");
-        cmd.args(["/select,", &path]);
-        cmd.creation_flags(0x08000000);
-        cmd.spawn()
-            .map_err(|e| format!("Failed to reveal in Explorer: {}", e))?;
-    }
+    let mut cmd = Command::new("explorer");
+    cmd.args(["/select,", &path]);
+    cmd.creation_flags(0x08000000);
+    cmd.spawn()
+        .map_err(|e| format!("Failed to reveal in Explorer: {}", e))?;
     Ok(())
 }
 
 #[tauri::command]
 pub(crate) async fn open_with_default_app(path: String) -> Result<(), String> {
-    {
-        Command::new("cmd")
-            .args(["/C", "start", "", &path])
-            .creation_flags(0x08000000)
-            .spawn()
-            .map_err(|e| format!("Failed to open file: {}", e))?;
-    }
+    Command::new("cmd")
+        .args(["/C", "start", "", &path])
+        .creation_flags(0x08000000)
+        .spawn()
+        .map_err(|e| format!("Failed to open file: {}", e))?;
     Ok(())
 }
 
 #[tauri::command]
 pub(crate) async fn open_folder_in_terminal(path: String) -> Result<(), String> {
-    {
-        // Try Windows Terminal first, fallback to cmd
-        let wt_result = Command::new("wt")
-            .args(["-d", &path])
-            .creation_flags(0x08000000)
-            .spawn();
-        if wt_result.is_err() {
-            Command::new("cmd")
-                .args(["/K", "cd", "/d", &path])
-                .creation_flags(0x00000010) // CREATE_NEW_CONSOLE
-                .spawn()
-                .map_err(|e| format!("Failed to open terminal: {}", e))?;
-        }
+    // Try Windows Terminal first, fallback to cmd
+    let wt_result = Command::new("wt")
+        .args(["-d", &path])
+        .creation_flags(0x08000000)
+        .spawn();
+    if wt_result.is_err() {
+        Command::new("cmd")
+            .args(["/K", "cd", "/d", &path])
+            .creation_flags(0x00000010) // CREATE_NEW_CONSOLE
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
     }
     Ok(())
 }
 
 #[tauri::command]
 pub(crate) async fn open_folder_in_terminal_admin(path: String) -> Result<(), String> {
-    {
-        // Use PowerShell to start Windows Terminal elevated
-        let ps_script = format!(
-            "Start-Process wt -Verb RunAs -ArgumentList '-d', '{}'",
-            path.replace('\'', "''")
-        );
-        std::process::Command::new("powershell")
-            .args(["-Command", &ps_script])
-            .creation_flags(0x08000000)
-            .spawn()
-            .map_err(|e| format!("Failed to open elevated terminal: {}", e))?;
-        Ok(())
-    }
+    // Use PowerShell to start Windows Terminal elevated
+    let ps_script = format!(
+        "Start-Process wt -Verb RunAs -ArgumentList '-d', '{}'",
+        path.replace('\'', "''")
+    );
+    std::process::Command::new("powershell")
+        .args(["-Command", &ps_script])
+        .creation_flags(0x08000000)
+        .spawn()
+        .map_err(|e| format!("Failed to open elevated terminal: {}", e))?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -325,7 +317,8 @@ pub(crate) async fn watch_directory(
 
     // Shared buffer: events accumulate here between flush cycles.
     // std::sync::Mutex because the notify callback runs on a non-async OS thread.
-    let pending: Arc<Mutex<Vec<(String, Vec<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    type PendingEvents = Arc<Mutex<Vec<(String, Vec<String>)>>>;
+    let pending: PendingEvents = Arc::new(Mutex::new(Vec::new()));
     let pending_for_watcher = pending.clone();
 
     // Shutdown signal: dropping the sender → receiver fires → flush task drains and exits.

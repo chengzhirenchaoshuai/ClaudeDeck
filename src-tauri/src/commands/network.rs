@@ -58,15 +58,14 @@ pub(crate) async fn is_proxy_reachable(proxy_url: &str) -> bool {
         .trim_start_matches("socks5://")
         .trim_start_matches("socks5h://")
         .trim_end_matches('/');
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(1),
-        tokio::net::TcpStream::connect(addr),
+    matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            tokio::net::TcpStream::connect(addr),
+        )
+        .await,
+        Ok(Ok(_))
     )
-    .await
-    {
-        Ok(Ok(_)) => true,
-        _ => false,
-    }
 }
 
 /// Build a reqwest Client with smart proxy handling.

@@ -148,9 +148,7 @@ pub(crate) async fn start_claude_session(
     } else {
         // Resolve claude binary — it may not be on the default PATH
         let claude_bin = find_claude_binary().unwrap_or_else(|| {
-            {
-                "claude.cmd".to_string()
-            }
+            "claude.cmd".to_string()
         });
 
         // Build an enriched PATH for the child process
@@ -210,27 +208,23 @@ pub(crate) async fn start_claude_session(
         // Without this, MSYS2 converts Windows paths (e.g. F:\秀\input\file.xlsx)
         // to Unix-style paths (/f/秀/input/file.xlsx), which breaks file operations
         // especially with non-ASCII (Chinese) characters in paths.
-        {
-            resolved_env.entry("MSYS_NO_PATHCONV".to_string())
-                .or_insert_with(|| "1".to_string());
-            resolved_env.entry("MSYS2_ARG_CONV_EXCL".to_string())
-                .or_insert_with(|| "*".to_string());
-        }
+        resolved_env.entry("MSYS_NO_PATHCONV".to_string())
+            .or_insert_with(|| "1".to_string());
+        resolved_env.entry("MSYS2_ARG_CONV_EXCL".to_string())
+            .or_insert_with(|| "*".to_string());
 
         // On Windows, auto-detect git-bash and inject CLAUDE_CODE_GIT_BASH_PATH
         // so Claude Code CLI can find bash.exe without user manual configuration.
-        {
-            if !resolved_env.contains_key("CLAUDE_CODE_GIT_BASH_PATH") {
-                if let Some(bash_path) = find_git_bash() {
-                    resolved_env.insert("CLAUDE_CODE_GIT_BASH_PATH".to_string(), bash_path);
-                } else {
-                    // git-bash is a hard requirement for Claude Code on Windows.
-                    // Fail fast with a clear error instead of spawning and getting a silent exit.
-                    return Err("Claude Code requires Git Bash on Windows.\n\
-                         Please reinstall Claude Code via Settings to auto-install Git,\n\
-                         or install Git for Windows manually: https://git-scm.com/downloads/win"
-                        .to_string());
-                }
+        if !resolved_env.contains_key("CLAUDE_CODE_GIT_BASH_PATH") {
+            if let Some(bash_path) = find_git_bash() {
+                resolved_env.insert("CLAUDE_CODE_GIT_BASH_PATH".to_string(), bash_path);
+            } else {
+                // git-bash is a hard requirement for Claude Code on Windows.
+                // Fail fast with a clear error instead of spawning and getting a silent exit.
+                return Err("Claude Code requires Git Bash on Windows.\n\
+                     Please reinstall Claude Code via Settings to auto-install Git,\n\
+                     or install Git for Windows manually: https://git-scm.com/downloads/win"
+                    .to_string());
             }
         }
 
@@ -335,7 +329,7 @@ pub(crate) async fn start_claude_session(
         args.len(),
         env_count
     );
-    eprintln!("[ClaudeDeck] cwd: {}", &params.cwd);
+    eprintln!("[ClaudeDeck] cwd: {}", params.cwd);
 
     // Capture stdin and store in StdinManager for sending follow-up messages
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;

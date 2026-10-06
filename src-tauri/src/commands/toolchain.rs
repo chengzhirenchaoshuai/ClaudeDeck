@@ -34,12 +34,10 @@ pub(crate) fn npm_cache_dir() -> Result<std::path::PathBuf, String> {
 /// Get the bin directory of the local Node.js installation, if it exists.
 pub(crate) fn get_local_node_bin() -> Option<std::path::PathBuf> {
     let node_dir = node_download_dir().ok()?;
-    {
-        // Windows: node.exe is at the root of the extracted directory
-        let node_exe = node_dir.join("node.exe");
-        if node_exe.exists() {
-            return Some(node_dir);
-        }
+    // Windows: node.exe is at the root of the extracted directory
+    let node_exe = node_dir.join("node.exe");
+    if node_exe.exists() {
+        return Some(node_dir);
     }
     None
 }
@@ -425,11 +423,7 @@ pub(crate) async fn download_with_progress(
         bytes.extend_from_slice(&chunk);
         downloaded += chunk.len() as u64;
 
-        let percent = if total > 0 {
-            (downloaded * 80 / total) as u8
-        } else {
-            0
-        };
+        let percent = (downloaded * 80).checked_div(total).unwrap_or(0) as u8;
         let _ = app.emit(
             "setup:download:progress",
             serde_json::json!({
@@ -461,7 +455,7 @@ pub(crate) fn extract_node_archive(
 
                 let name = file.name().to_string();
                 // Strip top-level directory (e.g., "node-v22.22.0-win-x64/node.exe" -> "node.exe")
-                let stripped: String = name.splitn(2, '/').nth(1).unwrap_or("").to_string();
+                let stripped: String = name.split_once('/').map(|x| x.1).unwrap_or("").to_string();
                 if stripped.is_empty() {
                     continue;
                 }

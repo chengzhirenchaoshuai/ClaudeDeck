@@ -78,7 +78,7 @@ pub(crate) async fn list_slash_commands(cwd: Option<String>) -> Result<Vec<Slash
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "md") {
+            if path.extension().is_some_and(|e| e == "md") {
                 let stem = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
@@ -289,8 +289,7 @@ pub(crate) fn parse_skill_frontmatter(content: &str) -> (SkillFrontmatter, &str)
 /// If value is None, the field is removed. If no frontmatter exists, one is created.
 pub(crate) fn update_frontmatter_field(content: &str, field: &str, value: Option<&str>) -> String {
     let trimmed = content.trim_start();
-    if trimmed.starts_with("---") {
-        let after_open = &trimmed[3..];
+    if let Some(after_open) = trimmed.strip_prefix("---") {
         if let Some(close_idx) = after_open.find("\n---") {
             let yaml_section = &after_open[..close_idx];
             let body = &trimmed[3 + close_idx + 4..];
@@ -306,7 +305,7 @@ pub(crate) fn update_frontmatter_field(content: &str, field: &str, value: Option
 
             // Add field if value is provided
             if let Some(val) = value {
-                lines.push(&""); // will be replaced
+                lines.push(""); // will be replaced
                 let new_line = format!("{}: {}", field, val);
                 // Replace the empty placeholder
                 let last = lines.len() - 1;
@@ -602,7 +601,6 @@ pub(crate) fn resolve_translation_model(provider: &ApiProvider) -> String {
         .unwrap_or_else(|| "deepseek-v4-flash".to_string())
 }
 
-/// Translate skill names/descriptions through the active third-party provider.
 // --- Skill translation cache (perf) ---
 // Skill docs are re-translated on every preview, so the same SKILL.md hits the
 // cache on repeat views. The cache key is content-addressed
@@ -664,6 +662,7 @@ pub(crate) fn translation_cache_key(provider_id: &str, model: &str, source: &str
     format!("{:x}", hasher.finalize())
 }
 
+/// Translate skill names/descriptions through the active third-party provider.
 #[tauri::command]
 pub(crate) async fn translate_skill_metadata(
     items: Vec<SkillTranslationItem>,
@@ -1160,7 +1159,7 @@ pub(crate) async fn list_all_commands(cwd: Option<String>, additional_dirs: Opti
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "md") {
+            if path.extension().is_some_and(|e| e == "md") {
                 let stem = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())

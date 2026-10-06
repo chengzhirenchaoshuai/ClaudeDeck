@@ -70,7 +70,7 @@ pub(crate) fn start_sessions_watcher(app: AppHandle) {
             let jsonl_paths: Vec<String> = event
                 .paths
                 .iter()
-                .filter(|p| p.extension().map_or(false, |e| e == "jsonl"))
+                .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
                 .map(|p| p.to_string_lossy().to_string())
                 .collect();
             let relevant = match event.kind {
@@ -156,7 +156,7 @@ pub(crate) async fn list_sessions() -> Result<Vec<Value>, String> {
                 if let Ok(files) = std::fs::read_dir(entry.path()) {
                     for file in files.flatten() {
                         let path = file.path();
-                        if path.extension().map_or(false, |e| e == "jsonl") {
+                        if path.extension().is_some_and(|e| e == "jsonl") {
                             if let Some(name) = path.file_stem() {
                                 let id = name.to_string_lossy().to_string();
 
@@ -233,7 +233,7 @@ pub(crate) async fn search_sessions(query: String) -> Result<Vec<Value>, String>
                 if let Ok(files) = std::fs::read_dir(entry.path()) {
                     for file in files.flatten() {
                         let path = file.path();
-                        if path.extension().map_or(false, |e| e == "jsonl") {
+                        if path.extension().is_some_and(|e| e == "jsonl") {
                             if let Some(name) = path.file_stem() {
                                 let id = name.to_string_lossy().to_string();
                                 if !is_listable_session(&id, &hidden) {
@@ -369,7 +369,7 @@ pub(crate) fn search_session_file(path: &std::path::Path, query_lower: &str) -> 
             {
                 let original_chars: Vec<char> = full_text.chars().collect();
                 let total_chars = original_chars.len();
-                let start = if char_pos > 75 { char_pos - 75 } else { 0 };
+                let start = char_pos.saturating_sub(75);
                 let end = std::cmp::min(total_chars, char_pos + query_lower.chars().count() + 75);
 
                 let mut snippet: String = original_chars[start..end].iter().collect();
@@ -684,7 +684,6 @@ pub(crate) fn decode_project_name(encoded: &str) -> String {
 
 #[tauri::command]
 pub(crate) async fn load_session(path: String) -> Result<Vec<Value>, String> {
-    use std::io::BufRead;
     // 远程会话（ssh:// URI）经 ssh 读取
     if path.starts_with(commands::remote::REMOTE_SCHEME) {
         return commands::remote::load_remote_session(&path).await;
@@ -692,11 +691,9 @@ pub(crate) async fn load_session(path: String) -> Result<Vec<Value>, String> {
     let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
     let reader = std::io::BufReader::new(file);
     let mut messages = vec![];
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if let Ok(json) = serde_json::from_str::<Value>(&line) {
-                messages.push(json);
-            }
+    for line in jsonl_lines(reader) {
+        if let Ok(json) = serde_json::from_str::<Value>(&line) {
+            messages.push(json);
         }
     }
     Ok(messages)
@@ -776,7 +773,7 @@ pub(crate) async fn get_session_tokens(session_id: String) -> Result<Value, Stri
                 if !entry.path().is_dir() {
                     continue;
                 }
-                let candidate = entry.path().join(format!("{}.jsonl", &session_id));
+                let candidate = entry.path().join(format!("{}.jsonl", session_id));
                 if candidate.exists() {
                     jsonl_path = Some(candidate);
                     break;
@@ -793,15 +790,13 @@ pub(crate) async fn get_session_tokens(session_id: String) -> Result<Value, Stri
 }
 #[tauri::command]
 pub(crate) async fn export_session_markdown(path: String, output_path: String, conversation_only: bool) -> Result<(), String> {
-    use std::io::{BufRead, Write};
+    use std::io::Write;
     // 远程会话（ssh:// URI）经 ssh 读取，和 load_session 保持一致
     let records: Vec<Value> = if path.starts_with(commands::remote::REMOTE_SCHEME) {
         commands::remote::load_remote_session(&path).await?
     } else {
         let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
-        std::io::BufReader::new(file)
-            .lines()
-            .filter_map(|l| l.ok())
+        jsonl_lines(std::io::BufReader::new(file))
             .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
             .collect()
     };
@@ -874,15 +869,13 @@ pub(crate) async fn export_session_markdown(path: String, output_path: String, c
 
 #[tauri::command]
 pub(crate) async fn export_session_json(path: String, output_path: String) -> Result<(), String> {
-    use std::io::{BufRead, Write};
+    use std::io::Write;
     let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
     let reader = std::io::BufReader::new(file);
     let mut messages = vec![];
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if let Ok(json) = serde_json::from_str::<Value>(&line) {
-                messages.push(json);
-            }
+    for line in jsonl_lines(reader) {
+        if let Ok(json) = serde_json::from_str::<Value>(&line) {
+            messages.push(json);
         }
     }
     let json_str = serde_json::to_string_pretty(&messages)

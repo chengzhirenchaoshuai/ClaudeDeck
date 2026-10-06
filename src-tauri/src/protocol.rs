@@ -20,6 +20,8 @@ use serde_json::Value;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 #[allow(dead_code)]
+// 只在单元测试中用于校验协议解析，变体大小差异无关紧要
+#[allow(clippy::large_enum_variant)]
 pub enum StdoutMessage {
     #[serde(rename = "control_request")]
     ControlRequest {
