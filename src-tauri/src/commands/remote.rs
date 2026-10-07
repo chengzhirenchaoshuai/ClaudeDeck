@@ -151,48 +151,49 @@ fn quote_cmd_arg(arg: &str) -> Result<String, String> {
 /// 构造在远端执行的命令：切换目录、设置环境变量后启动 claude。
 /// 远端 claude 使用远端自己的配置（settings.json、MCP、skills 等）。
 ///
-/// 实现上分两层：
-/// 1. 按 cmd.exe 语法拼 `cd /d "..." && set "K=V" && claude "--arg" "value"`——
-///    cmd.exe 认识 claude 在 Windows 上常见的 .cmd 包装（npm 全局安装的典型形式），
-///    直接用 .NET 调 claude.exe 反而可能因为没有 PATHEXT 解析找不到它。
-/// 2. 不依赖 ssh 账户登录后的默认 shell（可能是 cmd 也可能是 PowerShell，两者都见过），
-///    而是显式 `powershell -EncodedCommand` 起一个 PowerShell，在里面用
-///    `cmd /c --% <上面那串命令>` 调用 cmd.exe——`--%`（stop-parsing symbol）让
-///    PowerShell 把它后面的文本原样当作命令行传给 cmd.exe，不再用自己那套「原生命令参数
-///    传递」重新加引号，从而保留内嵌双引号（早前正是这一层把
-///    `--settings '{"alwaysThinkingEnabled":true}'` 里的双引号弄丢了，导致 claude 报
+/// 不依赖 ssh 账户登录后的默认 shell（可能是 cmd 也可能是 PowerShell），显式用
+/// `powershell -EncodedCommand` 执行一段脚本：
+/// 1. 用 PowerShell 自己的 `Set-Location` 切目录、`$env:K = 'V'` 设环境变量；
+/// 2. 最后一行 `cmd /c --% claude "--arg" "value"` 启动 claude。经 cmd.exe 是为了认得
+///    npm 全局安装的 claude.cmd；`--%`（stop-parsing symbol）让 PowerShell 把后面的文本
+///    原样交给 cmd.exe，不再按自己的规则重新加引号，从而保留参数里的内嵌双引号
+///    （否则 `--settings '{"alwaysThinkingEnabled":true}'` 的双引号会丢，claude 报
 ///    “Invalid JSON provided to --settings”）。
-///    之前用 `System.Diagnostics.Process` 手动起 cmd.exe 并同步 WaitForExit 的做法虽然
-///    也能避开引号问题，但没有走 PowerShell 原生命令调用那条早已验证过能正确透传
-///    stdin/stdout 的路径（`test_remote_connection` 用的 `& claude --version` 走的就是
-///    这条路），手动管理的子进程在 ssh 的非 pty 通道上继承句柄不稳定，实际起会话时会
-///    抛出终止性异常——PowerShell 在没有控制台时把这类异常序列化成 CLIXML，导致用户
-///    看到的错误只有一串 `#< CLIXML` 乱码。改回原生调用后这个问题随之消失。
+///
+/// 不能写成 `cmd /c --% cd /d ... && set ... && claude ...`：远端的 Windows PowerShell 5.1
+/// 解析脚本时就不认 `&&`（报“&& 不是此版本中的有效语句分隔符”），`--%` 也挡不住，
+/// 整段脚本解析失败、claude 根本没启动，用户只看到一串 `#< CLIXML`。
 pub fn build_remote_claude_command(
     remote_path: &str,
     env: &[(&str, &str)],
     args: &[String],
 ) -> Result<String, String> {
-    if remote_path.chars().any(|c| matches!(c, '"' | '%' | '\n' | '\r' | '\0')) {
+    if remote_path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
         return Err("远程路径含有不支持的字符".to_string());
     }
     let win_path = remote_path.replace('/', "\\");
-    let mut parts = vec![format!("cd /d \"{}\"", win_path)];
+    // 关掉进度输出：否则首次加载模块时的进度记录会以 CLIXML 形式写到 stderr，显示成乱码
+    let mut script = String::from("$ProgressPreference = 'SilentlyContinue'\n");
+    script.push_str(&format!("Set-Location -LiteralPath {} -ErrorAction Stop\n", ps_quote(&win_path)));
     for (key, value) in env {
-        parts.push(format!("set {}", quote_cmd_arg(&format!("{}={}", key, value))?));
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(format!("远程环境变量名不合法: {}", key));
+        }
+        script.push_str(&format!("$env:{} = {}\n", key, ps_quote(value)));
     }
     let mut claude = String::from("claude");
     for arg in args {
         claude.push(' ');
         claude.push_str(&quote_cmd_arg(arg)?);
     }
-    parts.push(claude);
-    let cmd_line = parts.join(" && ");
-
-    let mut script = String::new();
-    script.push_str(&format!("cmd /c --% {}\n", cmd_line));
+    script.push_str(&format!("cmd /c --% {}\n", claude));
     script.push_str("exit $LASTEXITCODE\n");
     Ok(powershell_command(&script))
+}
+
+/// PowerShell 单引号字符串字面量（单引号内只需把 ' 写成 ''）
+fn ps_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
 }
 
 /// 在远端执行一条命令并等待结束，返回 (stdout, stderr, 退出码)。
@@ -908,12 +909,14 @@ mod tests {
         .unwrap();
         assert!(cmd.starts_with("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "));
         let script = decode_encoded_command(&cmd);
-        assert!(script.contains("cmd /c --% cd /d \"C:\\Users\\me\\my proj\""));
-        assert!(script.contains(r#"set "K=V""#));
+        assert!(script.contains("Set-Location -LiteralPath 'C:\\Users\\me\\my proj' -ErrorAction Stop"));
+        assert!(script.contains("$env:K = 'V'"));
+        // 远端 Windows PowerShell 5.1 不认 &&，脚本里不能出现
+        assert!(!script.contains("&&"));
         // `--%` 之后 PowerShell 不再重新加引号，claude 收到的 --settings 值必须完整
         // 保留内嵌的双引号——这正是之前那个 bug（PowerShell 自身转发原生命令参数时
         // 把内嵌双引号弄丢，claude 报 "Invalid JSON provided to --settings"）要防住的东西。
-        assert!(script.contains(r#"claude "--settings" "{\"alwaysThinkingEnabled\":true}""#));
+        assert!(script.contains(r#"cmd /c --% claude "--settings" "{\"alwaysThinkingEnabled\":true}""#));
         assert!(script.contains("exit $LASTEXITCODE"));
     }
 }
