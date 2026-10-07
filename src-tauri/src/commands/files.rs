@@ -472,6 +472,10 @@ pub(crate) async fn save_temp_file(
     data: Vec<u8>,
     cwd: Option<String>,
 ) -> Result<String, String> {
+    // 远程项目：上传到远端 <项目>/.tokenicode/tmp，返回远端路径（本机路径远端 claude 读不到）
+    if let Some(dir) = cwd.as_deref().filter(|d| d.starts_with(commands::remote::REMOTE_SCHEME)) {
+        return commands::remote::save_remote_temp_file(dir, &unique_temp_name(&name), &data).await;
+    }
     // If a working directory is provided, save inside it so Claude CLI can access the file.
     // Falls back to system temp if cwd is not set.
     let tmp = if let Some(ref dir) = cwd {
@@ -495,8 +499,14 @@ pub(crate) async fn save_temp_file(
     };
     std::fs::create_dir_all(&tmp).map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
-    // Split name into stem + extension, append timestamp + counter for uniqueness
-    let path_buf = std::path::PathBuf::from(&name);
+    let path = tmp.join(unique_temp_name(&name));
+    std::fs::write(&path, &data).map_err(|e| format!("Failed to write temp file: {}", e))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// 生成不重名的临时文件名：<主名>_<毫秒时间戳><计数><扩展名>（例如多张都叫 image.png 的粘贴图片）
+fn unique_temp_name(name: &str) -> String {
+    let path_buf = std::path::PathBuf::from(name);
     let stem = path_buf
         .file_stem()
         .unwrap_or_default()
@@ -514,9 +524,27 @@ pub(crate) async fn save_temp_file(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    format!("{}_{}{}{}", stem, ts, count, ext)
+}
 
-    let unique_name = format!("{}_{}{}{}", stem, ts, count, ext);
-    let path = tmp.join(&unique_name);
-    std::fs::write(&path, &data).map_err(|e| format!("Failed to write temp file: {}", e))?;
-    Ok(path.to_string_lossy().to_string())
+/// 远程项目里拖入的本机文件：读出内容上传到远端 <项目>/.tokenicode/tmp，返回远端路径。
+/// 大小上限与读取远端文件一致（50MB）。
+#[tauri::command]
+pub(crate) async fn upload_temp_file_to_remote(src_path: String, cwd: String) -> Result<String, String> {
+    if !cwd.starts_with(commands::remote::REMOTE_SCHEME) {
+        return Err("当前工作目录不是远程项目".to_string());
+    }
+    let meta = std::fs::metadata(&src_path).map_err(|e| format!("读取文件失败: {}", e))?;
+    if !meta.is_file() {
+        return Err("只能上传文件，不能上传目录".to_string());
+    }
+    if meta.len() > 50_000_000 {
+        return Err(format!("文件太大（{} 字节）", meta.len()));
+    }
+    let data = std::fs::read(&src_path).map_err(|e| format!("读取文件失败: {}", e))?;
+    let name = std::path::Path::new(&src_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    commands::remote::save_remote_temp_file(&cwd, &unique_temp_name(&name), &data).await
 }

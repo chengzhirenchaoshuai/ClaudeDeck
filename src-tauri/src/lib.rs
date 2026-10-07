@@ -552,6 +552,7 @@ pub fn run() {
             commands::files::watch_directory,
             commands::files::unwatch_directory,
             commands::files::save_temp_file,
+            commands::files::upload_temp_file_to_remote,
             commands::files::get_file_size,
             commands::files::check_file_access,
             commands::files::read_file_base64,

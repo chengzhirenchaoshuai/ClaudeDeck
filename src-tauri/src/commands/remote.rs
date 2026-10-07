@@ -202,16 +202,42 @@ pub async fn run_remote(
     remote_cmd: &str,
     timeout: Duration,
 ) -> Result<(String, String, i32), String> {
+    run_remote_with_input(host, remote_cmd, None, timeout).await
+}
+
+/// 同 `run_remote`，但可把 `input` 写入远端命令的标准输入（写完即关闭，远端读到 EOF）。
+/// 用于传输较大的数据：放在命令行里会超出 Windows 命令行长度上限。
+pub async fn run_remote_with_input(
+    host: &RemoteHost,
+    remote_cmd: &str,
+    input: Option<Vec<u8>>,
+    timeout: Duration,
+) -> Result<(String, String, i32), String> {
     let mut cmd = ssh_command(host);
     cmd.arg(remote_cmd)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let output = tokio::time::timeout(timeout, cmd.output())
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("无法启动 ssh（请确认系统已安装 OpenSSH 客户端）: {}", e))?;
+    // 写 stdin 与读输出并行进行，避免双方都在等对方读管道而互相卡死
+    let writer = match (input, child.stdin.take()) {
+        (Some(data), Some(mut stdin)) => Some(tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let _ = stdin.write_all(&data).await;
+            let _ = stdin.shutdown().await;
+        })),
+        _ => None,
+    };
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
         .map_err(|_| "连接超时".to_string())?
-        .map_err(|e| format!("无法启动 ssh（请确认系统已安装 OpenSSH 客户端）: {}", e))?;
+        .map_err(|e| format!("等待 ssh 结束失败: {}", e))?;
+    if let Some(w) = writer {
+        let _ = w.await;
+    }
     Ok((
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
@@ -757,6 +783,74 @@ pub async fn read_remote_file(uri: &str, max_bytes: u64) -> Result<Vec<u8>, Stri
     )
     .map_err(|e| format!("解压远端文件失败: {}", e))?;
     Ok(bytes)
+}
+
+/// 把附件写到远端 `<项目>/.tokenicode/tmp/<file_name>`，返回远端绝对路径（Windows 格式），
+/// 与本机 save_temp_file 的落盘位置约定一致。内容以 base64 文本经 stdin 传输（只含 ASCII，
+/// 不受远端控制台编码影响）；脚本自己 try/catch 把错误写成 JSON，避免看到 CLIXML。
+pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) -> Result<String, String> {
+    let (host_id, path) = parse_remote_uri(cwd_uri).ok_or("无效的远程路径")?;
+    if path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    // 去掉路径分隔符等 Windows 文件名不允许的字符，防止写到 tmp 目录之外
+    let safe_name: String = file_name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if safe_name.trim_matches(['.', ' ']).is_empty() {
+        return Err("文件名不合法".to_string());
+    }
+    let host = find_host(&host_id)?;
+    let win_path = path.replace('/', "\\");
+    let script = format!(
+        "try {{ \
+           $ErrorActionPreference = 'Stop'; \
+           $base = Join-Path {dir} '.tokenicode'; \
+           $tmp = Join-Path $base 'tmp'; \
+           [System.IO.Directory]::CreateDirectory($tmp) | Out-Null; \
+           $gi = Join-Path $base '.gitignore'; \
+           if (-not [System.IO.File]::Exists($gi)) {{ [System.IO.File]::WriteAllText($gi, \"*`n\") }}; \
+           $p = Join-Path $tmp {name}; \
+           $b64 = [Console]::In.ReadToEnd(); \
+           [System.IO.File]::WriteAllBytes($p, [Convert]::FromBase64String($b64.Trim())); \
+           Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $true; path = $p }}) \
+         }} catch {{ \
+           Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $false; error = $_.Exception.Message }}) \
+         }}",
+        dir = ps_quote(&win_path),
+        name = ps_quote(&safe_name),
+    );
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let input = STANDARD.encode(data).into_bytes();
+    let (stdout, stderr, code) = run_remote_with_input(
+        &host,
+        &powershell_command(&script),
+        Some(input),
+        Duration::from_secs(120),
+    )
+    .await?;
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    let resp: Value = serde_json::from_str(text).map_err(|_| {
+        if stderr.trim().is_empty() {
+            format!("上传附件到远端失败（退出码 {}）", code)
+        } else {
+            format!("上传附件到远端失败: {}", stderr.trim())
+        }
+    })?;
+    match resp["path"].as_str() {
+        Some(p) if resp["ok"].as_bool() == Some(true) => Ok(p.to_string()),
+        _ => Err(format!(
+            "上传附件到远端失败: {}",
+            resp["error"].as_str().unwrap_or("未知错误")
+        )),
+    }
 }
 
 /// 删除远端会话：只允许删除 CLI projects 目录内的 .jsonl 文件，和本机 delete_session 的白名单逻辑一致。

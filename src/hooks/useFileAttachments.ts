@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { bridge } from '../lib/tauri-bridge';
+import { bridge, isRemotePath } from '../lib/tauri-bridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTreeDragActive } from '../lib/drag-state';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -191,10 +191,16 @@ export function useFileAttachments() {
             }
           }
 
+          // 远程项目：远端 claude 读不到本机路径，先把文件上传到远端，消息里写远端路径
+          const cwd = useSettingsStore.getState().workingDirectory;
+          const path = isRemotePath(cwd)
+            ? await bridge.uploadTempFileToRemote(filePath, cwd)
+            : filePath;
+
           newFiles.push({
             id: generateFileId(),
             name,
-            path: filePath,
+            path,
             size: fileSize,
             type: mime,
             isImage: isImg,
@@ -218,6 +224,7 @@ export function useFileAttachments() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     getCurrentWindow().onDragDropEvent((event) => {
       const { type } = event.payload;
 
@@ -278,9 +285,11 @@ export function useFileAttachments() {
           // their paths are properly included in the message sent to CLI (#70).
           const imagePaths: string[] = [];
           const otherPaths: string[] = [];
+          // 远程项目：非图片也走附件（会上传到远端），内联芯片只会插入远端读不到的本机路径
+          const remote = isRemotePath(useSettingsStore.getState().workingDirectory);
           for (const p of paths) {
             const name = p.split(/[\\/]/).pop() || '';
-            if (isImageExt(name)) {
+            if (remote || isImageExt(name)) {
               imagePaths.push(p);
             } else {
               otherPaths.push(p);
@@ -298,8 +307,16 @@ export function useFileAttachments() {
           }
         }
       }
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    }).then((fn) => {
+      // 注册是异步的：若组件在注册完成前已卸载（StrictMode 双挂载、切换工作目录重挂载 InputBar），
+      // 必须立即注销，否则监听器泄漏，一次拖放会被处理多次（远程项目下表现为同一文件重复上传）
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   const removeFile = useCallback((id: string) => {

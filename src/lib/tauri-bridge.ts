@@ -470,6 +470,10 @@ export const bridge = {
   saveTempFile: (name: string, data: number[], cwd?: string) =>
     invoke<string>('save_temp_file', { name, data, cwd: cwd || null }),
 
+  /** 远程项目里拖入的本机文件：上传到远端 <项目>/.tokenicode/tmp，返回远端路径 */
+  uploadTempFileToRemote: (srcPath: string, cwd: string) =>
+    invoke<string>('upload_temp_file_to_remote', { srcPath, cwd }),
+
   getFileSize: (path: string) =>
     invoke<number>('get_file_size', { path }),
 
