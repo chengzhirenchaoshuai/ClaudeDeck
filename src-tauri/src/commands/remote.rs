@@ -853,6 +853,37 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
     }
 }
 
+/// 回溯时恢复文件的兜底路径（会话进程已不在、无法走控制协议时）：在远端项目目录下执行
+/// `claude --resume <会话> --rewind-files <用户消息 ID>`，与本机 rewind_files 一致。
+/// 参数格式（UUID）由调用方校验。
+pub async fn rewind_remote_files(
+    host_id: &str,
+    remote_path: &str,
+    session_id: &str,
+    checkpoint_uuid: &str,
+) -> Result<String, String> {
+    let host = find_host(host_id)?;
+    let args = [
+        "--resume".to_string(),
+        session_id.to_string(),
+        "--rewind-files".to_string(),
+        checkpoint_uuid.to_string(),
+    ];
+    let remote_cmd = build_remote_claude_command(
+        remote_path,
+        &[("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1")],
+        &args,
+    )?;
+    let (stdout, stderr, code) = run_remote(&host, &remote_cmd, Duration::from_secs(120)).await?;
+    if code == 0 {
+        Ok(stdout)
+    } else if stderr.trim().is_empty() {
+        Err(format!("rewind_files failed: 远端退出码 {}", code))
+    } else {
+        Err(format!("rewind_files failed: {}", stderr.trim()))
+    }
+}
+
 /// 删除远端会话：只允许删除 CLI projects 目录内的 .jsonl 文件，和本机 delete_session 的白名单逻辑一致。
 pub async fn delete_remote_session(uri: &str) -> Result<(), String> {
     let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;

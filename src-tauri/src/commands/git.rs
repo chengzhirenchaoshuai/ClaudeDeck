@@ -87,6 +87,12 @@ pub(crate) async fn rewind_files(
         ));
     }
 
+    // 远程项目：本机的 claude 碰不到远端文件，改为经 ssh 在远端执行同样的命令
+    if let Some((host_id, remote_path)) = commands::remote::parse_remote_uri(&cwd) {
+        return commands::remote::rewind_remote_files(&host_id, &remote_path, &session_id, &checkpoint_uuid)
+            .await;
+    }
+
     let claude_bin = find_claude_binary().unwrap_or_else(|| "claude.cmd".to_string());
 
     let enriched_path = build_enriched_path();
