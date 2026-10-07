@@ -6,6 +6,7 @@ import { useFileStore } from '../../stores/fileStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { bridge, SessionListItem, onCliSessionsChanged } from '../../lib/tauri-bridge';
 import { applyDiskSession, syncSession } from '../../lib/session-sync';
+import { disposableListen } from '../../lib/disposable-listen';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
@@ -268,7 +269,6 @@ export function ConversationList() {
 
   // CLI 会话目录变化（含终端里直接运行的 claude）：刷新列表，并同步已打开的会话
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
     let running = false;
     let pending = false;
     const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
@@ -289,14 +289,13 @@ export function ConversationList() {
       }
     };
 
-    onCliSessionsChanged((paths) => {
+    return disposableListen(onCliSessionsChanged((paths) => {
       fetchSessions();
       const cur = currentSession();
       if (cur?.path && !cur.host && paths.some((p) => norm(p) === norm(cur.path))) {
         syncCurrent();
       }
-    }).then((fn) => { unlisten = fn; }).catch(() => {});
-    return () => { unlisten?.(); };
+    }));
   }, [fetchSessions]);
 
   // 当前打开的会话短周期轮询：覆盖不了文件系统事件的场景（远程会话、
@@ -313,15 +312,13 @@ export function ConversationList() {
 
   // Listen for sessions:changed event for instant refresh
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen('sessions:changed', () => {
+    return disposableListen(listen('sessions:changed', () => {
       fetchSessions();
       // 远程会话没有目录监听，会话进程结束时顺带刷新远程列表
       if (useSettingsStore.getState().activeEnv !== 'local') {
         useSessionStore.getState().fetchRemoteSessions();
       }
-    }).then((fn) => { unlisten = fn; }).catch(() => {});
-    return () => { unlisten?.(); };
+    }));
   }, [fetchSessions]);
 
   // Debounce content search: 300ms after searchQuery changes, ≥2 chars

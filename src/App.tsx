@@ -15,6 +15,7 @@ import { useSessionStore } from './stores/sessionStore';
 import { useAgentStore } from './stores/agentStore';
 import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath } from './lib/tauri-bridge';
 import { hasStreamListener, setStreamListener } from './lib/stream-listeners';
+import { disposableListen } from './lib/disposable-listen';
 import { useScrollZoom } from './lib/useScrollZoom';
 import { useT } from './lib/i18n';
 import { loadClaudeUuid } from './hooks/useStreamProcessor';
@@ -130,27 +131,22 @@ function App() {
   tRef.current = t;
 
   useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+    return disposableListen(import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
       const win = getCurrentWindow();
-      win.onCloseRequested(async (event) => {
+      return win.onCloseRequested(async (event) => {
         event.preventDefault();
         if (useSettingsStore.getState().minimizeOnClose) {
           await win.hide().catch(() => {});
           return;
         }
         await requestQuit(tRef.current);
-      }).then((fn) => { unlisten = fn; });
-    });
-    return () => { unlisten?.(); };
+      });
+    }));
   }, []);
 
   // 托盘菜单“退出”：后端已唤起窗口，这里走统一的退出流程（确认 + 有序收尾）
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen('tray:quit-requested', () => { void requestQuit(tRef.current); })
-      .then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    return disposableListen(listen('tray:quit-requested', () => { void requestQuit(tRef.current); }));
   }, []);
 
   // 应用不在最前时，会话结束会在任务栏图标上显示数字提醒

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { bridge, isRemotePath } from '../lib/tauri-bridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTreeDragActive } from '../lib/drag-state';
+import { disposableListen } from '../lib/disposable-listen';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useFileStore } from '../stores/fileStore';
 
@@ -223,9 +224,9 @@ export function useFileAttachments() {
   const lastDropRef = useRef<{ time: number; key: string }>({ time: 0, key: '' });
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    getCurrentWindow().onDragDropEvent((event) => {
+    // 用 disposableListen 保证卸载后可靠注销：监听泄漏会让一次拖放被处理多次
+    // （远程项目下表现为同一文件重复上传）
+    return disposableListen(getCurrentWindow().onDragDropEvent((event) => {
       const { type } = event.payload;
 
       if (type === 'over' || type === 'enter') {
@@ -307,16 +308,7 @@ export function useFileAttachments() {
           }
         }
       }
-    }).then((fn) => {
-      // 注册是异步的：若组件在注册完成前已卸载（StrictMode 双挂载、切换工作目录重挂载 InputBar），
-      // 必须立即注销，否则监听器泄漏，一次拖放会被处理多次（远程项目下表现为同一文件重复上传）
-      if (disposed) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    }));
   }, []);
 
   const removeFile = useCallback((id: string) => {
