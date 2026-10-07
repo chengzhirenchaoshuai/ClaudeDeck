@@ -494,6 +494,14 @@ if (Test-Path -LiteralPath $proj) {
 }
 $files = @($files | Sort-Object Time)
 $anon = 0
+$rxId = [regex]'"id":"([^"]+)"'
+$rxModel = [regex]'"model":"([^"]*)"'
+$rxIn = [regex]'"input_tokens":(\d+)'
+$rxOut = [regex]'"output_tokens":(\d+)'
+$rxCr = [regex]'"cache_read_input_tokens":(\d+)'
+$rxCc = [regex]'"cache_creation_input_tokens":(\d+)'
+$rx5 = [regex]'"ephemeral_5m_input_tokens":(\d+)'
+$rx1 = [regex]'"ephemeral_1h_input_tokens":(\d+)'
 foreach ($f in $files) {
   $cwd = ''
   $byId = @{}
@@ -504,23 +512,56 @@ foreach ($f in $files) {
     }
     if (-not $line.Contains('"usage":{')) { continue }
     if (-not $line.Contains('"type":"assistant"')) { continue }
-    try { $j = $line | ConvertFrom-Json } catch { continue }
-    if ($j.type -ne 'assistant') { continue }
-    $u = $j.message.usage
-    if (-not $u) { continue }
-    $in = [int64]$u.input_tokens
-    $out = [int64]$u.output_tokens
-    $cr = [int64]$u.cache_read_input_tokens
-    $cc = $u.cache_creation
-    if ($cc) { $c5 = [int64]$cc.ephemeral_5m_input_tokens; $c1 = [int64]$cc.ephemeral_1h_input_tokens }
-    else { $c5 = [int64]$u.cache_creation_input_tokens; $c1 = [int64]0 }
+    # 快速路径：整行 ConvertFrom-Json 占了 85% 的耗时，这里只用预编译正则取需要的几个字段。
+    # message 头部（model、id 在 content 之前）与 usage 对象的第一个匹配即顶层字段（iterations 在其后）；
+    # 任何字段取不到就回退到下面完整解析 JSON 的老逻辑，保证结果不变。
+    $fast = $false
+    $mi = $line.IndexOf('"message":{')
+    if ($mi -ge 0) {
+      $ui = $line.IndexOf('"usage":{', $mi)
+      if ($ui -gt $mi) {
+        $ci = $line.IndexOf('"content":', $mi)
+        $headEnd = if ($ci -gt $mi -and $ci -lt $ui) { $ci } else { $ui }
+        $head = $line.Substring($mi, $headEnd - $mi)
+        $u = $line.Substring($ui)
+        $mId = $rxId.Match($head); $mModel = $rxModel.Match($head)
+        $mIn = $rxIn.Match($u); $mOut = $rxOut.Match($u); $mCr = $rxCr.Match($u)
+        if ($mId.Success -and $mModel.Success -and $mIn.Success -and $mOut.Success -and $mCr.Success) {
+          $in = [int64]$mIn.Groups[1].Value
+          $out = [int64]$mOut.Groups[1].Value
+          $cr = [int64]$mCr.Groups[1].Value
+          if ($u.Contains('"cache_creation":{')) {
+            $m5 = $rx5.Match($u); $m1 = $rx1.Match($u)
+            $c5 = if ($m5.Success) { [int64]$m5.Groups[1].Value } else { [int64]0 }
+            $c1 = if ($m1.Success) { [int64]$m1.Groups[1].Value } else { [int64]0 }
+            $fast = $true
+          } else {
+            $mCc = $rxCc.Match($u)
+            if ($mCc.Success) { $c5 = [int64]$mCc.Groups[1].Value; $c1 = [int64]0; $fast = $true }
+          }
+          if ($fast) { $id = $mId.Groups[1].Value; $model = $mModel.Groups[1].Value }
+        }
+      }
+    }
+    if (-not $fast) {
+      try { $j = $line | ConvertFrom-Json } catch { continue }
+      if ($j.type -ne 'assistant') { continue }
+      $u = $j.message.usage
+      if (-not $u) { continue }
+      $in = [int64]$u.input_tokens
+      $out = [int64]$u.output_tokens
+      $cr = [int64]$u.cache_read_input_tokens
+      $cc = $u.cache_creation
+      if ($cc) { $c5 = [int64]$cc.ephemeral_5m_input_tokens; $c1 = [int64]$cc.ephemeral_1h_input_tokens }
+      else { $c5 = [int64]$u.cache_creation_input_tokens; $c1 = [int64]0 }
+      $id = [string]$j.message.id
+      $model = [string]$j.message.model
+    }
     if (($in + $out + $cr + $c5 + $c1) -eq 0) { continue }
-    $id = [string]$j.message.id
     if (-not $id) { $id = [string]$j.uuid }
     if (-not $id) { $anon++; $id = "anon-$anon" }
     $hm = [regex]::Match($line, '"timestamp":"(\d{4}-\d{2}-\d{2}T\d{2})')
     $hour = if ($hm.Success) { $hm.Groups[1].Value } else { 'unknown' }
-    $model = [string]$j.message.model
     if (-not $model) { $model = 'unknown' }
     if (-not $byId.ContainsKey($id) -or $byId[$id][3] -lt $out) {
       $byId[$id] = @($hour, $model, $in, $out, $cr, $c5, $c1)
