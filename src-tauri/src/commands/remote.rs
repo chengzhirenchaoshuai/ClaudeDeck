@@ -375,6 +375,85 @@ pub async fn read_remote_config(host_id: String) -> Result<Value, String> {
     Ok(config)
 }
 
+/// 远端目录树扫描脚本：一次 ssh 读回整棵树（深度、总节点数都有上限，避免大项目拖垮连接）。
+/// 忽略的目录与本机 read_dir_recursive 一致；不进入重解析点（联接 / 符号链接），防止循环。
+/// 排序在本机 Rust 里做（目录在前、名称小写比较），与本机文件树顺序一致。
+/// `__DIR__` / `__DEPTH__` / `__CAP__` 由调用方替换。
+const SCAN_TREE_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+$base = __DIR__
+$maxDepth = __DEPTH__
+$cap = __CAP__
+$skip = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($n in 'node_modules','target','__pycache__','.git','.DS_Store','Thumbs.db','.venv','venv','.env','dist','build','.next','.nuxt','.parcel-cache','coverage','.turbo','.svelte-kit') { [void]$skip.Add($n) }
+$script:count = 0
+$script:truncated = $false
+function Walk($dir, $depth) {
+  $infos = @()
+  try { $infos = (New-Object System.IO.DirectoryInfo($dir)).GetFileSystemInfos() } catch { }
+  foreach ($i in $infos) {
+    if ($skip.Contains($i.Name)) { continue }
+    if ($script:count -ge $cap) { $script:truncated = $true; break }
+    $script:count++
+    $isDir = [bool]($i.Attributes -band [System.IO.FileAttributes]::Directory)
+    $node = [ordered]@{ name = $i.Name; path = $i.FullName; is_dir = $isDir }
+    if ($isDir) {
+      $reparse = [bool]($i.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+      if ($depth -lt $maxDepth -and -not $reparse) { $node.children = @(Walk $i.FullName ($depth + 1)) } else { $node.children = @() }
+    }
+    [pscustomobject]$node
+  }
+}
+if (-not (Test-Path -LiteralPath $base -PathType Container)) {
+  Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{ exists = $false })
+} else {
+  $nodes = @(Walk $base 0)
+  Out-AsciiJson (ConvertTo-Json -Compress -Depth 30 -InputObject ([pscustomobject]@{ exists = $true; truncated = $script:truncated; nodes = $nodes }))
+}
+"#;
+
+/// 递归把节点里的 Windows 路径转成 ssh:// URI
+fn uri_tree(host_id: &str, nodes: &mut Value) {
+    if let Some(items) = nodes.as_array_mut() {
+        for node in items {
+            let path = node["path"].as_str().unwrap_or("").to_string();
+            node["path"] = Value::String(to_uri(host_id, &path));
+            uri_tree(host_id, &mut node["children"]);
+        }
+    }
+}
+
+/// 读取远端目录树（路径已转为 ssh:// URI，节点未排序）。目录不存在时返回 "Directory does not exist"，
+/// 与本机 read_file_tree 的报错一致，前端据此判断目录缺失。
+pub async fn scan_remote_tree(host_id: &str, remote_path: &str, depth: u32) -> Result<Value, String> {
+    if remote_path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) || remote_path.split(['/', '\\']).any(|seg| seg == "..") {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    let host = find_host(host_id)?;
+    let script = SCAN_TREE_SCRIPT
+        .replace("__DIR__", &ps_quote(&remote_path.replace('/', "\\")))
+        .replace("__DEPTH__", &depth.min(6).to_string())
+        .replace("__CAP__", "4000");
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(60)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("读取远端目录失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    let mut data: Value =
+        serde_json::from_str(text).map_err(|e| format!("解析远端目录失败: {}", e))?;
+    if data["exists"].as_bool() != Some(true) {
+        return Err("Directory does not exist".to_string());
+    }
+    uri_tree(host_id, &mut data["nodes"]);
+    Ok(data)
+}
+
 /// 扫描远端的自定义命令与技能文件：`<配置目录>/commands/*.md`、`<配置目录>/skills/**/SKILL.md`，
 /// 以及项目内的 `.claude/commands`、`.claude/skills`。只负责把文件读回来（技能只取开头一段，
 /// 够解析 frontmatter 和描述即可），解析逻辑在 skills.rs，与本机共用，保证两边行为一致。

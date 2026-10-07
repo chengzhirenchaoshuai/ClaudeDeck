@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { FileNode } from '../../lib/tauri-bridge';
 import { useFileStore, FileChangeKind } from '../../stores/fileStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { bridge } from '../../lib/tauri-bridge';
+import { bridge, isRemotePath } from '../../lib/tauri-bridge';
+import { remoteNativePath } from '../../lib/remote';
 import { useT } from '../../lib/i18n';
 import { startTreeDrag, moveTreeDrag, endTreeDrag } from '../../lib/drag-state';
 import { useChatStore } from '../../stores/chatStore';
@@ -45,9 +46,11 @@ interface ContextMenuCallbacks {
   onNewFile: (dir: string) => void;
   onNewFolder: (dir: string) => void;
   clipboardPath: string | null;
+  /** 远程项目的文件树是只读的：菜单里只保留对远端也有意义的项 */
+  remote: boolean;
 }
 
-type MenuItem = { label: string; icon: React.ReactNode; action: () => void; danger?: boolean } | 'separator';
+type MenuItem = { label: string; icon: React.ReactNode; action: () => void; danger?: boolean; remoteOk?: boolean } | 'separator';
 
 function ContextMenu({ menu, onClose, callbacks }: {
   menu: ContextMenuState;
@@ -104,11 +107,13 @@ function ContextMenu({ menu, onClose, callbacks }: {
       label: t('files.insertToChat'),
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 14l4-2 8-8-2-2-8 8-2 4z" /><path d="M10 4l2 2" /></svg>,
       action: () => { callbacks.onInsertToChat(menu.path); onClose(); },
+      remoteOk: true,
     },
     {
       label: t('files.copyPath'),
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M5 2H2v12h8v-3" /><path d="M6 6h8v8H6V6z" /></svg>,
       action: () => { callbacks.onCopyPath(menu.path); onClose(); },
+      remoteOk: true,
     },
     ...(!menu.isDir ? [{
       label: t('files.copyFile'),
@@ -157,7 +162,7 @@ function ContextMenu({ menu, onClose, callbacks }: {
         bg-bg-card shadow-lg animate-fade-in whitespace-nowrap"
       style={{ left: pos.x, top: pos.y }}
     >
-      {items.map((item, i) =>
+      {(callbacks.remote ? items.filter((item) => item !== 'separator' && item.remoteOk) : items).map((item, i) =>
         item === 'separator' ? (
           <div key={i} className="my-1 border-t border-border-subtle" />
         ) : (
@@ -223,7 +228,7 @@ function SearchResultItem({
     <button
       onClick={(e) => {
         if (!node.is_dir) {
-          if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+          if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && !isRemotePath(node.path)) {
             bridge.openWithDefaultApp(node.path);
           } else {
             selectFile(node.path);
@@ -301,7 +306,7 @@ function TreeNode({
     if (node.is_dir) {
       setExpanded(!expanded);
     } else {
-      if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+      if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && !isRemotePath(node.path)) {
         bridge.openWithDefaultApp(node.path);
       } else {
         selectFile(node.path);
@@ -343,7 +348,9 @@ function TreeNode({
               // End drag (cleans up ghost + detects drop target)
               const result = endTreeDrag();
               if (result) {
-                if (result.targetFolder) {
+                if (result.targetFolder && isRemotePath(result.targetFolder)) {
+                  // 远程文件树只读，不支持拖动移动文件
+                } else if (result.targetFolder) {
                   // Drop on folder → move file
                   const fileName = result.sourcePath.split(/[\\/]/).pop() || '';
                   const dest = `${result.targetFolder}/${fileName}`;
@@ -356,8 +363,9 @@ function TreeNode({
                     .catch((err: unknown) => console.error('Failed to move file:', err));
                 } else if (!result.droppedInTree) {
                   // Drop outside file tree → insert file chip in chat
+                  // 远程文件：给远端 claude 的是远端原生路径，不是 ssh:// URI
                   window.dispatchEvent(
-                    new CustomEvent('tokenicode:tree-file-inline', { detail: result.sourcePath }),
+                    new CustomEvent('tokenicode:tree-file-inline', { detail: remoteNativePath(result.sourcePath) }),
                   );
                 }
               }
@@ -474,6 +482,8 @@ export function FileExplorer() {
   const changedFiles = useFileStore((s) => s.changedFiles);
   const clearChangedFiles = useFileStore((s) => s.clearChangedFiles);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
+  // 远程项目的文件树只读（没有新建 / 重命名 / 删除 / 拖动），也没有文件监听
+  const isRemote = isRemotePath(workingDirectory);
 
   const refreshTree = useFileStore((s) => s.refreshTree);
   const createFile = useFileStore((s) => s.createFile);
@@ -518,7 +528,7 @@ export function FileExplorer() {
 
   // --- Right-click menu callbacks ---
   const handleCopyPath = useCallback((path: string) => {
-    navigator.clipboard.writeText(path);
+    navigator.clipboard.writeText(remoteNativePath(path));
   }, []);
 
   const handleCopyFile = useCallback((path: string) => {
@@ -589,7 +599,7 @@ export function FileExplorer() {
     const tab = useChatStore.getState().getTab(tabId);
     const currentDraft = tab?.inputDraft ?? '';
     const prefix = currentDraft && !currentDraft.endsWith('\n') && !currentDraft.endsWith(' ') ? ' ' : '';
-    useChatStore.getState().setInputDraft(tabId, currentDraft + prefix + '"' + path + '"');
+    useChatStore.getState().setInputDraft(tabId, currentDraft + prefix + '"' + remoteNativePath(path) + '"');
   }, []);
 
   const handleNewFile = useCallback((dir: string) => {
@@ -631,7 +641,8 @@ export function FileExplorer() {
     onNewFile: handleNewFile,
     onNewFolder: handleNewFolder,
     clipboardPath,
-  }), [handleCopyPath, handleCopyFile, handlePaste, handleStartRename, handleRequestDelete, handleInsertToChat, handleNewFile, handleNewFolder, clipboardPath]);
+    remote: isRemote,
+  }), [handleCopyPath, handleCopyFile, handlePaste, handleStartRename, handleRequestDelete, handleInsertToChat, handleNewFile, handleNewFolder, clipboardPath, isRemote]);
 
   // No project selected
   if (!workingDirectory) {
@@ -683,6 +694,8 @@ export function FileExplorer() {
           )}
         </div>
         <div className="flex items-center gap-0.5">
+          {!isRemote && (
+            <>
           <button onClick={() => handleNewFile(workingDirectory || rootPath)}
             className="p-1.5 rounded-lg hover:bg-bg-secondary active:bg-bg-tertiary
               text-text-tertiary hover:text-text-secondary transition-smooth"
@@ -703,6 +716,8 @@ export function FileExplorer() {
               <path d="M7 8v3M5.5 9.5h3" />
             </svg>
           </button>
+            </>
+          )}
           <button onClick={toggleHiddenFiles}
             className={`p-1.5 rounded-lg hover:bg-bg-secondary active:bg-bg-tertiary
               transition-smooth ${showHiddenFiles ? 'text-accent' : 'text-text-tertiary hover:text-text-secondary'}`}
@@ -779,7 +794,7 @@ export function FileExplorer() {
 
       {/* File tree */}
       <div className="flex-1 min-h-0 relative" data-file-tree>
-        {isDragOverTree && (
+        {isDragOverTree && !isRemote && (
           <div className="absolute inset-0 z-10 border-2 border-dashed border-accent
             bg-accent/5 rounded-lg flex items-center justify-center pointer-events-none">
             <span className="text-xs text-accent font-medium">

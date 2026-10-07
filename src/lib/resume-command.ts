@@ -1,10 +1,5 @@
 import type { SessionListItem } from './tauri-bridge';
-
-/** 会话所在的目录（Windows 路径）：远程会话去掉 ssh://<主机>/ 前缀，本机会话直接用 project */
-function sessionDirectory(session: SessionListItem): string {
-  const match = session.project.match(/^ssh:\/\/[^/]+\/(.+)$/);
-  return match ? match[1].replace(/\//g, '\\') : session.project;
-}
+import { remoteNativePath } from './remote';
 
 /**
  * 在终端里恢复该会话的命令（PowerShell 语法）。
@@ -13,6 +8,7 @@ function sessionDirectory(session: SessionListItem): string {
  * 远程会话需要先 ssh 登录到对应主机，再在远端终端里执行。
  */
 export function buildResumeCommand(session: SessionListItem): string {
-  const dir = sessionDirectory(session).replace(/'/g, "''");
+  // 远程会话去掉 ssh://<主机>/ 前缀得到远端目录，本机会话直接用 project
+  const dir = remoteNativePath(session.project).replace(/'/g, "''");
   return `Set-Location -LiteralPath '${dir}'; claude --resume ${session.id}`;
 }

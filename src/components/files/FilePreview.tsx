@@ -23,7 +23,7 @@ import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { useFileStore } from '../../stores/fileStore';
-import { bridge } from '../../lib/tauri-bridge';
+import { bridge, isRemotePath } from '../../lib/tauri-bridge';
 import type { SkillTranslationConfig } from '../../lib/tauri-bridge';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
@@ -283,6 +283,10 @@ export function FilePreview() {
     return [];
   }, [hasPreview, isMarkdown, isBinary, isImage, t]);
 
+  // 远程文件只读：不能编辑保存，也不能交给本机程序打开（路径在远端）
+  const isRemoteFile = isRemotePath(selectedFile);
+  const visibleModeTabs = isRemoteFile ? modeTabs.filter((tab) => tab.id !== 'edit') : modeTabs;
+
   if (!selectedFile) return null;
 
   return (
@@ -327,9 +331,9 @@ export function FilePreview() {
           )}
 
           {/* Mode toggle tabs */}
-          {modeTabs.length > 0 && (
+          {visibleModeTabs.length > 0 && (
             <div className="flex gap-0.5 bg-bg-tertiary/50 rounded-xl p-1">
-              {modeTabs.map((tab) => (
+              {visibleModeTabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setPreviewMode(tab.id)}
@@ -421,7 +425,7 @@ export function FilePreview() {
               className="flex-1 w-full border-0 bg-white"
               title={fileName}
             />
-            <div className="flex items-center justify-center py-2 border-t border-border-subtle">
+            {!isRemoteFile && <div className="flex items-center justify-center py-2 border-t border-border-subtle">
               <button
                 onClick={() => bridge.openWithDefaultApp(selectedFile)}
                 className="px-3 py-1 rounded-lg text-[11px] font-medium
@@ -430,7 +434,7 @@ export function FilePreview() {
               >
                 {t('files.openExternal')}
               </button>
-            </div>
+            </div>}
           </div>
         ) : isVideo && selectedFile && fileContent ? (
           /* Video preview: native <video> with base64 data URL */
@@ -456,7 +460,7 @@ export function FilePreview() {
             <div className="text-center space-y-3">
               <FileIcon name={fileName} size={40} className="text-text-tertiary" />
               <div className="text-xs text-text-muted">{t('files.binaryFile')}</div>
-              {selectedFile && (
+              {selectedFile && !isRemoteFile && (
                 <button
                   onClick={() => bridge.openWithDefaultApp(selectedFile)}
                   className="px-3 py-1.5 text-xs rounded-lg bg-bg-secondary

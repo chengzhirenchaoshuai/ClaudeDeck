@@ -262,7 +262,8 @@ export function useFileAttachments() {
         if (now - lastDropRef.current.time < 500 && key === lastDropRef.current.key) return;
         lastDropRef.current = { time: now, key };
 
-        if (wasOverTree) {
+        // 远程项目的文件树是只读的，拖到树上不能复制进项目，按普通附件处理
+        if (wasOverTree && !isRemotePath(useSettingsStore.getState().workingDirectory)) {
           // Drop onto file tree → copy files into project
           const rootPath = useSettingsStore.getState().workingDirectory
             || useFileStore.getState().rootPath;

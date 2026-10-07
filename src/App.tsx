@@ -10,7 +10,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useProviderStore } from './stores/providerStore';
 import type { FontFamily } from './stores/settingsStore';
 import { useFileStore } from './stores/fileStore';
-import { useChatStore } from './stores/chatStore';
+import { useChatStore, useActiveTab } from './stores/chatStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useAgentStore } from './stores/agentStore';
 import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath } from './lib/tauri-bridge';
@@ -520,8 +520,10 @@ function App() {
       return;
     }
 
-    // 远程项目（ssh://）的文件树暂不支持，避免对本机文件系统读取无效路径
+    // 远程项目（ssh://）：经 ssh 读取文件树。远端没有文件监听，只在切换时加载一次，
+    // 之后在会话回合结束时刷新（见下方 effect）或由用户手动刷新
     if (isRemotePath(workingDirectory)) {
+      loadTree(workingDirectory);
       return;
     }
 
@@ -539,6 +541,17 @@ function App() {
       bridge.unwatchDirectory(workingDirectory).catch(() => {});
     };
   }, [workingDirectory, homeDirReady]);
+
+  // 远程项目没有文件监听：会话回合结束（running → 非 running）时刷新一次文件树，反映 claude 刚改动的文件
+  const activeSessionStatus = useActiveTab((t) => t.sessionStatus);
+  const prevSessionStatusRef = useRef(activeSessionStatus);
+  useEffect(() => {
+    const was = prevSessionStatusRef.current;
+    prevSessionStatusRef.current = activeSessionStatus;
+    if (was !== 'running' || activeSessionStatus === 'running') return;
+    const dir = useSettingsStore.getState().workingDirectory;
+    if (isRemotePath(dir)) useFileStore.getState().refreshTree(dir);
+  }, [activeSessionStatus]);
 
   // 启动时保证当前环境与工作目录一致（本地环境不应指向 ssh://，远程环境不应指向本机路径）
   useEffect(() => {

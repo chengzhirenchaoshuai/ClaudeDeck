@@ -11,6 +11,12 @@ export function remoteUri(hostId: string, remotePath: string): string {
   return cleaned ? `ssh://${hostId}/${cleaned}` : '';
 }
 
+/** ssh://<主机>/C:/a/b → C:\a\b（远端 claude 看到的原生 Windows 路径）；非远程路径原样返回 */
+export function remoteNativePath(uri: string): string {
+  const match = uri.match(/^ssh:\/\/[^/]+\/(.+)$/);
+  return match ? match[1].replace(/\//g, '\\') : uri;
+}
+
 /**
  * 会话里点到的文件路径。当前处于远程项目（工作目录为 ssh://<主机>/...）时，
  * 远端 claude 给出的绝对路径（如 C:\x\y.ts）要转成 ssh://<主机>/C:/x/y.ts 走远程读取，

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { bridge, FileNode, RecentProject } from '../lib/tauri-bridge';
+import { bridge, FileNode, RecentProject, isRemotePath } from '../lib/tauri-bridge';
 
 export type FileChangeKind = 'created' | 'modified' | 'removed';
 export type PreviewMode = 'preview' | 'source' | 'edit';
@@ -69,6 +69,9 @@ interface FileState {
 
 /** 再用 read_dir 确认一次目录是否真的不存在，避免一次瞬时失败就把目录判定为缺失 */
 async function confirmMissing(path: string): Promise<boolean> {
+  // 远程目录是否存在由后端经 ssh 判定（read_file_tree 返回 "Directory does not exist"），
+  // 本机的 read_dir 对 ssh:// 路径没有意义，不能再复查
+  if (isRemotePath(path)) return true;
   try {
     await bridge.checkFileAccess(path); // 存在但无权限时返回 false，也算存在
     return false;

@@ -88,11 +88,40 @@ pub(crate) struct FileNode {
 #[tauri::command]
 pub(crate) async fn read_file_tree(path: String, depth: Option<u32>) -> Result<Vec<FileNode>, String> {
     let max_depth = depth.unwrap_or(5);
+    // 远程项目：经 ssh 一次读回整棵树
+    if let Some((host_id, remote_path)) = commands::remote::parse_remote_uri(&path) {
+        let data = commands::remote::scan_remote_tree(&host_id, &remote_path, max_depth).await?;
+        return Ok(nodes_from_remote(&data["nodes"]));
+    }
     let root = std::path::Path::new(&path);
     if !root.exists() {
         return Err("Directory does not exist".to_string());
     }
     Ok(read_dir_recursive(root, 0, max_depth))
+}
+
+/// 远端读回来的节点转成 FileNode，同一层内目录在前、名称小写比较，与本机 read_dir_recursive 的顺序一致
+fn nodes_from_remote(value: &Value) -> Vec<FileNode> {
+    let mut nodes: Vec<FileNode> = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            let is_dir = item["is_dir"].as_bool().unwrap_or(false);
+            FileNode {
+                name: item["name"].as_str().unwrap_or("").to_string(),
+                path: item["path"].as_str().unwrap_or("").to_string(),
+                is_dir,
+                children: if is_dir { Some(nodes_from_remote(&item["children"])) } else { None },
+            }
+        })
+        .collect();
+    nodes.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    nodes
 }
 
 pub(crate) fn read_dir_recursive(dir: &std::path::Path, current_depth: u32, max_depth: u32) -> Vec<FileNode> {
@@ -547,4 +576,31 @@ pub(crate) async fn upload_temp_file_to_remote(src_path: String, cwd: String) ->
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file".to_string());
     commands::remote::save_remote_temp_file(&cwd, &unique_temp_name(&name), &data).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 远端目录树转 FileNode：同层目录在前、名称按小写比较，子目录递归排序，文件没有 children
+    #[test]
+    fn remote_tree_is_sorted_like_local() {
+        let data = json!([
+            { "name": "b.txt", "path": "ssh://h/C:/p/b.txt", "is_dir": false, "children": null },
+            { "name": "Src", "path": "ssh://h/C:/p/Src", "is_dir": true, "children": [
+                { "name": "z.rs", "path": "ssh://h/C:/p/Src/z.rs", "is_dir": false },
+                { "name": "A.rs", "path": "ssh://h/C:/p/Src/A.rs", "is_dir": false },
+            ] },
+            { "name": "A.txt", "path": "ssh://h/C:/p/A.txt", "is_dir": false },
+            { "name": "docs", "path": "ssh://h/C:/p/docs", "is_dir": true, "children": [] },
+        ]);
+        let nodes = nodes_from_remote(&data);
+        let names: Vec<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, ["docs", "Src", "A.txt", "b.txt"]);
+        assert!(nodes[0].children.as_ref().unwrap().is_empty());
+        assert!(nodes[2].children.is_none());
+        let inner: Vec<&str> = nodes[1].children.as_ref().unwrap().iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(inner, ["A.rs", "z.rs"]);
+    }
 }
