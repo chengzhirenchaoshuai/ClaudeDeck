@@ -7,6 +7,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { bridge, SessionListItem, onCliSessionsChanged } from '../../lib/tauri-bridge';
 import { applyDiskSession, syncSession } from '../../lib/session-sync';
 import { disposableListen } from '../../lib/disposable-listen';
+import { buildResumeCommand } from '../../lib/resume-command';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
@@ -620,6 +621,13 @@ export function ConversationList() {
     }
   }, []);
 
+  const handleCopyResumeCommand = useCallback((session: SessionListItem) => {
+    navigator.clipboard.writeText(buildResumeCommand(session)).then(
+      () => showToast(t('conv.resumeCommandCopied'), 'success'),
+      () => showToast(t('conv.resumeCommandCopyFailed'), 'error'),
+    );
+  }, [t]);
+
   const handleNewSessionInProject = useCallback((projectKey: string) => {
     const suffix = projectKey.replace(/^~/, '');
     const allSessions = useSessionStore.getState().sessions;
@@ -1083,6 +1091,7 @@ export function ConversationList() {
           onRename={handleRenameFromMenu}
           onRevealInFinder={handleRevealInFinder}
           onExport={handleExportMarkdown}
+          onCopyResumeCommand={handleCopyResumeCommand}
           onDelete={handleDeleteSingle}
           onPin={viewMode === 'recent' ? undefined : handleTogglePin}
           onArchive={handleToggleArchive}

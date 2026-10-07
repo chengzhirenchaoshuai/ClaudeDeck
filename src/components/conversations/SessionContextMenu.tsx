@@ -10,6 +10,7 @@ interface SessionContextMenuProps {
   onRename: (session: SessionListItem) => void;
   onRevealInFinder: (session: SessionListItem) => void;
   onExport: (session: SessionListItem) => void;
+  onCopyResumeCommand: (session: SessionListItem) => void;
   onDelete: (session: SessionListItem) => void;
   onPin?: (session: SessionListItem) => void;
   onArchive?: (session: SessionListItem) => void;
@@ -29,6 +30,7 @@ export function SessionContextMenu({
   onRename,
   onRevealInFinder,
   onExport,
+  onCopyResumeCommand,
   onDelete,
   onPin,
   onArchive,
@@ -183,6 +185,20 @@ export function SessionContextMenu({
             <path d="M4 14h8M8 2v9M5 8l3 3 3-3" />
           </svg>
           {t('conv.export')}
+        </button>
+      )}
+
+      {session.path && (
+        <button
+          onClick={() => { onClose(); onCopyResumeCommand(session); }}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5
+            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 4l4 4-4 4M8 12h5" />
+          </svg>
+          {t('conv.copyResumeCommand')}
         </button>
       )}
 
