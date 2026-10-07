@@ -1,9 +1,9 @@
 // 运行中的活动指示器：打字机效果的“思考中”文案、当前阶段/工具、耗时与输出 token 数。
 import { useEffect, useState } from 'react';
-import { useSettingsStore, getContextWindowForModel } from '../../stores/settingsStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
-import { resolveModelForProvider } from '../../lib/api-provider';
 import { formatTokens, formatElapsed } from './chatFormat';
+import { resolveSessionContextWindow } from '../../lib/context-window';
 
 /** Cycling typewriter text for thinking phase — like Claude Code website "Built for > coders" */
 const THINKING_WORD_COUNT = 5;
@@ -117,13 +117,7 @@ export function ActivityIndicator({ activityStatus, sessionMeta }: {
   // 1M models (claude-opus-4-6-1m, mimo-v2-pro[1m]) → warn at 600K; others at 120K (60% of 200K)
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const contextWindowMode = useSettingsStore((s) => s.contextWindowMode);
-  const resolvedModel = sessionMeta.spawnedModel
-    || sessionMeta.snapshotModel
-    || resolveModelForProvider(selectedModel);
-  const contextWindow = getContextWindowForModel(
-    resolvedModel,
-    sessionMeta.snapshotContextWindowMode ?? contextWindowMode,
-  );
+  const contextWindow = resolveSessionContextWindow(sessionMeta, selectedModel, contextWindowMode).window;
   const inputTokens = sessionMeta.contextInputTokens ?? sessionMeta.inputTokens ?? 0;
   const contextWarning = inputTokens > contextWindow * 0.6;
 

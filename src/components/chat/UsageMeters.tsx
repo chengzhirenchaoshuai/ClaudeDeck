@@ -1,15 +1,15 @@
 // 用量相关的小组件：上下文占用进度条（含压缩按钮，显示在输入栏）和 5 小时/每周限额状态条。
 import { useEffect, useState } from 'react';
 import { useChatStore, generateMessageId, type SessionMeta } from '../../stores/chatStore';
-import { useSettingsStore, getContextWindowForModel, getAutoCompactThreshold } from '../../stores/settingsStore';
+import { useSettingsStore, getAutoCompactThreshold } from '../../stores/settingsStore';
 import { getContextUsedTokens } from '../../lib/context-usage';
 import { useRateLimitsStore, type RateLimitWindow } from '../../stores/rateLimitsStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
-import { resolveModelForProvider } from '../../lib/api-provider';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { formatTokens } from './chatFormat';
+import { resolveSessionContextWindow } from '../../lib/context-window';
 
 /** 上下文占用进度条 + 压缩按钮，渲染在 InputBar 工具行里、紧挨模型选择框左侧。 */
 export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
@@ -22,13 +22,9 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   const contextWindowMode = useSettingsStore((s) => s.contextWindowMode);
   const autoCompactThresholdTokens = useSettingsStore((s) => s.autoCompactThresholdTokens);
   const [isCompacting, setIsCompacting] = useState(false);
-  const modelForContext = sessionMeta.spawnedModel
-    || sessionMeta.snapshotModel
-    || sessionMeta.model
-    || resolveModelForProvider(selectedModel);
-  const effectiveContextMode = sessionMeta.snapshotContextWindowMode ?? contextWindowMode;
-  const contextWindow = getContextWindowForModel(modelForContext, effectiveContextMode);
-  const compactThreshold = getAutoCompactThreshold(modelForContext, effectiveContextMode, autoCompactThresholdTokens);
+  const ctx = resolveSessionContextWindow(sessionMeta, selectedModel, contextWindowMode);
+  const contextWindow = ctx.window;
+  const compactThreshold = getAutoCompactThreshold(ctx.model, ctx.mode, autoCompactThresholdTokens);
   const used = Math.min(contextWindow, getContextUsedTokens(sessionMeta));
   const available = Math.max(0, contextWindow - used);
   const percent = Math.min(100, Math.round((used / contextWindow) * 100));
@@ -94,7 +90,7 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
     <div className="hidden md:flex flex-shrink-0 items-center gap-2 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary whitespace-nowrap"
       title={t('chat.contextTooltip')
-        .replace('{model}', displayProviderModelName(modelForContext))
+        .replace('{model}', displayProviderModelName(ctx.model))
         .replace('{used}', used.toLocaleString())
         .replace('{window}', contextWindow.toLocaleString())
         .replace('{free}', available.toLocaleString())

@@ -711,16 +711,27 @@ pub(crate) fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
     // 最后一次真实 API 调用的模型，前端据此判断上下文窗口（200K / 1M）
     let mut model = String::new();
 
-    for line in reader.lines().map_while(Result::ok) {
+    for line in jsonl_lines(reader) {
         let Ok(json) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        // 压缩边界：之后的上下文以压缩后的 token 数为准（磁盘 JSONL 里是驼峰的 compactMetadata）。
+        // 否则压缩后还没有新回复的会话会一直显示压缩前的数值。
+        if json["type"].as_str() == Some("system") && json["subtype"].as_str() == Some("compact_boundary") {
+            context_input_tokens = json["compactMetadata"]["postTokens"].as_u64().unwrap_or(0);
+            context_output_tokens = 0;
+            continue;
+        }
         if json["type"].as_str() != Some("assistant") {
             continue;
         }
         let message = &json["message"];
         let usage = &message["usage"];
         if !usage.is_object() {
+            continue;
+        }
+        // CLI 自己合成的消息（如报错提示）用量全为 0，不是真实的上下文快照
+        if message["model"].as_str() == Some("<synthetic>") {
             continue;
         }
 
@@ -738,9 +749,8 @@ pub(crate) fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
         // The latest assistant API call is the authoritative context snapshot.
         context_input_tokens = input + cache_read + cache_creation;
         context_output_tokens = output;
-        // CLI 自己合成的消息（如报错提示）模型名为 "<synthetic>"，不算真实模型
         if let Some(m) = message["model"].as_str() {
-            if !m.is_empty() && m != "<synthetic>" {
+            if !m.is_empty() {
                 model = m.to_string();
             }
         }

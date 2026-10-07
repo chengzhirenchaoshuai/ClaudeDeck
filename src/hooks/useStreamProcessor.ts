@@ -23,6 +23,7 @@ import {
   type TokenUsage,
 } from '../lib/context-usage';
 import { toolResultText, type StreamMessage } from '../lib/stream-message';
+import { resolveSessionContextWindow } from '../lib/context-window';
 
 // --- Error classification for user-facing messages ---
 // Each pattern maps to a friendly i18n key. Matched errors show the friendly
@@ -1456,11 +1457,14 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           contextOutputTokens: compactMeta?.contextOutputTokens,
         });
         const compactStdinId = compactMeta?.stdinId;
-        const compactModel = compactMeta?.spawnedModel || compactMeta?.snapshotModel || useSettingsStore.getState().selectedModel;
-        const compactMode = compactMeta?.snapshotContextWindowMode ?? useSettingsStore.getState().contextWindowMode;
+        const compactCtx = resolveSessionContextWindow(
+          { ...compactMeta, inputTokens: msg.usage?.input_tokens, outputTokens: msg.usage?.output_tokens },
+          useSettingsStore.getState().selectedModel,
+          useSettingsStore.getState().contextWindowMode,
+        );
         const autoCompactThreshold = getAutoCompactThreshold(
-          compactModel,
-          compactMode,
+          compactCtx.model,
+          compactCtx.mode,
           useSettingsStore.getState().autoCompactThresholdTokens,
         );
         // autoCompactFiredRef 属于 InputBar 实例、不分标签页，自动压缩只对前台生效
