@@ -110,19 +110,13 @@ pub(crate) async fn start_claude_session(
     args.push(settings_obj.to_string());
     let (mut child, claude_bin, env_count) = if let Some((host_id, remote_path)) = remote_target {
         let host = commands::remote::find_host(&host_id)?;
-        // 去掉本机专用的参数：--strict-mcp-config（远端沿用自己的 MCP 配置）、
-        // --model（本机的模型映射对远端无意义，由远端配置决定）
-        let mut remote_args: Vec<String> = Vec::new();
-        let mut iter = args.iter();
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "--strict-mcp-config" => {}
-                "--model" => {
-                    iter.next();
-                }
-                _ => remote_args.push(arg.clone()),
-            }
-        }
+        // 去掉本机专用的 --strict-mcp-config（远端沿用自己的 MCP 配置）。
+        // --model 保留：远程时前端不经本机服务商映射，传的是选择器里的官方模型 ID
+        let remote_args: Vec<String> = args
+            .iter()
+            .filter(|arg| arg.as_str() != "--strict-mcp-config")
+            .cloned()
+            .collect();
         let effort = thinking_level.to_string();
         let mut remote_env: Vec<(&str, &str)> = vec![
             ("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1"),

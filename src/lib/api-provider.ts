@@ -1,11 +1,22 @@
 import { useProviderStore } from '../stores/providerStore';
 import { PROVIDER_PRESETS } from './provider-presets';
+import { isRemotePath } from './tauri-bridge';
 import { MODEL_TIER_MAP as TIER_MAP, useSettingsStore, type ModelId } from '../stores/settingsStore';
 import {
   DEEPSEEK_V4_FLASH,
   DEEPSEEK_V4_PRO,
   normalizeProviderModelName,
 } from './deepseek-models';
+
+/**
+ * 参与模型 / 思考等级解析的本机服务商。远程项目（ssh://）返回 null：远端 claude 用的是
+ * 远端自己的账户或服务商配置，本机服务商的模型映射与思考支持对它都不适用，
+ * 远程会话直接使用选择器里的官方模型 ID。
+ */
+function activeLocalProvider() {
+  if (isRemotePath(useSettingsStore.getState().workingDirectory)) return null;
+  return useProviderStore.getState().getActive();
+}
 
 /**
  * Result of model resolution — either a mapped model name or an error.
@@ -19,7 +30,7 @@ export type ModelResolution =
  * returning an error if the provider has no mapping for the selected tier.
  */
 export function resolveModelOrError(selectedModel: string): ModelResolution {
-  const provider = useProviderStore.getState().getActive();
+  const provider = activeLocalProvider();
   if (!provider) {
     return { ok: true, model: selectedModel };
   }
@@ -84,7 +95,7 @@ export function resolveThinkingLevelForProvider(selectedModel: string, requested
   if (requestedLevel === 'off') return 'off';
   // xhigh 仅 Opus 5 / Sonnet 5 / Fable 等较新模型支持；Opus 4.6、Sonnet 4.6、Haiku 不支持，降为 high
   if (requestedLevel === 'xhigh' && /opus-4-6|sonnet-4-6|haiku/.test(selectedModel)) return 'high';
-  const provider = useProviderStore.getState().getActive();
+  const provider = activeLocalProvider();
   if (!provider) return requestedLevel;
   const support = PROVIDER_PRESETS.find((preset) => preset.id === provider.preset)?.thinkingSupport;
   return support === 'ignored' ? 'off' : requestedLevel;
