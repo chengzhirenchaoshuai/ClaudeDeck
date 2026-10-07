@@ -395,7 +395,15 @@ pub(crate) fn skill_display_fields(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     let content = std::fs::read_to_string(skill_file).unwrap_or_default();
-    let (fm, body) = parse_skill_frontmatter(&content);
+    skill_display_fields_from_content(&content, fallback_name)
+}
+
+/// 由 SKILL.md 的内容提取（名称, 描述, frontmatter）。本机文件与远端读回来的内容共用。
+pub(crate) fn skill_display_fields_from_content(
+    content: &str,
+    fallback_name: String,
+) -> (String, String, SkillFrontmatter) {
+    let (fm, body) = parse_skill_frontmatter(content);
 
     let name = fm
         .name
@@ -497,6 +505,15 @@ pub(crate) fn dedupe_unified_skill_commands(commands: Vec<UnifiedCommand>) -> Ve
 #[tauri::command]
 pub(crate) async fn list_skills(cwd: Option<String>, additional_dirs: Option<Vec<String>>) -> Result<Vec<SkillInfo>, String> {
     let mut skills: Vec<SkillInfo> = vec![];
+
+    // 远程项目：只列远端的技能（只读），不混入本机的。读取失败时返回空列表而不是报错。
+    if let Some((host_id, remote_path)) = cwd.as_deref().and_then(commands::remote::parse_remote_uri) {
+        match commands::remote::scan_remote_skill_files(&host_id, &remote_path).await {
+            Ok(data) => skills = remote_data_to_skill_infos(&data),
+            Err(e) => eprintln!("[ClaudeDeck] 读取远端技能失败: {}", e),
+        }
+        return Ok(dedupe_skill_infos(skills));
+    }
 
     // Only Claude's native skill directory is scanned by default. Codex and
     // other agent-specific skills are not necessarily compatible with Claude.
@@ -1019,12 +1036,18 @@ pub(crate) async fn translate_skill_markdown(
 /// Read a skill file and return its content
 #[tauri::command]
 pub(crate) async fn read_skill(path: String) -> Result<String, String> {
+    // 远程项目的技能：路径是 ssh:// URI，经 ssh 从远端读取
+    if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        let bytes = commands::remote::read_remote_file(&path, 1_048_576).await?;
+        return Ok(String::from_utf8_lossy(&bytes).into_owned());
+    }
     std::fs::read_to_string(&path).map_err(|e| format!("Cannot read skill file: {}", e))
 }
 
 /// Write content to a skill file, creating parent directories if needed
 #[tauri::command]
 pub(crate) async fn write_skill(path: String, content: String) -> Result<(), String> {
+    reject_remote_skill_path(&path)?;
     let p = std::path::Path::new(&path);
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent)
@@ -1036,6 +1059,7 @@ pub(crate) async fn write_skill(path: String, content: String) -> Result<(), Str
 /// Delete a skill file; remove the parent directory if it becomes empty
 #[tauri::command]
 pub(crate) async fn delete_skill(path: String) -> Result<(), String> {
+    reject_remote_skill_path(&path)?;
     let p = std::path::Path::new(&path);
     std::fs::remove_file(p).map_err(|e| format!("Failed to delete skill file: {}", e))?;
 
@@ -1052,6 +1076,94 @@ pub(crate) async fn delete_skill(path: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// 远程技能是只读的：修改要到远端编辑，这里明确拒绝，免得 ssh:// 路径落到本机文件系统上报晦涩的错
+fn reject_remote_skill_path(path: &str) -> Result<(), String> {
+    if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        return Err("远程技能暂不支持在此修改，请在远端编辑".to_string());
+    }
+    Ok(())
+}
+
+/// 远端读回来的技能原始数据转成 SkillInfo，规则与本机的 scan_skill_infos 一致。
+fn remote_data_to_skill_infos(data: &Value) -> Vec<SkillInfo> {
+    data["skills"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            let (name, description, fm) = skill_display_fields_from_content(
+                item["head"].as_str().unwrap_or(""),
+                item["dir"].as_str().unwrap_or("").to_string(),
+            );
+            SkillInfo {
+                name,
+                description,
+                path: item["path"].as_str().unwrap_or("").to_string(),
+                scope: if item["scope"].as_str() == Some("project") { "project" } else { "global" }.to_string(),
+                disable_model_invocation: fm.disable_model_invocation,
+                user_invocable: fm.user_invocable,
+                allowed_tools: fm.allowed_tools,
+                argument_hint: fm.argument_hint,
+                model: fm.model,
+                context: fm.context,
+                agent: fm.agent,
+                version: fm.version,
+            }
+        })
+        .collect()
+}
+
+/// 把远端读回来的原始数据转成命令列表，规则与本机的 scan_commands_dir / scan_skill_commands 一致。
+async fn scan_remote_commands(host_id: &str, remote_path: &str) -> Result<Vec<UnifiedCommand>, String> {
+    let data = commands::remote::scan_remote_skill_files(host_id, remote_path).await?;
+    Ok(remote_data_to_commands(&data))
+}
+
+fn remote_data_to_commands(data: &Value) -> Vec<UnifiedCommand> {
+    let source_of = |item: &Value| {
+        if item["scope"].as_str() == Some("project") { "project" } else { "global" }.to_string()
+    };
+    let mut result = vec![];
+
+    for item in data["commands"].as_array().into_iter().flatten() {
+        let stem = item["stem"].as_str().unwrap_or("").to_string();
+        let description = item["first"]
+            .as_str()
+            .map(|line| line.trim_start_matches('#').trim().to_string())
+            .unwrap_or_else(|| stem.clone());
+        result.push(UnifiedCommand {
+            name: format!("/{}", stem),
+            description,
+            source: source_of(item),
+            category: "command".to_string(),
+            has_args: item["hasArgs"].as_bool().unwrap_or(false),
+            path: None,
+            immediate: false,
+            execution: None,
+        });
+    }
+
+    for item in data["skills"].as_array().into_iter().flatten() {
+        let dir_name = item["dir"].as_str().unwrap_or("").to_string();
+        let (_name, description, fm) = skill_display_fields_from_content(
+            item["head"].as_str().unwrap_or(""),
+            dir_name.clone(),
+        );
+        // 与本机一致：技能用目录名调用，不用 frontmatter 里的展示名
+        result.push(UnifiedCommand {
+            name: format!("/{}", dir_name),
+            description,
+            source: source_of(item),
+            category: "skill".to_string(),
+            has_args: fm.argument_hint.is_some(),
+            path: item["path"].as_str().map(|p| p.to_string()),
+            immediate: false,
+            execution: None,
+        });
+    }
+    result
 }
 
 /// Unified endpoint that returns all commands and skills in a single call
@@ -1150,6 +1262,16 @@ pub(crate) async fn list_all_commands(cwd: Option<String>, additional_dirs: Opti
         });
     }
 
+    // 远程项目：命令与技能都在远端，本机的全局命令和技能对远端 claude 不存在，不能混进来。
+    // 远端读取失败（网络不通等）时只给内置命令，不让补全整体报错。
+    if let Some((host_id, remote_path)) = cwd.as_deref().and_then(commands::remote::parse_remote_uri) {
+        match scan_remote_commands(&host_id, &remote_path).await {
+            Ok(remote) => commands.extend(remote),
+            Err(e) => eprintln!("[ClaudeDeck] 读取远端命令与技能失败: {}", e),
+        }
+        return Ok(dedupe_unified_skill_commands(commands));
+    }
+
     // Helper: scan a directory for .md command files
     fn scan_commands_dir(dir: &std::path::Path, source: &str) -> Vec<UnifiedCommand> {
         let mut cmds = vec![];
@@ -1229,6 +1351,7 @@ pub(crate) async fn list_all_commands(cwd: Option<String>, additional_dirs: Opti
 /// `disable-model-invocation` in its YAML frontmatter.
 #[tauri::command]
 pub(crate) async fn toggle_skill_enabled(path: String, enabled: bool) -> Result<(), String> {
+    reject_remote_skill_path(&path)?;
     let content =
         std::fs::read_to_string(&path).map_err(|e| format!("Cannot read skill file: {}", e))?;
     let new_content = if enabled {
@@ -1241,3 +1364,52 @@ pub(crate) async fn toggle_skill_enabled(path: String, enabled: bool) -> Result<
     std::fs::write(&path, &new_content).map_err(|e| format!("Cannot write skill file: {}", e))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 远端读回来的原始数据转命令：规则要与本机的 scan_commands_dir / scan_skill_commands 一致
+    #[test]
+    fn remote_data_to_commands_matches_local_rules() {
+        let data = json!({
+            "commands": [
+                { "scope": "global", "stem": "review", "first": "## 代码审查", "hasArgs": true },
+                { "scope": "project", "stem": "empty", "first": null, "hasArgs": false },
+            ],
+            "skills": [
+                {
+                    "scope": "global",
+                    "dir": "my-skill",
+                    "path": "ssh://h/C:/Users/u/.claude/skills/my-skill/SKILL.md",
+                    "head": "---
+name: 展示名
+description: 做某件事
+argument-hint: <文件>
+---
+正文",
+                },
+                { "scope": "project", "dir": "plain", "path": "ssh://h/C:/p/.claude/skills/plain/SKILL.md", "head": "
+# 标题行
+内容" },
+            ],
+        });
+        let cmds = remote_data_to_commands(&data);
+        let find = |name: &str| cmds.iter().find(|c| c.name == name).unwrap();
+
+        let review = find("/review");
+        assert_eq!((review.source.as_str(), review.category.as_str(), review.description.as_str(), review.has_args),
+                   ("global", "command", "代码审查", true));
+        // 空文件没有首行，描述退回命令名
+        assert_eq!(find("/empty").description, "empty");
+        assert_eq!(find("/empty").source, "project");
+
+        // 技能用目录名调用，不用 frontmatter 里的展示名；描述与参数提示来自 frontmatter
+        let skill = find("/my-skill");
+        assert_eq!((skill.category.as_str(), skill.description.as_str(), skill.has_args), ("skill", "做某件事", true));
+        assert_eq!(skill.path.as_deref(), Some("ssh://h/C:/Users/u/.claude/skills/my-skill/SKILL.md"));
+        // 没有 frontmatter 时描述取正文第一个非空行
+        assert_eq!(find("/plain").description, "标题行");
+        assert!(!find("/plain").has_args);
+    }
+}

@@ -375,6 +375,79 @@ pub async fn read_remote_config(host_id: String) -> Result<Value, String> {
     Ok(config)
 }
 
+/// 扫描远端的自定义命令与技能文件：`<配置目录>/commands/*.md`、`<配置目录>/skills/**/SKILL.md`，
+/// 以及项目内的 `.claude/commands`、`.claude/skills`。只负责把文件读回来（技能只取开头一段，
+/// 够解析 frontmatter 和描述即可），解析逻辑在 skills.rs，与本机共用，保证两边行为一致。
+/// `__PROJECT__` 由调用方替换为项目目录（Windows 路径）。
+const SCAN_SKILLS_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+$root = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$proj = __PROJECT__
+$script:skillFiles = @()
+function Collect($scope, $dir, $depth) {
+  if ($depth -gt 8) { return }
+  foreach ($d in Get-ChildItem -LiteralPath $dir -Directory) {
+    $sf = Join-Path $d.FullName 'SKILL.md'
+    if (Test-Path -LiteralPath $sf -PathType Leaf) { $script:skillFiles += [pscustomobject]@{ scope = $scope; path = $sf } }
+    else { Collect $scope $d.FullName ($depth + 1) }
+  }
+}
+$cmds = @()
+$skillRoots = @(@('global', (Join-Path $root 'skills')), @('project', (Join-Path (Join-Path $proj '.claude') 'skills')))
+$cmdRoots = @(@('global', (Join-Path $root 'commands')), @('project', (Join-Path (Join-Path $proj '.claude') 'commands')))
+foreach ($r in $cmdRoots) {
+  if (-not (Test-Path -LiteralPath $r[1])) { continue }
+  foreach ($f in (Get-ChildItem -LiteralPath $r[1] -File | Where-Object { $_.Extension -ceq '.md' })) {
+    $c = [System.IO.File]::ReadAllText($f.FullName)
+    $first = $null
+    if ($c.Length -gt 0) { $first = ($c -split "`n")[0].TrimEnd("`r") }
+    $cmds += [pscustomobject]@{ scope = $r[0]; stem = $f.BaseName; first = $first; hasArgs = $c.Contains('$ARGUMENTS') }
+  }
+}
+foreach ($r in $skillRoots) {
+  if (-not (Test-Path -LiteralPath $r[1])) { continue }
+  $direct = Join-Path $r[1] 'SKILL.md'
+  if (Test-Path -LiteralPath $direct -PathType Leaf) { $script:skillFiles += [pscustomobject]@{ scope = $r[0]; path = $direct } }
+  else { Collect $r[0] $r[1] 0 }
+}
+$skills = @()
+foreach ($s in $script:skillFiles) {
+  $t = [System.IO.File]::ReadAllText($s.path)
+  if ($t.Length -gt 3000) { $t = $t.Substring(0, 3000) }
+  $skills += [pscustomobject]@{ scope = $s.scope; path = $s.path; dir = (Split-Path -Leaf (Split-Path -Parent $s.path)); head = $t }
+}
+Out-AsciiJson (ConvertTo-Json -InputObject ([pscustomobject]@{ commands = @($cmds); skills = @($skills) }) -Depth 4 -Compress)
+"#;
+
+/// 读取远端项目可用的自定义命令与技能原始数据（技能路径已转为 ssh:// URI）。
+pub async fn scan_remote_skill_files(host_id: &str, remote_path: &str) -> Result<Value, String> {
+    if remote_path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    let host = find_host(host_id)?;
+    let script = SCAN_SKILLS_SCRIPT.replace("__PROJECT__", &ps_quote(&remote_path.replace('/', "\\")));
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(60)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("读取远端命令与技能失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    let mut data: Value =
+        serde_json::from_str(text).map_err(|e| format!("解析远端命令与技能失败: {}", e))?;
+    if let Some(skills) = data["skills"].as_array_mut() {
+        for skill in skills {
+            let path = skill["path"].as_str().unwrap_or("").to_string();
+            skill["path"] = Value::String(to_uri(host_id, &path));
+        }
+    }
+    Ok(data)
+}
+
 /// 远端会话改名文件名，和本机 session_names_path() 用的是同一个文件名，
 /// 放在远端自己的 CLAUDE_CONFIG_DIR 下——这样它就是连到这台主机的所有客户端
 /// 共享的、天然的“源端”存档：谁改了名字都写回这里，谁读列表都从这里取。
