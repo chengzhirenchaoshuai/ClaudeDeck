@@ -3,12 +3,34 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
-## [未发布]
+## [1.2.0] - 2026-10-12
+
+### 新增
+- 远程项目支持只读文件树
+- 会话右键菜单新增「复制终端恢复命令」
+- 模型列表补齐 Opus 5.5、Sonnet 5.5、Opus 4.8、Opus 4.7（与 CLI 2.1.291 核对）
+- 错误页显示可复制的错误详情与组件堆栈
+- `pnpm dev:app` 启动独立 identifier 的开发版，可与正式版同时运行；`pnpm release` 打包并把产物收集到根目录 `release/`
 
 ### 调整
 - 所有应用数据统一放到 `%APPDATA%\ClaudeDeck\`（`config`、`cache`、`tools`、`webview` 四个子目录），首次启动自动从旧位置（`~\.tokenicode`、`%LOCALAPPDATA%\com.chengzhiren66.claudedeck`）复制迁移，旧目录保留作备份
 - 内置浏览窗口改由后端创建，与主窗口共用同一 WebView 数据目录
-- 安装包只出 MSI，另附免安装版 exe
+- 安装包只出 MSI，另附免安装版 exe；删除 GitHub Actions，改为本地打包上传
+- 5 小时 / 7 天用量改读 stream-json 的 `rate_limit_event`，移除 statusLine 钩子
+- 排队中的消息在列表底部半透明显示，真正发送时才进入聊天记录
+- 会话列表、搜索、加载、令牌统计改在阻塞线程池读取文件
+- 只保留 Windows 代码；按需加载重型模块，主包由 2.8MB 降至 1.45MB
+- 代码结构整理：拆分 lib.rs、ChatPanel、MessageBubble、InputBar、ConversationList、useStreamProcessor；换行符统一 LF
+
+### 修复
+- 批准计划后 CLI 未进入自动接受编辑，写文件仍弹权限卡
+- 切换模型/服务商后的标记不清除，之后出错时会重发旧消息
+- 已完成消息里的空思考块显示「思考中...」
+- 1M 上下文会话显示 100% 并误触发自动压缩；上下文占用按会话实际模型计算
+- 远程会话无法启动（`#< CLIXML`）；远程会话丢弃 `--model`；远程附件、斜杠命令、技能列表、回溯兜底改为在远端处理
+- 输入框附件双向同步导致的无限更新；异步事件监听、拖放监听泄漏
+- 回溯兜底进程弹出控制台窗口；`.cmd` 版 CLI 经 `cmd /C` 启动
+- 面板拖动分两段、轮次导航条挡住消息文字
 
 ## [1.1.0] - 2026-10-06
 
