@@ -16,50 +16,15 @@ import { SessionItem } from './SessionItem';
 import { SessionContextMenu, ProjectContextMenu } from './SessionContextMenu';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { showToast } from '../shared/Toast';
-
-// --- Path utilities ---
-
-let _cachedHomeDir: string | null = null;
-bridge.getHomeDir().then((h) => { _cachedHomeDir = h; }).catch(() => {});
-
-function isWindowsAbsolutePath(p: string): boolean {
-  return /^[A-Za-z]:[/\\]/.test(p);
-}
-
-function resolveProjectPath(raw: string): string {
-  if (raw.startsWith('ssh://')) return raw;
-  if (raw.startsWith('/') || isWindowsAbsolutePath(raw)) return raw;
-  if (raw.startsWith('~/') || raw === '~') {
-    if (_cachedHomeDir) return raw.replace('~', _cachedHomeDir);
-    return raw;
-  }
-  if (/^[A-Za-z]-/.test(raw)) {
-    const drive = raw[0];
-    const rest = raw.slice(2);
-    return `${drive}:\\${rest.replace(/-/g, '\\')}`;
-  }
-  return raw.replace(/-/g, '/');
-}
-
-function normalizeProjectKey(raw: string): string {
-  const unix = raw.match(/^\/(?:Users|home)\/[^/]+(\/.*)/);
-  if (unix) return '~' + unix[1];
-  const win = raw.match(/^[A-Za-z]:[/\\]Users[/\\][^/\\]+([/\\].*)/i);
-  if (win) return '~' + win[1];
-  return raw;
-}
-
-/** Extract display label from a project key.
- *  When `parentHint` is true (duplicate names), appends parent folder:
- *  "A (Desktop)" vs "A (坚果云)" */
-function projectLabel(project: string, parentHint?: boolean): string {
-  const parts = project.replace(/^~[\\/]/, '').split(/[\\/]/);
-  const name = parts[parts.length - 1] || project;
-  if (parentHint && parts.length >= 2) {
-    return `${name} (${parts[parts.length - 2]})`;
-  }
-  return name;
-}
+import {
+  resolveProjectPath,
+  normalizeProjectKey,
+  projectLabel,
+  filterSessions,
+  groupByProject,
+  findContentOnlyMatches,
+} from './session-list-model';
+import { usePinnedArchived } from './usePinnedArchived';
 
 // --- Context menu types ---
 
@@ -117,19 +82,9 @@ export function ConversationList() {
   // 项目分组的展开/收起：只记录用户手动收起过的项目，默认都是展开的
   const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(new Set());
 
-  // Pinned & archived (Phase 3)
-  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(() => {
-    try {
-      const data = localStorage.getItem('tokenicode_pinned_sessions');
-      return new Set(data ? JSON.parse(data) : []);
-    } catch { return new Set(); }
-  });
-  const [archivedSessions, setArchivedSessions] = useState<Set<string>>(() => {
-    try {
-      const data = localStorage.getItem('tokenicode_archived_sessions');
-      return new Set(data ? JSON.parse(data) : []);
-    } catch { return new Set(); }
-  });
+  // 置顶与归档（实现见 usePinnedArchived.ts）
+  const { pinnedSessions, archivedSessions, persistPinned, persistArchived, pushArchivedToRemote } =
+    usePinnedArchived(remoteHosts, remoteSessionsList);
   // View mode: 'folder' | 'recent' | 'archived'——“归档”和“按文件夹”一样按项目分组，
   // 只是数据源换成已归档的会话，showArchived 直接从这里派生，不再单独维护一份状态。
   const [viewMode, setViewMode] = useState<'folder' | 'recent' | 'archived'>(() => {
@@ -162,90 +117,6 @@ export function ConversationList() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [multiSelect]);
-
-  // Persist pinned/archived
-  const persistPinned = useCallback((next: Set<string>) => {
-    setPinnedSessions(next);
-    localStorage.setItem('tokenicode_pinned_sessions', JSON.stringify([...next]));
-    bridge.savePinnedSessions([...next]).catch(() => {});
-  }, []);
-
-  const persistArchived = useCallback((next: Set<string>) => {
-    setArchivedSessions(next);
-    localStorage.setItem('tokenicode_archived_sessions', JSON.stringify([...next]));
-    bridge.saveArchivedSessions([...next]).catch(() => {});
-  }, []);
-
-  // 归档和改名一样是 ClaudeDeck 自己的概念，claude CLI 没有这个功能，本机只存在
-  // <数据目录>/config/archived.json 里。远程会话的归档状态额外写一份到远程主机自己的
-  // CLAUDE_CONFIG_DIR 下，让远程主机成为源端：每次远程会话列表刷新（不管是哪里
-  // 触发的，比如侧边栏“刷新”按钮），这里都会重新拉取每台主机自己的归档文件，
-  // 用远程数据覆盖本地对应会话的归档状态（含“远程那边取消归档了”这种减法）。
-  useEffect(() => {
-    if (remoteHosts.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const results = await Promise.allSettled(
-        remoteHosts.map((h) => bridge.loadRemoteArchivedSessions(h.id)),
-      );
-      if (cancelled) return;
-      setArchivedSessions((current) => {
-        const next = new Set(current);
-        let changed = false;
-        remoteHosts.forEach((h, i) => {
-          const r = results[i];
-          if (r.status !== 'fulfilled') return;
-          const remoteIds = new Set(r.value);
-          for (const s of remoteSessionsList) {
-            if (s.host !== h.id) continue;
-            const shouldBeArchived = remoteIds.has(s.id);
-            if (shouldBeArchived !== next.has(s.id)) {
-              changed = true;
-              if (shouldBeArchived) next.add(s.id);
-              else next.delete(s.id);
-            }
-          }
-        });
-        if (!changed) return current;
-        localStorage.setItem('tokenicode_archived_sessions', JSON.stringify([...next]));
-        bridge.saveArchivedSessions([...next]).catch(() => {});
-        return next;
-      });
-    })();
-    return () => { cancelled = true; };
-  }, [remoteHosts, remoteSessionsList]);
-
-  // 归档一个远程会话时，把这台主机名下的全部归档 ID 写回它自己的归档文件
-  const pushArchivedToRemote = useCallback((session: SessionListItem, archivedIds: Set<string>) => {
-    if (!session.host) return;
-    const hostId = session.host;
-    const hostArchived = remoteSessionsList
-      .filter((s) => s.host === hostId && archivedIds.has(s.id))
-      .map((s) => s.id);
-    bridge.saveRemoteArchivedSessions(hostId, hostArchived).catch(() => {});
-  }, [remoteSessionsList]);
-
-  // Load pinned/archived from backend on init
-  useEffect(() => {
-    // 磁盘文件是权威来源（本地存储只是快速缓存）：文件存在时，即使为空也以它为准，
-    // 这样清空磁盘记录后，界面不会被旧的本地缓存带回去
-    bridge.loadPinnedSessions?.()
-      .then((data: string[] | null) => {
-        if (Array.isArray(data)) {
-          setPinnedSessions(new Set(data));
-          localStorage.setItem('tokenicode_pinned_sessions', JSON.stringify(data));
-        }
-      })
-      .catch(() => {});
-    bridge.loadArchivedSessions?.()
-      .then((data: string[] | null) => {
-        if (Array.isArray(data)) {
-          setArchivedSessions(new Set(data));
-          localStorage.setItem('tokenicode_archived_sessions', JSON.stringify(data));
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   // Initial fetch + polling
   useEffect(() => {
@@ -341,60 +212,13 @@ export function ConversationList() {
 
   // Filtered sessions (search + archive)
   const activeEnv = useSettingsStore((s) => s.activeEnv);
-  const filtered = useMemo(() => {
-    // 本地与远程模式互相隔离：只显示当前环境的会话
-    let result = sessions.filter((s) => (activeEnv === 'local' ? !s.host : s.host === activeEnv));
-
-    // Archive filter: OFF = hide archived, ON = show ONLY archived
-    if (showArchived) {
-      result = result.filter((s) => archivedSessions.has(s.id));
-    } else {
-      result = result.filter((s) => !archivedSessions.has(s.id));
-    }
-
-    // Search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (s) =>
-          displayName(s).toLowerCase().includes(q) ||
-          s.preview.toLowerCase().includes(q) ||
-          s.project.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [sessions, searchQuery, displayName, showArchived, archivedSessions, activeEnv]);
+  const filtered = useMemo(
+    () => filterSessions(sessions, { activeEnv, showArchived, archivedSessions, searchQuery, displayName }),
+    [sessions, searchQuery, displayName, showArchived, archivedSessions, activeEnv],
+  );
 
   // Group by project
-  const projectGroups = useMemo(() => {
-    const map = new Map<string, SessionListItem[]>();
-    for (const s of filtered) {
-      const raw = s.project || s.projectDir;
-      const key = normalizeProjectKey(raw);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(s);
-    }
-    for (const items of map.values()) {
-      items.sort((a, b) => b.modifiedAt - a.modifiedAt);
-    }
-    // 项目在列表里的排序位置，只看这个项目下"已经落盘"的真实会话，不算草稿——
-    // 新建会话时草稿的 modifiedAt 是创建时刻（Date.now()），如果拿它参与排序，
-    // 项目会先跳到最上面，等草稿后来被清理/落盘又跳回去，位置来回乱动。
-    // 项目下全是草稿（刚新建的项目，还没有任何历史会话）时才退回用草稿的时间。
-    const sortKey = (items: SessionListItem[]) => {
-      const real = items.find((s) => s.path !== '');
-      return (real ?? items[0])?.modifiedAt || 0;
-    };
-    const entries = Array.from(map.entries());
-    entries.sort((a, b) => {
-      const pa = pinnedSessions.has(`project:${a[0]}`) ? 1 : 0;
-      const pb = pinnedSessions.has(`project:${b[0]}`) ? 1 : 0;
-      if (pa !== pb) return pb - pa;
-      return sortKey(b[1]) - sortKey(a[1]);
-    });
-    return entries;
-  }, [filtered, pinnedSessions]);
+  const projectGroups = useMemo(() => groupByProject(filtered, pinnedSessions), [filtered, pinnedSessions]);
 
   // 最近活跃视图：按修改时间从新到旧平铺。会话置顶只在所属项目内生效（文件夹视图），
   // 这里不跨项目把置顶会话排到整个列表最前，只在标题前显示图钉
@@ -404,18 +228,10 @@ export function ConversationList() {
   }, [filtered]);
 
   // Content-only matches: sessions hit by content search but NOT by metadata filter
-  const contentOnlyMatches = useMemo(() => {
-    if (!searchQuery.trim() || contentSearchResults.size === 0) return [];
-    const metadataIds = new Set(filtered.map((s) => s.id));
-    return sessions.filter((s) => {
-      if (s.host) return false;
-      if (metadataIds.has(s.id)) return false;
-      if (!contentSearchResults.has(s.id)) return false;
-      // Respect archive filter
-      if (showArchived) return archivedSessions.has(s.id);
-      return !archivedSessions.has(s.id);
-    });
-  }, [sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions]);
+  const contentOnlyMatches = useMemo(
+    () => findContentOnlyMatches(sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions),
+    [sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions],
+  );
 
   // 默认全部展开，只有用户手动点了收起才收起——不再因为选中了别的项目的会话
   // 就把当前项目自动收起（之前那种“只展开选中项所在项目”的智能收起会导致
