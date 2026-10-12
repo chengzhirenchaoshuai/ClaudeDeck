@@ -14,6 +14,7 @@ import { bridge, onClaudeStream, onClaudeStderr } from '../lib/tauri-bridge';
 import { releaseStreamListener, setStreamListener } from '../lib/stream-listeners';
 import { envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../lib/api-provider';
 import { useProviderStore } from '../stores/providerStore';
+import { useRateLimitsStore } from '../stores/rateLimitsStore';
 import { t } from '../lib/i18n';
 import {
   getContextInputTokens,
@@ -1122,6 +1123,11 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       }
 
       case 'tool_use_summary':
+        break;
+
+      // 5h/7d 用量是账户级数据：任何会话（含后台标签页）收到都更新同一份全局缓存
+      case 'rate_limit_event':
+        if (msg.rate_limit_info) useRateLimitsStore.getState().setFromEvent(msg.rate_limit_info);
         break;
 
       case 'result': {

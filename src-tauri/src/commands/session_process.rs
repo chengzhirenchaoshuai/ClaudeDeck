@@ -74,38 +74,13 @@ pub(crate) async fn start_claude_session(
 
     // 远程项目（cwd 为 ssh://<主机>/<路径>）：经 ssh 在远端运行 claude，使用远端自己的配置。
     // 不注入本机 Provider 环境变量与模型映射，也不需要本机的 claude / git-bash。
-    // 挪到 --settings 构造之前：下面要根据是不是远程决定要不要加 statusLine 钩子
-    // （钩子指向本机的 claudedeck.exe 路径，对远程主机毫无意义，不能带过去）。
     let remote_target = commands::remote::parse_remote_uri(&params.cwd);
 
     // Extended thinking + effort level
     let thinking_level = params.thinking_level.as_deref().unwrap_or("high");
-    let mut settings_obj = serde_json::json!({
+    let settings_obj = serde_json::json!({
         "alwaysThinkingEnabled": thinking_level != "off",
     });
-    // 5 小时 / 7 天用量只有 claude.ai Pro/Max 账户才有，CLI 不会主动通过
-    // stream-json 的 rate_limit_event 可靠地带上具体百分比（不同版本字段不一样，
-    // 部分版本干脆没有）。官方文档里唯一稳定带百分比的渠道是 statusLine 钩子：
-    // CLI 每次助手回复后会调用这个命令，把包含 rate_limits.five_hour/seven_day
-    // .used_percentage 的完整会话状态 JSON 喂给它。这里让 claudedeck.exe 自己
-    // 兼任这个钩子（--statusline-write，见 main.rs），把摘出来的 rate_limits
-    // 写到本地文件，前端再通过 get_session_rate_limits 读取。只对本机会话生效——
-    // 远程主机上没有这个可执行文件，钩子指过去也跑不起来。
-    if remote_target.is_none() {
-        if let Ok(exe) = std::env::current_exe() {
-            // 官方文档明确写了：Windows 上 statusLine 命令是通过 Git Bash（装了的话）
-            // 或者 PowerShell 跑的；Git Bash 会把不在引号保护范围内的反斜杠当成转义符，
-            // 路径分隔符直接被吃掉，命令静默失败、什么错误都不会冒出来——这正是钩子
-            // 完全没生效、5h/7d 用量彻底不显示的真正原因。文档给的解决办法就是路径统一用
-            // 正斜杠，Windows 的 CreateProcess/PowerShell/Git Bash 三边都认，不需要纠结
-            // 引号规则。
-            let exe_str = exe.display().to_string().replace('\\', "/");
-            settings_obj["statusLine"] = serde_json::json!({
-                "type": "command",
-                "command": format!("\"{}\" --statusline-write", exe_str),
-            });
-        }
-    }
     args.push("--settings".to_string());
     args.push(settings_obj.to_string());
     let (mut child, claude_bin, env_count) = if let Some((host_id, remote_path)) = remote_target {

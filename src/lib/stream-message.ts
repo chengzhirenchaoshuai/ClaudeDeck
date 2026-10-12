@@ -158,7 +158,21 @@ export interface LegacyContentBlockDeltaMessage extends StreamMessageBase {
 
 /** 已知但前端不处理的消息 */
 export interface IgnoredMessage extends StreamMessageBase {
-  type: 'tool_use_summary' | 'rate_limit_event';
+  type: 'tool_use_summary';
+}
+
+/** rate_limit_event.rate_limit_info：utilization 为 0~1 小数，resetsAt 为 Unix 秒 */
+export interface RateLimitInfo {
+  rateLimitType?: string;
+  utilization?: number;
+  resetsAt?: number;
+  unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number } | undefined>;
+}
+
+/** Pro/Max 账户的 5h/7d 用量 */
+export interface RateLimitEventMessage extends StreamMessageBase {
+  type: 'rate_limit_event';
+  rate_limit_info?: RateLimitInfo;
 }
 
 export type StreamMessage =
@@ -171,6 +185,7 @@ export type StreamMessage =
   | ResultMessage
   | LegacyToolResultMessage
   | LegacyContentBlockDeltaMessage
+  | RateLimitEventMessage
   | IgnoredMessage;
 
 /** 把 tool_result 的 content（字符串或片段数组）拼成文本 */

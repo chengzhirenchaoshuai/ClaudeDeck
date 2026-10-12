@@ -3,7 +3,7 @@
 //! ```text
 //! %APPDATA%\ClaudeDeck\
 //! ├── config\     配置（服务商、密钥、远程主机、置顶/归档、隐藏会话、Skills 翻译设置）
-//! ├── cache\      缓存，随时可删（statusLine 用量、远程会话缓存、翻译缓存）
+//! ├── cache\      缓存，随时可删（远程会话缓存、翻译缓存）
 //! ├── tools\      应用内自动安装的 CLI / Git / Node
 //! └── webview\    WebView2 数据（含 localStorage 里的界面设置）
 //! ```

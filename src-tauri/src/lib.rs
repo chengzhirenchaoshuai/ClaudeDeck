@@ -6,7 +6,6 @@ use commands::providers::*;
 use commands::cli_setup::*;
 use commands::toolchain::*;
 use commands::sessions::*;
-pub use commands::sessions::statusline_write_hook;
 use commands::files::*;
 use commands::network::*;
 use commands::{ManagedProcess, ProcessManager, SessionInfo, StartSessionParams, StdinManager};
@@ -598,7 +597,6 @@ pub fn run() {
             commands::sessions::save_pinned_sessions,
             commands::sessions::load_archived_sessions,
             commands::sessions::save_archived_sessions,
-            commands::sessions::get_session_rate_limits,
             commands::sessions::generate_session_title,
             commands::providers::load_providers,
             commands::providers::save_providers,

@@ -1,4 +1,4 @@
-//! CLI 会话管理：列表、搜索、加载、删除/隐藏、导出、项目路径编解码、会话元数据（名称/置顶/归档）、statusLine 用量钩子与标题生成。
+//! CLI 会话管理：列表、搜索、加载、删除/隐藏、导出、项目路径编解码、会话元数据（名称/置顶/归档）与标题生成。
 
 use crate::*;
 
@@ -1002,79 +1002,6 @@ pub(crate) async fn save_custom_previews(data: Value) -> Result<(), String> {
     let content = serde_json::to_string_pretty(&data)
         .map_err(|e| format!("Failed to serialize session names: {}", e))?;
     std::fs::write(&path, content).map_err(|e| format!("Failed to write session names: {}", e))
-}
-
-/// 存放 statusLine 钩子写下来的用量文件的目录（按 CLI 会话 id 分文件）。
-pub(crate) fn statusline_dir() -> Option<std::path::PathBuf> {
-    let dir = app_paths::cache_path("statusline").ok()?;
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
-}
-
-/// claude CLI 的 statusLine 钩子入口（main.rs 里 `--statusline-write` 参数触发）。
-/// 每次助手回复后被调用一次：从 stdin 读取完整的会话状态 JSON，把里面的
-/// rate_limits（5 小时 / 7 天用量百分比，claude.ai Pro/Max 账户才有）摘出来，
-/// 按 session_id 存成一个文件，供 get_session_rate_limits 读取。
-///
-/// 不启动 Tauri、不做任何耗时操作——这条调用会临时挡住 claude 处理下一条消息，
-/// 必须尽快退出；任何解析失败都直接放弃，不影响 claude 本身的运行。
-pub fn statusline_write_hook() {
-    use std::io::Read;
-    let mut input = String::new();
-    if std::io::stdin().read_to_string(&mut input).is_err() {
-        return;
-    }
-    let Ok(data) = serde_json::from_str::<Value>(&input) else { return };
-    let Some(session_id) = data.get("session_id").and_then(|v| v.as_str()) else { return };
-    // 防御性校验：CLI 给的应该总是 UUID，但既然要拼文件名就不信任它
-    if session_id.is_empty()
-        || !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
-        return;
-    }
-    let Some(rate_limits) = data.get("rate_limits") else { return };
-    let Some(dir) = statusline_dir() else { return };
-    let path = dir.join(format!("{}.json", session_id));
-
-    // 5h/7d 是不是每次都一起出现，CLI 那边不保证（官方文档写了：每个窗口可能各自
-    // 缺失）。合并写入而不是整个覆盖：这次只带了其中一个窗口的数据时，保留上次
-    // 已知的另一个窗口，除非它自己的 resets_at 已经过了——那种情况本来就该被认为
-    // 过期丢弃（模拟 CLI 自己 "drops a window once resets_at passes" 的语义），
-    // 不是我们这边弄丢的。不然会出现"这次显示 5h、下次显示 7d，来回跳"的现象。
-    let mut merged = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    if let Some(merged_obj) = merged.as_object_mut() {
-        merged_obj.retain(|_, v| {
-            v.get("resets_at").and_then(|r| r.as_u64()).map(|r| r > now_secs).unwrap_or(true)
-        });
-        if let Some(new_obj) = rate_limits.as_object() {
-            for (k, v) in new_obj {
-                merged_obj.insert(k.clone(), v.clone());
-            }
-        }
-    }
-    let _ = std::fs::write(&path, merged.to_string());
-}
-
-/// 读取某个 CLI 会话最近一次 statusLine 钩子写下的 5 小时 / 7 天用量数据。
-/// 没有（还没收到过、账户不是 Pro/Max、或者钩子没起作用）就返回 null，
-/// 前端据此决定要不要显示这块状态条——不在这里编造数据。
-#[tauri::command]
-pub(crate) async fn get_session_rate_limits(session_id: String) -> Option<Value> {
-    let dir = statusline_dir()?;
-    if session_id.is_empty()
-        || !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
-        return None;
-    }
-    let content = std::fs::read_to_string(dir.join(format!("{}.json", session_id))).ok()?;
-    serde_json::from_str::<Value>(&content).ok()
 }
 
 /// Load pinned session IDs from disk.

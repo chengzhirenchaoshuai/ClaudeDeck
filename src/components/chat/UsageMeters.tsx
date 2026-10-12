@@ -1,5 +1,5 @@
 // 用量相关的小组件：上下文占用进度条（含压缩按钮，显示在输入栏）和 5 小时/每周限额状态条。
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useChatStore, generateMessageId, type SessionMeta } from '../../stores/chatStore';
 import { useSettingsStore, getAutoCompactThreshold } from '../../stores/settingsStore';
 import { getContextUsedTokens } from '../../lib/context-usage';
@@ -180,37 +180,24 @@ function RateLimitWindowView({ label, entry, t }: {
   );
 }
 
-/** 5 小时 / 7 天用量状态条。数据全局共享一份缓存（useRateLimitsStore，落一份到
- *  localStorage），不挂在某个会话 tab 下——账户级别的用量数据本来就不该按会话分开存：
- *  切换会话不会清空，哪个会话轮询到新数据全局都能看到，重开应用也先显示上次已知的值，
- *  不用等第一次轮询回来。只对本机会话生效——远程会话没有 sessionId 对应本地钩子文件。 */
-export function UsageStatusBar({ sessionMeta }: { sessionMeta: SessionMeta }) {
+/** 5 小时 / 7 天用量状态条。数据来自全局缓存（useRateLimitsStore）：流里的
+ *  rate_limit_event 到达时更新，落一份到 localStorage，不挂在某个会话 tab 下。
+ *  已过重置时间的窗口说明数据作废，不显示（不能拿旧数字当现在的用量）。 */
+export function UsageStatusBar() {
   const t = useT();
-  const cliSessionId = sessionMeta.sessionId;
   const fiveHour = useRateLimitsStore((s) => s.fiveHour);
   const sevenDay = useRateLimitsStore((s) => s.sevenDay);
-  const setFromHook = useRateLimitsStore((s) => s.setFromHook);
+  const live = (w?: RateLimitWindow) => (w && (!w.resetsAt || w.resetsAt * 1000 > Date.now()) ? w : undefined);
+  const five = live(fiveHour);
+  const seven = live(sevenDay);
 
-  useEffect(() => {
-    if (!cliSessionId || cliSessionId.startsWith('desk_')) return;
-    let cancelled = false;
-    const poll = async () => {
-      const data = await bridge.getSessionRateLimits(cliSessionId);
-      if (cancelled || !data) return;
-      setFromHook(data);
-    };
-    void poll();
-    const timer = setInterval(poll, 20_000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [cliSessionId, setFromHook]);
-
-  if (!fiveHour && !sevenDay) return null;
+  if (!five && !seven) return null;
 
   return (
     <div className="hidden md:flex items-center gap-3 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px]">
-      <RateLimitWindowView label="5h" entry={fiveHour} t={t} />
-      <RateLimitWindowView label={t('chat.weekly')} entry={sevenDay} t={t} />
+      <RateLimitWindowView label="5h" entry={five} t={t} />
+      <RateLimitWindowView label={t('chat.weekly')} entry={seven} t={t} />
     </div>
   );
 }

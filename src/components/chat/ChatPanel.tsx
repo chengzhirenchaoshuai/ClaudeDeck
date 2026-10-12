@@ -304,7 +304,7 @@ export function ChatPanel() {
 
         {/* Spacer + right-side actions */}
         <div className="ml-auto flex items-center" />
-        <UsageStatusBar sessionMeta={sessionMeta} />
+        <UsageStatusBar />
         <UsageChip />
         <UpdateButton />
         <ExportMenu sessionPath={currentSessionPath} />
