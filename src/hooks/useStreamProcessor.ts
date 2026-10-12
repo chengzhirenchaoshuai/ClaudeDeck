@@ -19,6 +19,22 @@ import { handleProcessExit } from './stream/handlers/process-exit';
 
 export type { StreamProcessorConfig } from './stream/context';
 
+/** 已知的消息类型；StreamMessage 新增类型时这里必须同步补上（否则类型检查报错） */
+const KNOWN_TYPES: Record<StreamMessage['type'], true> = {
+  tokenicode_permission_request: true,
+  stream_event: true,
+  system: true,
+  assistant: true,
+  user: true,
+  human: true,
+  tool_result: true,
+  tool_use_summary: true,
+  result: true,
+  process_exit: true,
+  content_block_delta: true,
+  rate_limit_event: true,
+};
+
 /**
  * useStreamProcessor — extracts stream message handling from InputBar.
  *
@@ -49,16 +65,11 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
 
     try { // P1-4: error boundary — prevent uncaught exceptions from crashing the stream pipeline
 
-    // Diagnostic: log first message and unrecognized types
-    const KNOWN_TYPES = new Set([
-      'tokenicode_permission_request', 'stream_event', 'system', 'assistant',
-      'user', 'human', 'tool_result', 'tool_use_summary', 'result', 'process_exit',
-      'content_block_delta', 'rate_limit_event',
-    ]);
+    // 诊断：记录 system/exit，并提示未知消息类型
     if (msg.type === 'system' || msg.type === 'process_exit') {
       console.log('[ClaudeDeck:stream]', msg.type, msg.type === 'system' ? msg.subtype : '', msg.__stdinId || '');
     }
-    if (!KNOWN_TYPES.has(msg.type)) {
+    if (!Object.prototype.hasOwnProperty.call(KNOWN_TYPES, msg.type)) {
       console.warn('[ClaudeDeck:stream] unhandled message type:', msg.type, msg);
     }
 
