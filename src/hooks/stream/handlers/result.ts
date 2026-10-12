@@ -181,6 +181,18 @@ function retryAfterThinkingSignatureError(ctx: StreamContext, msg: ResultMessage
       return true; // Exit the result case — retry flow takes over
     }
   }
+  // 切换后的第一轮已成功完成：清除切换标记，否则之后任一轮出现签名错误时会重发切换时那条旧消息
+  if (msg.subtype === 'success') {
+    const meta = useChatStore.getState().getTab(tabId)?.sessionMeta;
+    if (meta?.modelSwitched || meta?.providerSwitched) {
+      setSessionMeta({
+        providerSwitched: false,
+        providerSwitchPendingText: undefined,
+        modelSwitched: false,
+        modelSwitchPendingText: undefined,
+      });
+    }
+  }
   return false;
 }
 

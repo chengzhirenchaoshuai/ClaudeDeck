@@ -112,7 +112,10 @@ export function ChatPanel() {
           continue;
         }
       }
-      items.push({ kind: 'message', msg: messages[i], idx: i });
+      // 空思考块（模型只返回签名、不返回思考内容）不显示
+      const isEmptyThinking = messages[i].type === 'thinking'
+        && !(typeof messages[i].content === 'string' && messages[i].content.trim());
+      if (!isEmptyThinking) items.push({ kind: 'message', msg: messages[i], idx: i });
       i++;
     }
     return items;

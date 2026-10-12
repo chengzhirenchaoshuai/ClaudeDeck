@@ -62,6 +62,7 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // MessageBubble
     'msg.thinking': '思考中...',
+    'msg.thought': '思考过程',
     'msg.terminal': '终端',
     'msg.readFile': '读取文件',
     'msg.writeFile': '写入文件',
@@ -922,6 +923,7 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // MessageBubble
     'msg.thinking': 'Thinking...',
+    'msg.thought': 'Thinking',
     'msg.terminal': 'Terminal',
     'msg.readFile': 'Read File',
     'msg.writeFile': 'Write File',

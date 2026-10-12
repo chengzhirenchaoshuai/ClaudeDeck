@@ -66,7 +66,7 @@ function ThinkingMsg({ message }: MessageProps) {
             className="transition-transform duration-150 group-open:rotate-90">
             <path d="M3 2l4 3-4 3" />
           </svg>
-          {t('msg.thinking')}
+          {t('msg.thought')}
         </summary>
         <pre className="ml-5 mt-0.5 text-[11px] text-text-tertiary
           whitespace-pre-wrap max-h-48 overflow-y-auto
