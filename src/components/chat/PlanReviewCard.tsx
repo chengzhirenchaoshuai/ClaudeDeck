@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { type ChatMessage, useChatStore, getActiveTabState } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { useSettingsStore, setSessionModeLocal } from '../../stores/settingsStore';
+import { useSettingsStore, setSessionModeLocal, planApprovalCliMode } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
@@ -78,6 +78,7 @@ export function PlanReviewCard({ message, floating }: Props) {
             undefined,
             permData.toolUseId,
             permData.input,
+            planApprovalCliMode(),
           );
         } catch (err) {
           console.error('[TC:plan] Failed to respond to ExitPlanMode permission:', err);
@@ -93,7 +94,7 @@ export function PlanReviewCard({ message, floating }: Props) {
       }
     }
 
-    // Switch frontend to Code mode (CLI already exited plan mode after ExitPlanMode allow)
+    // 前端切到 Code 模式；CLI 已随上面的权限响应切到 acceptEdits，不再另发 set_permission_mode
     if (useSettingsStore.getState().sessionMode === 'plan') {
       setSessionModeLocal('code');
     }

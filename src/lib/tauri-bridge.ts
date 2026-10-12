@@ -684,9 +684,9 @@ export const bridge = {
 
   // --- SDK Control Protocol ---
 
-  /** Respond to a structured permission request from CLI */
-  respondPermission: (sessionId: string, requestId: string, allow: boolean, message?: string, toolUseId?: string, updatedInput?: Record<string, unknown>) =>
-    invoke<void>('respond_permission', { sessionId, requestId, allow, message: message ?? null, toolUseId: toolUseId ?? null, updatedInput: updatedInput ?? null }),
+  /** Respond to a structured permission request from CLI。setMode：允许的同时切换 CLI 权限模式（如批准计划后进入 acceptEdits） */
+  respondPermission: (sessionId: string, requestId: string, allow: boolean, message?: string, toolUseId?: string, updatedInput?: Record<string, unknown>, setMode?: string) =>
+    invoke<void>('respond_permission', { sessionId, requestId, allow, message: message ?? null, toolUseId: toolUseId ?? null, updatedInput: updatedInput ?? null, setMode: setMode ?? null }),
 
   /** Send a runtime control command to change permission mode without restart */
   setPermissionMode: (sessionId: string, mode: string) =>

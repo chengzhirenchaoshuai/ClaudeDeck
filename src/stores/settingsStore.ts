@@ -631,6 +631,14 @@ export function setSessionModeLocal(mode: SessionMode): void {
   useSettingsStore.getState().setSessionMode(mode);
 }
 
+/** 批准计划时要让 CLI 切到的权限模式：前端处于 plan 模式时，批准后切到 code（acceptEdits）。
+ *  ExitPlanMode 获批后 CLI 只会回到启动前的模式，所以要随权限响应显式指定，否则写文件仍会请求授权。 */
+export function planApprovalCliMode(): string | undefined {
+  return useSettingsStore.getState().sessionMode === 'plan'
+    ? mapSessionModeToPermissionMode('code')
+    : undefined;
+}
+
 /** 读取并清除「跳过下一次模式同步」标记，供 chatStore 里的模式同步订阅使用 */
 export function takeSkipModeSync(): boolean {
   const skip = _skipNextModeSync;

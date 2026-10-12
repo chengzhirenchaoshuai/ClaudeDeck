@@ -458,9 +458,12 @@ function sendNextPendingMessage(ctx: StreamContext): void {
   // overwhelm the CLI. Sequential turn-by-turn processing is safer.
   {
     const drainTab = useChatStore.getState().getTab(tabId);
-    const nextMsg = useChatStore.getState().shiftPendingMessage(tabId);
+    const next = useChatStore.getState().shiftPendingMessage(tabId);
     const flushStdinId = drainTab?.sessionMeta.stdinId;
-    if (nextMsg && flushStdinId) {
+    if (next && flushStdinId) {
+      const nextMsg = next.text;
+      // 气泡在真正发送时才插入，保证排在上一轮回复之后
+      if (next.message) ctx.addMessage({ ...next.message, timestamp: Date.now() });
       const nextTurnStartedAt = Date.now();
       setSessionStatus('running');
       setSessionMeta({
@@ -483,7 +486,7 @@ function sendNextPendingMessage(ctx: StreamContext): void {
         console.error('[TC] Failed to send pending message:', err);
         // Restore failed message + remaining queue to input draft
         const remaining = useChatStore.getState().getTab(tabId)?.pendingUserMessages ?? [];
-        const allFailed = [nextMsg, ...remaining];
+        const allFailed = [nextMsg, ...remaining.map((p) => p.text)];
         const draft = useChatStore.getState().getTab(tabId)?.inputDraft ?? '';
         const failedText = allFailed.join('\n\n');
         useChatStore.getState().setInputDraft(tabId, draft ? `${draft}\n\n${failedText}` : failedText);

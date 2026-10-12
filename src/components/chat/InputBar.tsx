@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useChatStore, useActiveTab, getActiveTabState, generateMessageId } from '../../stores/chatStore';
-import { useSettingsStore, mapSessionModeToPermissionMode, setSessionModeLocal, getContextWindowForModel } from '../../stores/settingsStore';
+import { useChatStore, useActiveTab, getActiveTabState, generateMessageId, type ChatMessage } from '../../stores/chatStore';
+import { useSettingsStore, mapSessionModeToPermissionMode, setSessionModeLocal, planApprovalCliMode, getContextWindowForModel } from '../../stores/settingsStore';
 import { bridge, type UnifiedCommand } from '../../lib/tauri-bridge';
 import { hasStreamListener, releaseStreamListener } from '../../lib/stream-listeners';
 import { ModelSelector } from './ModelSelector';
@@ -359,6 +359,7 @@ export function InputBar() {
             undefined,
             permData.toolUseId,
             permData.input,
+            planApprovalCliMode(),
           );
         } catch (err) {
           console.error('[TC:plan] Empty-Enter plan approval failed:', err);
@@ -485,6 +486,14 @@ export function InputBar() {
 
     setInputSync('');
 
+    // Gate: queue follow-up messages while AI is actively processing (#142).
+    // Previously only queued when an interaction card was pending, but direct stdin
+    // writes during streaming are unreliable — CLI may silently drop them.
+    // Now we always queue during running state; messages are flushed FIFO when the
+    // current turn completes (result event in useStreamProcessor).
+    const currentTabState = getActiveTabState();
+    const shouldQueue = !!currentTabState.sessionMeta.stdinId && currentTabState.sessionStatus === 'running';
+
     // Silent restart: skip user message bubble (Code mode ExitPlanMode auto-recovery)
     if (silentRestartRef.current) {
       silentRestartRef.current = false;
@@ -510,7 +519,7 @@ export function InputBar() {
       setSessionMeta(tabId, { pendingCommandMsgId: compactCardId });
     } else {
       // Add user message (show original text, not with prefix)
-      addMessage(tabId, {
+      const userBubble: ChatMessage = {
         id: generateMessageId(),
         role: 'user',
         type: 'text',
@@ -519,22 +528,20 @@ export function InputBar() {
         attachments: files.length > 0
           ? files.map((f) => ({ name: f.name, path: f.path, isImage: f.isImage, preview: f.preview }))
           : undefined,
-      });
+      };
+      if (shouldQueue) {
+        // 排队消息的气泡等真正发送时再插入，否则会排在本轮回复的正文前面
+        useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble });
+        clearFiles();
+        return;
+      }
+      addMessage(tabId, userBubble);
     }
 
     clearFiles();
 
-    // Gate: queue follow-up messages while AI is actively processing (#142).
-    // Previously only queued when an interaction card was pending, but direct stdin
-    // writes during streaming are unreliable — CLI may silently drop them.
-    // Now we always queue during running state; messages are flushed FIFO when the
-    // current turn completes (result event in useStreamProcessor).
-    const currentTabState = getActiveTabState();
-    const existingStdinId = currentTabState.sessionMeta.stdinId;
-    const currentStatus = currentTabState.sessionStatus;
-
-    if (existingStdinId && currentStatus === 'running') {
-      useChatStore.getState().addPendingMessage(tabId, text);
+    if (shouldQueue) {
+      useChatStore.getState().addPendingMessage(tabId, { text });
       return;
     }
 

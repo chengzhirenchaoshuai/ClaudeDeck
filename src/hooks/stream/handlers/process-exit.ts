@@ -98,7 +98,7 @@ export function handleProcessExit(ctx: StreamContext, msg: ProcessExitMessage): 
   const remainingPending = useChatStore.getState().getTab(tabId)?.pendingUserMessages ?? [];
   if (remainingPending.length > 0) {
     const draft = useChatStore.getState().getTab(tabId)?.inputDraft ?? '';
-    const pendingText = remainingPending.join('\n\n');
+    const pendingText = remainingPending.map((p) => p.text).join('\n\n');
     useChatStore.getState().setInputDraft(tabId,
       draft ? `${draft}\n\n${pendingText}` : pendingText
     );

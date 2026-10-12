@@ -653,6 +653,11 @@ pub(crate) async fn send_raw_stdin(
 /// IMPORTANT: The SDK always sends `updatedInput` with the original tool input when allowing.
 /// CLI internally relies on this field. For deny, only `message` is included.
 /// Format mirrors exactly what the SDK constructs (from reverse-engineered source).
+///
+/// `set_mode`：允许时同时切换 CLI 权限模式（作为 `updatedPermissions` 的 setMode 随响应发送）。
+/// 用于批准计划：ExitPlanMode 获批后 CLI 默认回到启动前的模式，不会自动进入 acceptEdits。
+// Tauri 命令参数由前端按名传入，拆成结构体反而更难读
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub(crate) async fn respond_permission(
     stdin_mgr: State<'_, StdinManager>,
@@ -662,6 +667,7 @@ pub(crate) async fn respond_permission(
     message: Option<String>,
     tool_use_id: Option<String>,
     updated_input: Option<Value>,
+    set_mode: Option<String>,
 ) -> Result<(), String> {
     let mut inner = serde_json::Map::new();
     if allow {
@@ -671,6 +677,12 @@ pub(crate) async fn respond_permission(
             "updatedInput".into(),
             updated_input.unwrap_or(Value::Object(serde_json::Map::new())),
         );
+        if let Some(mode) = set_mode {
+            inner.insert(
+                "updatedPermissions".into(),
+                serde_json::json!([{ "type": "setMode", "mode": mode, "destination": "session" }]),
+            );
+        }
     } else {
         inner.insert("behavior".into(), Value::String("deny".into()));
         inner.insert(

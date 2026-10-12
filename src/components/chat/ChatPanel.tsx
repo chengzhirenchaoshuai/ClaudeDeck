@@ -32,6 +32,7 @@ export function ChatPanel() {
   const sessionStatus = useActiveTab((t) => t.sessionStatus);
   const sessionMeta = useActiveTab((t) => t.sessionMeta);
   const activityStatus = useActiveTab((t) => t.activityStatus);
+  const pendingUserMessages = useActiveTab((t) => t.pendingUserMessages);
   const sidebarOpen = useSettingsStore((s) => s.sidebarOpen);
   const activeEnv = useSettingsStore((s) => s.activeEnv);
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
@@ -202,7 +203,7 @@ export function ChatPanel() {
     if (isNearBottomRef.current && !userScrollingUpRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, partialText, partialThinking]);
+  }, [messages, partialText, partialThinking, pendingUserMessages]);
 
   // Auto-scroll the internal thinking <pre> to bottom as new content streams in
   useEffect(() => {
@@ -443,6 +444,13 @@ export function ChatPanel() {
             {(sessionStatus === 'running' || activityStatus.phase === 'awaiting') && (
               <ActivityIndicator activityStatus={activityStatus} sessionMeta={sessionMeta} />
             )}
+            {/* 排队中的消息：本轮结束、真正发送时才进入消息列表 */}
+            {pendingUserMessages.map((p, i) => p.message && (
+              <div key={`queued_${p.message.id}`} className="mt-5 opacity-60" title={t('chat.queued')}>
+                <MessageBubble message={p.message} isFirstInGroup={i === 0} />
+                <div className="mt-1 text-right text-[11px] text-text-tertiary">{t('chat.queued')}</div>
+              </div>
+            ))}
           </div>
         )}
       </div>

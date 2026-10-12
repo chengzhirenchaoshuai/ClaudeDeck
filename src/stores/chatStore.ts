@@ -166,7 +166,15 @@ export interface TabSession {
   activityStatus: ActivityStatus;
   inputDraft: string;
   pendingAttachments: FileAttachment[];
-  pendingUserMessages: string[];
+  pendingUserMessages: PendingUserMessage[];
+}
+
+/** 运行中提交、等待本轮结束再发送的消息 */
+export interface PendingUserMessage {
+  /** 实际写入 stdin 的文本（含附件、技能等前缀） */
+  text: string;
+  /** 轮到它发送时插入聊天记录的用户气泡；排队期间在消息列表底部单独显示。静默重启等场景没有气泡 */
+  message?: ChatMessage;
 }
 
 // --- Store State & Actions ---
@@ -189,10 +197,10 @@ interface ChatState {
   setSessionMeta: (tabId: string, meta: Partial<SessionMeta>) => void;
   setInputDraft: (tabId: string, text: string) => void;
   setPendingAttachments: (tabId: string, files: FileAttachment[]) => void;
-  addPendingMessage: (tabId: string, text: string) => void;
+  addPendingMessage: (tabId: string, pending: PendingUserMessage) => void;
   /** Dequeue the first pending message (FIFO). Returns undefined if empty. */
-  shiftPendingMessage: (tabId: string) => string | undefined;
-  flushPendingMessages: (tabId: string) => string[];
+  shiftPendingMessage: (tabId: string) => PendingUserMessage | undefined;
+  flushPendingMessages: (tabId: string) => PendingUserMessage[];
   clearPendingMessages: (tabId: string) => void;
   rewindToTurn: (tabId: string, startMsgIdx: number) => void;
   setInteractionState: (tabId: string, msgId: string, state: InteractionState, error?: string) => void;
@@ -422,11 +430,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return result ?? {};
     }),
 
-  addPendingMessage: (tabId, text) =>
+  addPendingMessage: (tabId, pending) =>
     set((state) => {
       const result = updateTab(state.tabs, tabId, (tab) => ({
         ...tab,
-        pendingUserMessages: [...tab.pendingUserMessages, text],
+        pendingUserMessages: [...tab.pendingUserMessages, pending],
       }));
       return result ?? {};
     }),
