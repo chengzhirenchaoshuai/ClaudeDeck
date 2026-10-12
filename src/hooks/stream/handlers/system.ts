@@ -1,0 +1,72 @@
+// system 消息：init 模型、错误、思考 token、压缩边界。
+import { useChatStore, generateMessageId } from '../../../stores/chatStore';
+import { formatErrorForUser } from '../errors';
+import { persistTokenState } from '../token-state';
+import { type SystemMessage } from '../../../lib/stream-message';
+import { type StreamContext } from '../context';
+
+export function handleSystemMessage(ctx: StreamContext, msg: SystemMessage): void {
+  const { tabId, addMessage, setSessionMeta } = ctx;
+
+  if (msg.subtype === 'init') {
+    setSessionMeta({ model: msg.model });
+  } else if (msg.subtype === 'error') {
+    // FI-3: Surface system-level errors instead of silently dropping them
+    const rawError = msg.message || msg.error || 'System error';
+    addMessage({
+      id: generateMessageId(),
+      role: 'system',
+      type: 'text',
+      content: formatErrorForUser(rawError),
+      timestamp: Date.now(),
+    });
+  } else if (msg.subtype === 'thinking_tokens') {
+    // Track estimated thinking token usage (Claude CLI stream-json)
+    // Updates sessionMeta with thinking token estimates for display
+    const thinkingTokens = msg.estimated_tokens;
+    if (typeof thinkingTokens === 'number') {
+      const meta = useChatStore.getState().getTab(tabId)?.sessionMeta ?? {};
+      setSessionMeta({
+        thinkingTokens,
+        totalThinkingTokens: (meta.totalThinkingTokens || 0) + (msg.estimated_tokens_delta || 0),
+      });
+    }
+  } else if (msg.subtype === 'status') {
+    // Session status updates (e.g. "requesting") — informational, silently tracked
+    // We don't surface these as user-visible messages; they're internal CLI state
+  } else if (msg.subtype === 'compact_boundary') {
+    // 压缩完成：CLI 会用这条事件给出压缩后的真实 token 数，
+    // 不处理的话右上角的上下文占用会一直停留在压缩前的旧数值，直到下一轮真实对话才刷新
+    // 实时流里是蛇形命名 compact_metadata.post_tokens（驼峰的 compactMetadata 只出现在磁盘 JSONL 里）
+    const postTokens = msg.compact_metadata?.post_tokens;
+    const preTokens = msg.compact_metadata?.pre_tokens;
+    if (typeof postTokens === 'number') {
+      setSessionMeta({
+        inputTokens: postTokens,
+        outputTokens: 0,
+        contextInputTokens: postTokens,
+        contextOutputTokens: 0,
+      });
+      const boundaryMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
+      if (boundaryMeta) persistTokenState(tabId, boundaryMeta);
+
+      // 把压缩前后的 token 数写进处理卡片，让用户知道这次压缩大概做了什么
+      const boundaryCmdMsgId = boundaryMeta?.pendingCommandMsgId;
+      if (boundaryCmdMsgId) {
+        const boundaryCmdMsg = (useChatStore.getState().getTab(tabId)?.messages ?? [])
+          .find((m) => m.id === boundaryCmdMsgId);
+        if (boundaryCmdMsg) {
+          useChatStore.getState().updateMessage(tabId, boundaryCmdMsgId, {
+            commandData: {
+              ...boundaryCmdMsg.commandData,
+              compactSummary: { preTokens, postTokens },
+            },
+          });
+        }
+      }
+    }
+  } else {
+    // FI-3: Log unknown subtypes so we know what we're missing
+    console.warn('[ClaudeDeck] Unhandled system subtype:', msg.subtype, msg);
+  }
+}
