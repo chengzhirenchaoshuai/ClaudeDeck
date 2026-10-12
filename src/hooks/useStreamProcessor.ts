@@ -9,295 +9,24 @@ import {
 } from '../stores/settingsStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAgentStore, resolveAgentId, getAgentDepth } from '../stores/agentStore';
-import { useFileStore } from '../stores/fileStore';
 import { bridge, onClaudeStream, onClaudeStderr } from '../lib/tauri-bridge';
 import { releaseStreamListener, setStreamListener } from '../lib/stream-listeners';
 import { envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../lib/api-provider';
 import { useProviderStore } from '../stores/providerStore';
 import { useRateLimitsStore } from '../stores/rateLimitsStore';
 import { t } from '../lib/i18n';
-import {
-  getContextInputTokens,
-  getContextOutputTokens,
-  getContextUsedTokens,
-  hasMeaningfulContextUsage,
-  type TokenUsage,
-} from '../lib/context-usage';
+import { getContextOutputTokens, getContextUsedTokens } from '../lib/context-usage';
 import { toolResultText, type StreamMessage } from '../lib/stream-message';
 import { resolveSessionContextWindow } from '../lib/context-window';
-
-// --- Error classification for user-facing messages ---
-// Each pattern maps to a friendly i18n key. Matched errors show the friendly
-// message as primary text with raw error in a collapsible details block.
-// Unmatched errors get a generic fallback + raw details.
-const ERROR_CATEGORIES: ReadonlyArray<{ pattern: RegExp; i18nKey: string }> = [
-  { pattern: /40[13]|unauthorized|invalid.*key|api.key.*invalid/i, i18nKey: 'error.invalidKey' },
-  { pattern: /429|rate.limit|too.many.request/i, i18nKey: 'error.rateLimit' },
-  { pattern: /quota|insufficient.*balance|credit|billing/i, i18nKey: 'error.quotaExceeded' },
-  { pattern: /model.*not.found|invalid.*model|not_found.*model/i, i18nKey: 'error.modelNotFound' },
-  { pattern: /timeout|timed?.out|ECONNREFUSED|ECONNRESET|ENOTFOUND/i, i18nKey: 'error.networkError' },
-  { pattern: /network|fetch.failed|dns/i, i18nKey: 'error.networkError' },
-  { pattern: /permission.denied|operation.not.permitted|access.denied|forbidden/i, i18nKey: 'error.permissionDenied' },
-  { pattern: /overloaded|capacity|503|service.unavailable/i, i18nKey: 'error.serviceUnavailable' },
-  { pattern: /not.installed|command.not.found/i, i18nKey: 'error.cliNotInstalled' },
-  { pattern: /token.*limit|context.*length|too.long/i, i18nKey: 'error.tokenLimit' },
-];
-
-export function formatErrorForUser(raw: string): string {
-  if (!raw || raw.length < 10) return raw;
-  const match = ERROR_CATEGORIES.find((c) => c.pattern.test(raw));
-  const friendly = match ? t(match.i18nKey) : t('error.genericFallback');
-  return `${friendly}\n\n<details>\n<summary>${t('error.showDetails')}</summary>\n\n\`\`\`\n${raw}\n\`\`\`\n\n</details>`;
-}
-
-// --- Token state cache + Claude UUID index (survives F5 via sessionStorage) ---
-// Token persistence: real-time cache for F5 recovery during active streaming.
-// UUID index: maps tabId → Claude session UUID for JSONL cross-check on reconnect.
-
-const TOKEN_STATE_KEY = 'tokenicode_token_state_v2';
-const UUID_INDEX_KEY = 'tokenicode_claude_uuids';
-
-function _persistTokenState(tabId: string, meta: {
-  inputTokens?: number;
-  outputTokens?: number;
-  contextInputTokens?: number;
-  contextOutputTokens?: number;
-  totalInputTokens?: number;
-  totalOutputTokens?: number;
-}) {
-  try {
-    const data = JSON.parse(sessionStorage.getItem(TOKEN_STATE_KEY) || '{}');
-    data[tabId] = {
-      inputTokens: meta.inputTokens,
-      outputTokens: meta.outputTokens,
-      contextInputTokens: meta.contextInputTokens,
-      contextOutputTokens: meta.contextOutputTokens,
-      totalInputTokens: meta.totalInputTokens,
-      totalOutputTokens: meta.totalOutputTokens,
-    };
-    sessionStorage.setItem(TOKEN_STATE_KEY, JSON.stringify(data));
-  } catch {/* ignore */}
-}
-
-function contextSnapshot(usage: TokenUsage | undefined): {
-  contextInputTokens: number;
-  contextOutputTokens: number;
-} | null {
-  if (!hasMeaningfulContextUsage(usage)) return null;
-  return {
-    contextInputTokens: getContextInputTokens(usage),
-    contextOutputTokens: getContextOutputTokens(usage),
-  };
-}
-
-function _persistClaudeUuid(tabId: string, claudeUuid: string) {
-  try {
-    const data = JSON.parse(sessionStorage.getItem(UUID_INDEX_KEY) || '{}');
-    data[tabId] = claudeUuid;
-    sessionStorage.setItem(UUID_INDEX_KEY, JSON.stringify(data));
-  } catch {/* ignore */}
-}
-
-export function loadClaudeUuid(tabId: string): string | null {
-  try {
-    const data = JSON.parse(sessionStorage.getItem(UUID_INDEX_KEY) || '{}');
-    return data[tabId] || null;
-  } catch {
-    return null;
-  }
-}
-
-// --- Streaming text buffer (rAF-throttled + interval fallback, per-stdinId) ---
-// Coalesces rapid text_delta / thinking_delta events into a single state update
-// per animation frame (~60/s), preventing JS main thread starvation from
-// excessive React re-renders when the message list is large.
-//
-// CRITICAL: rAF alone is unreliable — heavy React re-renders can block the
-// rendering pipeline, preventing rAF callbacks from firing. A 200ms setInterval
-// fallback ensures buffered text is always flushed even when rAF is starved.
-//
-// TK-329 fix: each session gets its own buffer to prevent cross-contamination
-// when multiple sessions stream concurrently.
-interface _StreamBuffer {
-  text: string;
-  thinking: string;
-  raf: number;
-}
-const _streamBuffers = new Map<string, _StreamBuffer>();
-
-// Interval fallback: flush any stuck buffers every 200ms
-let _flushIntervalId: ReturnType<typeof setInterval> | null = null;
-
-function _ensureFlushInterval() {
-  if (_flushIntervalId) return;
-  _flushIntervalId = setInterval(() => {
-    for (const [stdinId, buf] of _streamBuffers) {
-      if (buf.text || buf.thinking) {
-        _doFlush(stdinId, buf);
-      }
-    }
-    // Stop interval when no active buffers remain
-    if (_streamBuffers.size === 0 && _flushIntervalId) {
-      clearInterval(_flushIntervalId);
-      _flushIntervalId = null;
-    }
-  }, 200);
-}
-
-function _getBuffer(stdinId: string): _StreamBuffer {
-  let buf = _streamBuffers.get(stdinId);
-  if (!buf) {
-    buf = { text: '', thinking: '', raf: 0 };
-    _streamBuffers.set(stdinId, buf);
-  }
-  return buf;
-}
-
-/** Core flush logic — shared by rAF callback and interval fallback. */
-function _doFlush(stdinId: string, buf: _StreamBuffer) {
-  if (!buf.text && !buf.thinking) return;
-
-  const mappedId = useSessionStore.getState().getTabForStdin(stdinId);
-  const tabId = mappedId || useSessionStore.getState().selectedSessionId || undefined;
-  if (!mappedId && tabId) {
-    console.warn('[stream-flush] stdinId mapping missing, fallback to selectedSessionId:', stdinId, '→', tabId);
-    useSessionStore.getState().registerStdinTab(stdinId, tabId);
-  }
-  if (!tabId) {
-    // No active tab to render into — the selectedSessionId is likely null
-    // (e.g. app just launched, no tab selected yet). Log and discard buffered
-    // text so stale data won't be flushed to the wrong tab later.
-    console.warn('[stream-flush] no tabId for stdinId:', stdinId,
-      'mappedId:', mappedId,
-      'selectedSessionId:', useSessionStore.getState().selectedSessionId,
-      'dropping text:', buf.text.slice(0, 80),
-      'dropping thinking:', buf.thinking.slice(0, 80));
-    buf.text = '';
-    buf.thinking = '';
-    return;
-  }
-
-  const store = useChatStore.getState();
-  if (buf.text) {
-    store.updatePartialMessage(tabId, buf.text);
-    buf.text = '';
-  }
-  if (buf.thinking) {
-    store.updatePartialThinking(tabId, buf.thinking);
-    buf.thinking = '';
-  }
-}
-
-function _scheduleStreamFlush(stdinId: string) {
-  const buf = _getBuffer(stdinId);
-  // Start the interval fallback on first buffer activity
-  _ensureFlushInterval();
-  if (buf.raf) return;
-  buf.raf = requestAnimationFrame(() => {
-    buf.raf = 0;
-    _doFlush(stdinId, buf);
-  });
-}
-
-/** Flush any buffered streaming text immediately (call before clearPartial).
- *  If stdinId is provided, flush only that session's buffer.
- *  If omitted, flush ALL buffers (backward compat). */
-export function flushStreamBuffer(stdinId?: string) {
-  const ids = stdinId ? [stdinId] : Array.from(_streamBuffers.keys());
-
-  for (const id of ids) {
-    const buf = _streamBuffers.get(id);
-    if (!buf) continue;
-
-    if (buf.raf) {
-      cancelAnimationFrame(buf.raf);
-      buf.raf = 0;
-    }
-    _doFlush(id, buf);
-  }
-
-  // Clean up buffers and stop interval when all cleared
-  if (!stdinId) {
-    _streamBuffers.clear();
-  } else {
-    _streamBuffers.delete(stdinId);
-  }
-  if (_streamBuffers.size === 0 && _flushIntervalId) {
-    clearInterval(_flushIntervalId);
-    _flushIntervalId = null;
-  }
-}
-
-/** Preserve streamed text when a provider omits the final full assistant event. */
-function commitPartialText(tabId: string, stdinId?: string): boolean {
-  flushStreamBuffer(stdinId);
-  const store = useChatStore.getState();
-  const tab = store.getTab(tabId);
-  const content = tab?.partialText?.trim();
-  if (!content) return false;
-
-  const alreadyPresent = tab?.messages.some(
-    (message) => message.role === 'assistant'
-      && message.type === 'text'
-      && message.content.trim() === content,
-  );
-  if (!alreadyPresent) {
-    store.addMessage(tabId, {
-      id: generateMessageId(),
-      role: 'assistant',
-      type: 'text',
-      content,
-      timestamp: Date.now(),
-    });
-  }
-  return true;
-}
-
-export function hasAssistantReplyForTurn(messages: ChatMessage[], turnStartTime: number): boolean {
-  return messages.some(
-    (message) => message.role === 'assistant'
-      && message.type === 'text'
-      && !!message.content.trim()
-      && message.timestamp >= turnStartTime,
-  );
-}
-
-// --- File tree auto-refresh on file-mutating tool completions ---
-// Tools that may create/modify/delete files in the working directory.
-const FILE_MUTATING_TOOLS = new Set([
-  'Write', 'Edit', 'MultiEdit', 'Bash', 'BatchTool',
-]);
-
-// Debounce tree refresh to batch rapid tool completions (e.g. parallel agents).
-let _fileRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-function _scheduleFileTreeRefresh() {
-  if (_fileRefreshTimer) return; // already scheduled
-  _fileRefreshTimer = setTimeout(() => {
-    _fileRefreshTimer = null;
-    useFileStore.getState().refreshTree();
-  }, 300);
-}
-
-/**
- * If the tool_result's parent tool_use was a file-mutating tool,
- * schedule a debounced file tree refresh.
- */
-function _maybeRefreshFileTree(tabId: string, toolUseId?: string, toolName?: string) {
-  // Fast path: tool_name available directly on the message
-  if (toolName && FILE_MUTATING_TOOLS.has(toolName)) {
-    _scheduleFileTreeRefresh();
-    return;
-  }
-  // Fallback: look up parent tool_use message
-  if (toolUseId) {
-    const messages = useChatStore.getState().getTab(tabId)?.messages ?? [];
-    const parent = messages.find((m) => m.id === toolUseId);
-    if (parent?.toolName && FILE_MUTATING_TOOLS.has(parent.toolName)) {
-      _scheduleFileTreeRefresh();
-    }
-  }
-}
+import { formatErrorForUser } from './stream/errors';
+import { contextSnapshot, persistClaudeUuid, persistTokenState } from './stream/token-state';
+import {
+  bufferStreamDelta,
+  commitPartialText,
+  flushStreamBuffer,
+  hasAssistantReplyForTurn,
+} from './stream/buffer';
+import { maybeRefreshFileTree } from './stream/file-tree-refresh';
 
 /**
  * Configuration refs and callbacks that the stream processor needs
@@ -526,7 +255,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
       if (currentId !== cliSessionId) {
         setSessionMeta({ sessionId: cliSessionId });
         // Persist Claude session UUID for F5 recovery (token totals read from JSONL)
-        _persistClaudeUuid(tabId, cliSessionId);
+        persistClaudeUuid(tabId, cliSessionId);
 
         // Promote draft tab to real session ID so it merges with disk session
         if (tabId.startsWith('draft_')) {
@@ -541,7 +270,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           }
           useSessionStore.getState().promoteDraft(tabId, cliSessionId);
           // Update UUID index: tab key changed from draft_* to the real UUID
-          _persistClaudeUuid(cliSessionId, cliSessionId);
+          persistClaudeUuid(cliSessionId, cliSessionId);
           // 标签页已改用真实 ID，本条消息后续的写入也要跟着改
           tabId = cliSessionId;
           errTabId = tabId;
@@ -579,17 +308,13 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           if (text && msgStdinId) {
             // Buffer text and flush via rAF to avoid excessive re-renders
             // TK-329: per-stdinId buffer prevents cross-session contamination
-            const buf = _getBuffer(msgStdinId);
-            buf.text += text;
-            _scheduleStreamFlush(msgStdinId);
+            bufferStreamDelta(msgStdinId, 'text', text);
             agentActions?.updatePhase(agentId, 'writing');
           }
         } else if (evt.type === 'content_block_delta' && evt.delta?.type === 'thinking_delta') {
           const thinkingText = evt.delta.thinking || '';
           if (thinkingText && msgStdinId) {
-            const buf = _getBuffer(msgStdinId);
-            buf.thinking += thinkingText;
-            _scheduleStreamFlush(msgStdinId);
+            bufferStreamDelta(msgStdinId, 'thinking', thinkingText);
             agentActions?.updatePhase(agentId, 'thinking');
           } else {
             setActivityStatus({ phase: 'thinking' });
@@ -672,7 +397,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             ...(snapshot ? { ...snapshot, contextOutputTokens: 0 } : {}),
           });
           const updatedMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
-          if (updatedMeta) _persistTokenState(tabId, updatedMeta);
+          if (updatedMeta) persistTokenState(tabId, updatedMeta);
         }
 
         // Track output tokens from message_delta (per-turn + cumulative total)
@@ -685,7 +410,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             contextOutputTokens: getContextOutputTokens(evt.usage),
           });
           const updatedMeta2 = useChatStore.getState().getTab(tabId)?.sessionMeta;
-          if (updatedMeta2) _persistTokenState(tabId, updatedMeta2);
+          if (updatedMeta2) persistTokenState(tabId, updatedMeta2);
         }
         break;
       }
@@ -731,7 +456,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
               contextOutputTokens: 0,
             });
             const boundaryMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
-            if (boundaryMeta) _persistTokenState(tabId, boundaryMeta);
+            if (boundaryMeta) persistTokenState(tabId, boundaryMeta);
 
             // 把压缩前后的 token 数写进处理卡片，让用户知道这次压缩大概做了什么
             const boundaryCmdMsgId = boundaryMeta?.pendingCommandMsgId;
@@ -1077,7 +802,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
 
         const toolUseId = msg.tool_use_id;
         // Auto-refresh file tree when file-mutating tools complete
-        _maybeRefreshFileTree(tabId, toolUseId, msg.tool_name);
+        maybeRefreshFileTree(tabId, toolUseId, msg.tool_name);
 
         if (toolUseId) {
           const currentMessages = useChatStore.getState().getTab(tabId)?.messages ?? [];
@@ -1411,7 +1136,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
           });
           // Persist final token state for F5 recovery
           const resultMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
-          if (resultMeta) _persistTokenState(tabId, resultMeta);
+          if (resultMeta) persistTokenState(tabId, resultMeta);
         }
         agentActions?.completeAll(
           msg.subtype === 'success' ? 'completed' : 'error'
@@ -1665,9 +1390,7 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         if (msg.type === 'content_block_delta') {
           const text = msg.delta?.text || '';
           if (text && msgStdinId) {
-            const buf = _getBuffer(msgStdinId);
-            buf.text += text;
-            _scheduleStreamFlush(msgStdinId);
+            bufferStreamDelta(msgStdinId, 'text', text);
           }
         }
         break;

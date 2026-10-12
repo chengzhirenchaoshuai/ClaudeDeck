@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../../stores/chatStore';
-import { hasAssistantReplyForTurn } from '../useStreamProcessor';
+import { hasAssistantReplyForTurn } from '../stream/buffer';
 
 const reply = (timestamp: number, content = 'ok'): ChatMessage => ({
   id: String(timestamp),

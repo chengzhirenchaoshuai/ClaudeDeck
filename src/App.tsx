@@ -18,7 +18,7 @@ import { hasStreamListener, setStreamListener } from './lib/stream-listeners';
 import { disposableListen } from './lib/disposable-listen';
 import { useScrollZoom } from './lib/useScrollZoom';
 import { useT } from './lib/i18n';
-import { loadClaudeUuid } from './hooks/useStreamProcessor';
+import { loadClaudeUuid } from './hooks/stream/token-state';
 import { requestQuit } from './lib/app-quit';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
