@@ -2,6 +2,17 @@
 
 use crate::*;
 
+/// 在阻塞线程池里执行同步文件 IO：会话目录很大时，列表/搜索/加载不再占住 tokio 工作线程。
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("blocking task failed: {}", e))?
+}
+
 /// 隐藏名单文件：只记录“回退”产生的被替换旧分支。
 /// 会话列表以 CLI 的 projects 目录为准，这里的 ID 仅在列表中不显示，jsonl 文件保留以便恢复。
 pub(crate) fn hidden_sessions_path() -> Result<std::path::PathBuf, String> {
@@ -140,6 +151,10 @@ pub(crate) async fn delete_session(_session_id: String, session_path: String) ->
 
 #[tauri::command]
 pub(crate) async fn list_sessions() -> Result<Vec<Value>, String> {
+    run_blocking(list_sessions_blocking).await
+}
+
+fn list_sessions_blocking() -> Result<Vec<Value>, String> {
     let claude_dir = claude_projects_dir()?;
 
     if !claude_dir.exists() {
@@ -212,6 +227,10 @@ pub(crate) async fn list_sessions() -> Result<Vec<Value>, String> {
 /// Returns matching sessions with snippets, sorted by match_count descending (max 50).
 #[tauri::command]
 pub(crate) async fn search_sessions(query: String) -> Result<Vec<Value>, String> {
+    run_blocking(move || search_sessions_blocking(query)).await
+}
+
+fn search_sessions_blocking(query: String) -> Result<Vec<Value>, String> {
     if query.len() < 2 {
         return Ok(vec![]);
     }
@@ -688,15 +707,18 @@ pub(crate) async fn load_session(path: String) -> Result<Vec<Value>, String> {
     if path.starts_with(commands::remote::REMOTE_SCHEME) {
         return commands::remote::load_remote_session(&path).await;
     }
-    let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
-    let reader = std::io::BufReader::new(file);
-    let mut messages = vec![];
-    for line in jsonl_lines(reader) {
-        if let Ok(json) = serde_json::from_str::<Value>(&line) {
-            messages.push(json);
+    run_blocking(move || {
+        let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
+        let reader = std::io::BufReader::new(file);
+        let mut messages = vec![];
+        for line in jsonl_lines(reader) {
+            if let Ok(json) = serde_json::from_str::<Value>(&line) {
+                messages.push(json);
+            }
         }
-    }
-    Ok(messages)
+        Ok(messages)
+    })
+    .await
 }
 
 /// Compute billing totals and the latest occupied-context snapshot from a
@@ -773,6 +795,10 @@ pub(crate) fn compute_session_tokens<R: std::io::BufRead>(reader: R) -> Value {
 
 #[tauri::command]
 pub(crate) async fn get_session_tokens(session_id: String) -> Result<Value, String> {
+    run_blocking(move || get_session_tokens_blocking(session_id)).await
+}
+
+fn get_session_tokens_blocking(session_id: String) -> Result<Value, String> {
     // Find the JSONL file: <CLI 配置目录>/projects/<any-project>/<session_id>.jsonl
     let projects_dir = claude_projects_dir()?;
     let mut jsonl_path = None;
@@ -900,6 +926,10 @@ pub(crate) async fn export_session_json(path: String, output_path: String) -> Re
 /// List recent projects by scanning ~/.claude/projects/ directory names
 #[tauri::command]
 pub(crate) async fn list_recent_projects() -> Result<Vec<Value>, String> {
+    run_blocking(list_recent_projects_blocking).await
+}
+
+fn list_recent_projects_blocking() -> Result<Vec<Value>, String> {
     let projects_dir = claude_projects_dir()?;
 
     if !projects_dir.exists() {
