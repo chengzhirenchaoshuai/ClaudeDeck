@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { bridge, type CliCandidate } from '../../lib/tauri-bridge';
+import { ask } from '@tauri-apps/plugin-dialog';
+import { bridge, onDownloadProgress, type CliCandidate } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
 import { APP_NAME } from '../../lib/edition';
 import { stripAnsi } from '../../lib/strip-ansi';
@@ -73,7 +74,6 @@ export function CliTab() {
     setDownloadPercent(0);
     setPhase('downloading');
 
-    const { onDownloadProgress } = await import('../../lib/tauri-bridge');
     const unlisten = await onDownloadProgress((event) => {
       setDownloadPercent(event.percent);
       const p = event.phase;
@@ -120,7 +120,6 @@ export function CliTab() {
     setDownloadPercent(0);
     setPhase('idle');
 
-    const { onDownloadProgress } = await import('../../lib/tauri-bridge');
     const unlisten = await onDownloadProgress((event) => {
       setDownloadPercent(event.percent);
       const p = event.phase;
@@ -218,7 +217,6 @@ export function CliTab() {
           <button
             onClick={async () => {
               if (status !== 'not_found') {
-                const { ask } = await import('@tauri-apps/plugin-dialog');
                 const confirmed = await ask(t('cli.confirmReinstall'), { title: APP_NAME, kind: 'warning' });
                 if (!confirmed) return;
               }
@@ -438,7 +436,6 @@ function CliDiagnostics() {
   }, []);
 
   const handleDelete = useCallback(async (path: string) => {
-    const { ask } = await import('@tauri-apps/plugin-dialog');
     const confirmed = await ask(
       `${t('cli.confirmDelete')}\n${path}`,
       { title: 'CLI', kind: 'warning' }

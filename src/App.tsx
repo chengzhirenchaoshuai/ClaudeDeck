@@ -21,6 +21,7 @@ import { useT } from './lib/i18n';
 import { loadClaudeUuid } from './hooks/useStreamProcessor';
 import { requestQuit } from './lib/app-quit';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
 import {
@@ -131,7 +132,7 @@ function App() {
   tRef.current = t;
 
   useEffect(() => {
-    return disposableListen(import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+    return disposableListen(Promise.resolve().then(() => {
       const win = getCurrentWindow();
       return win.onCloseRequested(async (event) => {
         event.preventDefault();

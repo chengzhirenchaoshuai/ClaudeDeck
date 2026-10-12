@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { useSessionStore } from './sessionStore';
+import { useSettingsStore, mapSessionModeToPermissionMode, takeSkipModeSync } from './settingsStore';
+import { bridge } from '../lib/tauri-bridge';
 import type { FileAttachment } from '../hooks/useFileAttachments';
 
 // --- Types ---
@@ -595,3 +597,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     return true;
   },
 }));
+
+// --- 运行时切换模式：sessionMode 变化且当前标签页有 CLI 会话时，经控制协议发送 set_permission_mode ---
+// 放在这里而不是 settingsStore：settingsStore 引用 chatStore 会形成循环依赖。
+useSettingsStore.subscribe((state, prevState) => {
+  if (state.sessionMode === prevState.sessionMode) return;
+  if (takeSkipModeSync()) return;
+
+  const cliMode = mapSessionModeToPermissionMode(state.sessionMode);
+  // 运行中不能切换到 bypass，只能在启动时指定
+  if (cliMode === 'bypassPermissions') return;
+
+  const stdinId = getActiveTabState().sessionMeta.stdinId;
+  if (!stdinId) return;
+  bridge.setPermissionMode(stdinId, cliMode).catch((err: unknown) => {
+    console.error('[ClaudeDeck] Failed to set permission mode:', err);
+  });
+});

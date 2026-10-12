@@ -619,8 +619,8 @@ export function getAutoCompactThreshold(model?: string, mode?: ContextWindowMode
   return Math.round(getContextWindowForModel(model, mode) * 0.8);
 }
 
-// --- Runtime mode switching via SDK control protocol ---
-// When sessionMode changes and there's an active CLI session, send set_permission_mode.
+// --- 运行时切换模式 ---
+// 实际发送 set_permission_mode 的订阅在 chatStore.ts（避免循环依赖），这里只管「跳过一次」标记。
 
 let _skipNextModeSync = false;
 
@@ -631,29 +631,9 @@ export function setSessionModeLocal(mode: SessionMode): void {
   useSettingsStore.getState().setSessionMode(mode);
 }
 
-useSettingsStore.subscribe((state, prevState) => {
-  if (state.sessionMode === prevState.sessionMode) return;
-
-  if (_skipNextModeSync) {
-    _skipNextModeSync = false;
-    return;
-  }
-
-  const cliMode = mapSessionModeToPermissionMode(state.sessionMode);
-
-  // bypass uses --dangerously-skip-permissions at startup; can't switch TO bypass at runtime
-  if (cliMode === 'bypassPermissions') return;
-
-  // Dynamically import to avoid circular deps
-  Promise.all([
-    import('../lib/tauri-bridge'),
-    import('./chatStore'),
-  ]).then(([{ bridge }, { getActiveTabState }]) => {
-    const stdinId = getActiveTabState().sessionMeta.stdinId;
-    if (!stdinId) return; // No active session
-
-    bridge.setPermissionMode(stdinId, cliMode).catch((err: unknown) => {
-      console.error('[ClaudeDeck] Failed to set permission mode:', err);
-    });
-  });
-});
+/** 读取并清除「跳过下一次模式同步」标记，供 chatStore 里的模式同步订阅使用 */
+export function takeSkipModeSync(): boolean {
+  const skip = _skipNextModeSync;
+  _skipNextModeSync = false;
+  return skip;
+}

@@ -1,4 +1,5 @@
 import { useSessionStore } from '../stores/sessionStore';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { bridge } from './tauri-bridge';
 import { APP_NAME } from './edition';
 
@@ -31,7 +32,6 @@ export async function requestQuit(t: (key: string) => string): Promise<void> {
       const message = t('confirm.exitRunning')
         .replace('{n}', String(runningSessions.size))
         .replace('{detail}', parts.join('、'));
-      const { ask } = await import('@tauri-apps/plugin-dialog');
       const confirmed = await ask(message, {
         title: APP_NAME,
         kind: 'warning',

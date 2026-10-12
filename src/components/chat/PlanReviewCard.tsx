@@ -3,6 +3,7 @@ import { type ChatMessage, useChatStore, getActiveTabState } from '../../stores/
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore, setSessionModeLocal } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
+import { bridge } from '../../lib/tauri-bridge';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 
 interface Props {
@@ -70,7 +71,6 @@ export function PlanReviewCard({ message, floating }: Props) {
       const stdinId = getActiveTabState().sessionMeta.stdinId;
       if (stdinId) {
         try {
-          const { bridge } = await import('../../lib/tauri-bridge');
           await bridge.respondPermission(
             stdinId,
             permData.requestId,

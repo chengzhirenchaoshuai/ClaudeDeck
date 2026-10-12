@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState, useCallback, useRef } from 'react';
 import { useProviderStore } from '../../stores/providerStore';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { bridge } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
 import { type PresetProvider } from '../../lib/provider-presets';
@@ -83,7 +84,6 @@ export function ProviderManager({ alwaysExpanded = false }: { alwaysExpanded?: b
   }, [addProvider, setActive]);
 
   const handleImport = useCallback(async () => {
-    const { open: openDialog } = await import('@tauri-apps/plugin-dialog');
     const result = await openDialog({
       title: t('provider.importTitle'),
       filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -164,7 +164,6 @@ export function ProviderManager({ alwaysExpanded = false }: { alwaysExpanded?: b
     if (!p) return;
     try {
       const json = exportProvider(p);
-      const { save: saveDialog } = await import('@tauri-apps/plugin-dialog');
       const filePath = await saveDialog({
         title: t('provider.exportTitle'),
         defaultPath: `${p.name || 'provider'}-config.json`,

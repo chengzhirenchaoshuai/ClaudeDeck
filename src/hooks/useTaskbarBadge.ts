@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { Window as TauriWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSessionStore } from '../stores/sessionStore';
 
 /** 绘制任务栏角标：红底白字数字，超过 99 显示 99+ */
@@ -100,14 +100,12 @@ function countUnread(): number {
  */
 export function useTaskbarBadge(): void {
   useEffect(() => {
-    let disposed = false;
-    let win: TauriWindow | null = null;
+    const win = getCurrentWindow();
     let applied = -1;
     let running = false;
     let again = false;
 
     const applyOnce = async () => {
-      if (!win) return;
       const count = countUnread();
       if (count === applied) return;
       applied = count;
@@ -145,11 +143,7 @@ export function useTaskbarBadge(): void {
       }
     };
 
-    import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-      if (disposed) return;
-      win = getCurrentWindow();
-      void apply(); // 启动时，上次遗留的未读也要显示出来
-    });
+    void apply(); // 启动时，上次遗留的未读也要显示出来
 
     const unsubscribe = useSessionStore.subscribe((state, prev) => {
       if (state.unreadSessions === prev.unreadSessions && state.sessions === prev.sessions) return;
@@ -157,7 +151,6 @@ export function useTaskbarBadge(): void {
     });
 
     return () => {
-      disposed = true;
       unsubscribe();
     };
   }, []);
