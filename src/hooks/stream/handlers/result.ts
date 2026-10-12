@@ -16,9 +16,7 @@ import { commitPartialText } from '../buffer';
 import { type StreamContext } from '../context';
 
 export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): void {
-  const { tabId, msgStdinId, isForeground, agentActions, agentDepth, addMessage, setSessionStatus, setSessionMeta, setActivityStatus, clearPartial, dispatch } = ctx;
-  const { exitPlanModeSeenRef, autoCompactFiredRef, silentRestartRef, handleSubmitRef, handleStderrLineRef, setInputSync } = ctx.config;
-
+  const { tabId, msgStdinId, agentActions, clearPartial } = ctx;
 
   // Sub-agent results carry parent_tool_use_id — they must NOT terminate the
   // main session. Only the main agent's result (no parent_tool_use_id) ends the
@@ -35,6 +33,20 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
   // Preserve delta-only replies before clearing streaming state.
   commitPartialText(tabId, msgStdinId);
   clearPartial();
+
+  if (retryAfterThinkingSignatureError(ctx, msg)) return;
+  if (restartAfterExitPlanMode(ctx, msg)) return;
+  completePendingCommand(ctx, msg);
+  finalizeTurn(ctx, msg);
+  maybeGenerateTitle(ctx, msg);
+  if (maybeAutoCompact(ctx, msg)) return;
+  sendNextPendingMessage(ctx);
+}
+
+/** 切换服务商/模型后旧思考块签名被拒：放弃 resume，用新进程重发。已接管时返回 true。 */
+function retryAfterThinkingSignatureError(ctx: StreamContext, msg: ResultMessage): boolean {
+  const { tabId, isForeground, agentActions, addMessage, setSessionStatus, setSessionMeta, setActivityStatus, dispatch } = ctx;
+  const { handleStderrLineRef } = ctx.config;
 
   // --- TK-303: Auto-retry on thinking signature error after provider/model switch ---
   // When user switches API provider or model mid-conversation, we attempt to resume
@@ -166,9 +178,16 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
           });
         }
       })();
-      return; // Exit the result case — retry flow takes over
+      return true; // Exit the result case — retry flow takes over
     }
   }
+  return false;
+}
+
+/** Code 模式下 ExitPlanMode 导致 CLI 退出：静默 --resume 继续。已重启时返回 true。 */
+function restartAfterExitPlanMode(ctx: StreamContext, msg: ResultMessage): boolean {
+  const { tabId, isForeground } = ctx;
+  const { exitPlanModeSeenRef, silentRestartRef, handleSubmitRef, setInputSync } = ctx.config;
 
   // Code mode: Auto-restart when ExitPlanMode caused CLI exit.
   // In stream-json mode, ExitPlanMode is treated as a permission denial,
@@ -189,9 +208,15 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
     setInputSync('Continue.');
     useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
     requestAnimationFrame(() => handleSubmitRef.current());
-    return;
+    return true;
   }
   if (isForeground) exitPlanModeSeenRef.current = false;
+  return false;
+}
+
+/** 收尾斜杠命令处理卡（输出、费用摘要），并在需要时补上 result 里的正文。 */
+function completePendingCommand(ctx: StreamContext, msg: ResultMessage): void {
+  const { tabId, agentDepth, addMessage } = ctx;
 
   // Mark pending processing card (CLI slash command) as completed
   const pendingCmdMsgId = useChatStore.getState().getTab(tabId)?.sessionMeta.pendingCommandMsgId;
@@ -274,6 +299,11 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
       });
     }
   }
+}
+
+/** 更新会话状态、用 result 校正 token 累计值、结束代理树并刷新会话列表。 */
+function finalizeTurn(ctx: StreamContext, msg: ResultMessage): void {
+  const { tabId, agentActions, setSessionStatus, setSessionMeta } = ctx;
 
   setSessionStatus(
     msg.subtype === 'success' ? 'completed' : 'error'
@@ -306,6 +336,11 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
   );
   useSessionStore.getState().fetchSessions();
   setTimeout(() => useSessionStore.getState().fetchSessions(), 1000);
+}
+
+/** 第 3 轮成功回复后，没有自定义标题的会话用 AI 生成标题。 */
+function maybeGenerateTitle(ctx: StreamContext, msg: ResultMessage): void {
+  const { tabId } = ctx;
 
   // --- AI Title Generation (TK-001): on 3rd successful turn, generate a title ---
   if (msg.subtype === 'success') {
@@ -339,6 +374,12 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
       }
     }
   }
+}
+
+/** 上下文超过阈值时自动发送 /compact（每个会话最多一次）。已触发时返回 true。 */
+function maybeAutoCompact(ctx: StreamContext, msg: ResultMessage): boolean {
+  const { tabId, isForeground, addMessage, setSessionStatus, setSessionMeta, setActivityStatus } = ctx;
+  const { autoCompactFiredRef } = ctx.config;
 
   // --- Auto-compact: threshold follows the declared context window.
   // Default 200K models compact at 160K; declared 1M models compact at 800K.
@@ -402,8 +443,14 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
         }
       }
     }, 15_000); // Bug C fix (#27): reduced from 90s to 15s
-    return; // Skip pending message flush — compact takes priority
+    return true; // Skip pending message flush — compact takes priority
   }
+  return false;
+}
+
+/** 排队的消息按 FIFO 每轮发送一条。 */
+function sendNextPendingMessage(ctx: StreamContext): void {
+  const { tabId, agentActions, setSessionStatus, setSessionMeta, setActivityStatus } = ctx;
 
   // FIFO drain: dequeue ONE pending message and send it (#142/#70).
   // When this turn completes, the next result event will dequeue the next one.
