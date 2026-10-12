@@ -8,7 +8,7 @@ ClaudeDeck：Claude Code CLI 的桌面 GUI（个人自用，fork 自 TOKENICODE�
 ```bash
 pnpm install
 pnpm dev:app                             # 开发版（前端热更新、Rust 自动重编译；可与正式版同时运行）
-pnpm tauri build                         # 构建
+pnpm release                             # 构建并把 MSI + 免安装版 exe 收集到 release/
 pnpm build                               # tsc + vite build
 pnpm vitest run                          # 测试在 src/**/__tests__/
 cd src-tauri && cargo check && cargo clippy
@@ -30,7 +30,7 @@ scripts/bump-version.sh <版本号>          # 同步改 package.json / tauri.co
 - **状态**：`src/stores/` 共 13 个 Zustand store。`settingsStore` 持久化到 localStorage（version 16，改结构必须加迁移）；`providerStore` 由后端写 `config/providers.json`。
 - **数据目录**：统一在 `%APPDATA%/ClaudeDeck/`（`src-tauri/src/app_paths.rs`）：`config/` 配置、`cache/` 缓存、`tools/` 自动安装的 CLI/Git/Node、`webview/` WebView2 数据（debug 构建自动加 `-dev`）。主窗口在配置里 `create: false`，由 `setup` 指定数据目录创建；新窗口也必须在后端用 `data_directory` 创建。首次启动自动从 `~/.tokenicode` 和 `%LOCALAPPDATA%/<identifier>/EBWebView` 复制迁移。例外：会话名称留在 CLI 配置目录（远程客户端共享），附件在 `<项目>/.tokenicode/tmp`。
 - **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`）；`decode_project_name()` 靠逐段匹配文件系统还原，连字符有歧义。CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。
-- **发布**：只维护 Windows 版，本地 `pnpm tauri build`（只出 MSI），连同 `target/release/claudedeck.exe`（免安装版）用 `gh release create` 上传到 `chengzhirenchaoshuai/ClaudeDeck`（步骤见 README），无 CI。
+- **发布**：只维护 Windows 版，本地 `pnpm release`（tauri build 后把 MSI 与免安装版 exe 收集到根目录 `release/`），再用 `gh release create` 上传到 `chengzhirenchaoshuai/ClaudeDeck`（步骤见 README），无 CI。
 
 ## 约定
 

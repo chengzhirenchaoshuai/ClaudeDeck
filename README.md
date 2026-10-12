@@ -31,7 +31,7 @@ Claude Code CLI 的桌面图形界面（个人自用版）。
 ```bash
 pnpm install
 pnpm dev:app        # 开发模式：前端热更新、后端自动重编译，可与正式版同时运行
-pnpm tauri build    # 打包，产物在 src-tauri/target/release/bundle/
+pnpm release        # 打包，MSI 与免安装版 exe 输出到根目录 release/
 ```
 
 ### 发布
@@ -44,8 +44,7 @@ scripts/bump-version.sh 1.1.1    # 同步修改 package.json / tauri.conf.json /
 git commit -am "chore: 发布 v1.1.1"
 git tag -a v1.1.1 -m "ClaudeDeck v1.1.1"
 git push origin main v1.1.1
-pnpm tauri build                 # 生成 MSI 安装包与程序本体
-cp src-tauri/target/release/claudedeck.exe ClaudeDeck_1.1.1_x64_portable.exe   # 程序本体即免安装版
+pnpm release                     # 生成 MSI 安装包与免安装版，输出到 release/
 gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." \
   src-tauri/target/release/bundle/msi/ClaudeDeck_1.1.1_x64_en-US.msi \
   ClaudeDeck_1.1.1_x64_portable.exe
