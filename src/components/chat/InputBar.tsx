@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useChatStore, useActiveTab, getActiveTabState, generateMessageId } from '../../stores/chatStore';
-import { useSettingsStore, MODEL_OPTIONS, mapSessionModeToPermissionMode, setSessionModeLocal, getContextWindowForModel } from '../../stores/settingsStore';
-import { bridge, onClaudeStream, onClaudeStderr, onSessionExit, onPermissionRequest, type UnifiedCommand, type PermissionRequest } from '../../lib/tauri-bridge';
-import { hasStreamListener, releaseStreamListener, setStreamListener } from '../../lib/stream-listeners';
+import { useSettingsStore, mapSessionModeToPermissionMode, setSessionModeLocal, getContextWindowForModel } from '../../stores/settingsStore';
+import { bridge, type UnifiedCommand } from '../../lib/tauri-bridge';
+import { hasStreamListener, releaseStreamListener } from '../../lib/stream-listeners';
 import { ModelSelector } from './ModelSelector';
 import { ModeSelector } from './ModeSelector';
 import { FileUploadChips } from './FileUploadChips';
@@ -18,7 +18,6 @@ import { SlashCommandPopover, getFilteredCommandList } from './SlashCommandPopov
 import { useCommandStore } from '../../stores/commandStore';
 import { envFingerprint, resolveModelForProvider, resolveModelOrError, resolveThinkingLevelForProvider } from '../../lib/api-provider';
 import { useProviderStore } from '../../stores/providerStore';
-import { displayProviderModelName } from '../../lib/deepseek-models';
 import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
 import { stripAnsi } from '../../lib/strip-ansi';
 import { getContextUsedTokens } from '../../lib/context-usage';
@@ -28,6 +27,8 @@ import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
 import { TiptapEditor, type TiptapEditorHandle } from './TiptapEditor';
 import { ProjectFolderPicker } from './ProjectFolderPicker';
+import { executeImmediateCommand as runImmediateCommand } from './immediate-commands';
+import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
 // drag-state import removed — tree drag handled by ChatPanel
 
@@ -294,228 +295,11 @@ export function InputBar() {
     setInputSync,
   });
 
-  // --- Immediate command execution ---
-  // All built-in commands are handled in the UI layer because they don't work
-  // via stdin in stream-json mode (CLI treats them as normal text, not commands).
-  const executeImmediateCommand = useCallback(async (cmdName: string, args?: string) => {
-    const cmd = cmdName.toLowerCase().replace(/^\//, '');
-    const { addMessage } = useChatStore.getState();
-    const tabId = useSessionStore.getState().selectedSessionId;
-
-    // Always clear the input box first
-    setInputSync('');
-
-    // Helper: resolve model ID to display name
-    const modelLabel = (id: string | undefined): string => {
-      if (!id) return '—';
-      return MODEL_OPTIONS.find((m) => m.id === id)?.label || displayProviderModelName(id);
-    };
-
-    // Helper: add a structured command feedback message
-    const feedback = (
-      commandType: 'mode' | 'info' | 'help' | 'action' | 'error',
-      content: string,
-      commandData?: Record<string, any>,
-    ) => {
-      if (!tabId) return;
-      addMessage(tabId, {
-        id: generateMessageId(),
-        role: 'system',
-        type: 'text',
-        content,
-        commandType,
-        commandData,
-        timestamp: Date.now(),
-      });
-    };
-
-    switch (cmd) {
-      // --- Mode switching ---
-      case 'ask':
-        useSettingsStore.getState().setSessionMode('ask');
-        feedback('mode', t('cmd.switchedToAsk'), { mode: 'ask', icon: '💬' });
-        return;
-      case 'plan':
-        useSettingsStore.getState().setSessionMode('plan');
-        feedback('mode', t('cmd.switchedToPlan'), { mode: 'plan', icon: '📋' });
-        return;
-      case 'code':
-        useSettingsStore.getState().setSessionMode('code');
-        feedback('mode', t('cmd.switchedToCode'), { mode: 'code', icon: '⚡' });
-        return;
-      case 'bypass':
-        useSettingsStore.getState().setSessionMode('bypass');
-        feedback('mode', t('cmd.switchedToBypass'), { mode: 'bypass', icon: '🔓' });
-        return;
-
-      // --- Session management ---
-      case 'clear':
-        if (tabId) useChatStore.getState().resetTab(tabId);
-        return;
-
-      case 'rewind':
-        window.dispatchEvent(new CustomEvent('tokenicode:rewind'));
-        return;
-
-      // /compact is handled in the session stdin commands group below
-
-      // --- Info commands ---
-      case 'cost': {
-        const meta = getActiveTabState().sessionMeta;
-        const hasData = meta.cost != null || meta.duration != null || meta.turns != null
-          || meta.inputTokens != null || meta.outputTokens != null;
-        const tokenValue = (meta.inputTokens != null || meta.outputTokens != null)
-          ? `${(meta.inputTokens ?? 0).toLocaleString()} input / ${(meta.outputTokens ?? 0).toLocaleString()} output`
-          : '—';
-        feedback('info', hasData ? t('cmd.costTitle') : t('cmd.noSessionData'), {
-          command: '/cost',
-          title: t('cmd.costTitle'),
-          rows: [
-            { label: t('cmd.costModel'), value: modelLabel(meta.model || useSettingsStore.getState().selectedModel) },
-            { label: t('cmd.costAmount'), value: meta.cost != null ? `$${meta.cost.toFixed(4)}` : '—' },
-            { label: t('cmd.costDuration'), value: meta.duration != null ? `${(meta.duration / 1000).toFixed(1)}s` : '—' },
-            { label: t('cmd.costTurns'), value: meta.turns != null ? String(meta.turns) : '—' },
-            { label: t('cmd.costTokens'), value: tokenValue },
-          ],
-          hasData,
-        });
-        return;
-      }
-
-      case 'usage': {
-        const meta = getActiveTabState().sessionMeta;
-        const isOfficialProvider = useProviderStore.getState().activeProviderId === null;
-
-        if (isOfficialProvider) {
-          // Official Anthropic account: quota data is only available in the CLI REPL TUI.
-          // Show local session data + a hint to use the terminal.
-          const hasData = meta.cost != null || meta.turns != null
-            || meta.inputTokens != null || meta.outputTokens != null;
-          const totalInput = meta.totalInputTokens ?? 0;
-          const totalOutput = meta.totalOutputTokens ?? 0;
-          feedback('info', hasData ? t('cmd.usageTitle') : t('cmd.noSessionData'), {
-            command: '/usage',
-            title: t('cmd.usageTitle'),
-            rows: [
-              { label: t('cmd.costModel'), value: modelLabel(meta.model || useSettingsStore.getState().selectedModel) },
-              { label: t('cmd.costTurns'), value: meta.turns != null ? String(meta.turns) : '—' },
-              { label: t('cmd.usageTotalSession'), value: totalInput || totalOutput
-                ? `${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out`
-                : '—' },
-            ],
-            hasData,
-            hint: t('cmd.usageOfficialHint'),
-          });
-        } else {
-          // Third-party API provider: show detailed token breakdown.
-          const hasData = meta.inputTokens != null || meta.outputTokens != null
-            || meta.totalInputTokens != null || meta.totalOutputTokens != null;
-          const turnInput = meta.inputTokens ?? 0;
-          const turnOutput = meta.outputTokens ?? 0;
-          const totalInput = meta.totalInputTokens ?? 0;
-          const totalOutput = meta.totalOutputTokens ?? 0;
-          feedback('info', hasData ? t('cmd.usageTitle') : t('cmd.noSessionData'), {
-            command: '/usage',
-            title: t('cmd.usageTitle'),
-            rows: [
-              { label: t('cmd.costModel'), value: modelLabel(meta.model || useSettingsStore.getState().selectedModel) },
-              { label: `${t('cmd.usageCurrentTurn')} — ${t('cmd.usageInput')}`, value: turnInput.toLocaleString() },
-              { label: `${t('cmd.usageCurrentTurn')} — ${t('cmd.usageOutput')}`, value: turnOutput.toLocaleString() },
-              { label: `${t('cmd.usageTotalSession')} — ${t('cmd.usageInput')}`, value: totalInput.toLocaleString() },
-              { label: `${t('cmd.usageTotalSession')} — ${t('cmd.usageOutput')}`, value: totalOutput.toLocaleString() },
-              { label: t('cmd.usageTotal'), value: (totalInput + totalOutput).toLocaleString() },
-              { label: t('cmd.costAmount'), value: meta.cost != null ? `$${meta.cost.toFixed(4)}` : '—' },
-            ],
-            hasData,
-          });
-        }
-        return;
-      }
-
-      case 'help': {
-        const cmds = useCommandStore.getState().commands;
-        const builtins = cmds.filter((c) => c.category === 'builtin')
-          .map((c) => ({ name: c.name, desc: c.description }));
-        const customCount = cmds.filter((c) => c.category === 'command').length;
-        const skillCount = cmds.filter((c) => c.category === 'skill').length;
-        feedback('help', t('cmd.helpTitle'), {
-          builtins,
-          customCount,
-          skillCount,
-        });
-        return;
-      }
-
-      // --- External commands ---
-      case 'bug':
-        feedback('action', t('cmd.bugReport'), { action: 'bug', url: 'https://github.com/anthropics/claude-code/issues' });
-        return;
-
-      // --- UI-handled commands ---
-
-      case 'rename': {
-        if (!args) {
-          feedback('error', t('cmd.renameNoArgs'));
-          return;
-        }
-        const sessionId = useSessionStore.getState().selectedSessionId;
-        if (sessionId) {
-          useSessionStore.getState().setCustomPreview(sessionId, args);
-          feedback('action', t('cmd.renamed').replace('{name}', args));
-        }
-        return;
-      }
-
-      case 'export': {
-        const meta = getActiveTabState().sessionMeta;
-        const sessions = useSessionStore.getState().sessions;
-        const session = sessions.find((s: any) => s.id === meta.sessionId);
-        const sessionPath = session?.path;
-        if (!sessionPath) {
-          feedback('error', t('cmd.exportNoPath'));
-          return;
-        }
-        const outputPath = args || sessionPath.replace(/\.jsonl$/, '.md');
-        await bridge.exportSessionMarkdown(sessionPath, outputPath);
-        feedback('action', `${t('export.success')} ${outputPath}`);
-        return;
-      }
-
-      // --- All CLI commands: pass through to active session via stdin ---
-      // ClaudeDeck is a GUI wrapper — all slash commands are handled by Claude Code CLI.
-      default: {
-        const stdinId = getActiveTabState().sessionMeta.stdinId;
-        if (stdinId && tabId) {
-          // Emit a processing card immediately so user sees feedback
-          const processingMsgId = generateMessageId();
-          // /compact 手动输入触发这条路径时，也提前记一下压缩前的 token 数（原因同
-          // ChatPanel 里 ContextMeter 的 handleCompact：不等 CLI 那个时有时无的
-          // compact_boundary 事件）。
-          const compactSummary = cmd === 'compact'
-            ? { compactSummary: { preTokens: getContextUsedTokens(getActiveTabState().sessionMeta) } }
-            : {};
-          addMessage(tabId, {
-            id: processingMsgId,
-            role: 'system',
-            type: 'text',
-            content: '',
-            commandType: 'processing',
-            commandData: { command: `/${cmd}${args ? ' ' + args : ''}`, ...compactSummary },
-            commandStartTime: Date.now(),
-            commandCompleted: false,
-            timestamp: Date.now(),
-          });
-          useChatStore.getState().setSessionMeta(tabId, { pendingCommandMsgId: processingMsgId });
-          useChatStore.getState().setSessionStatus(tabId, 'running');
-          useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
-          await bridge.sendStdin(stdinId, `/${cmd}${args ? ' ' + args : ''}`);
-        } else {
-          feedback('error', `/${cmd}: ${t('cmd.noActiveSession')}`, { command: `/${cmd}` });
-        }
-        return;
-      }
-    }
-  }, [t, workingDirectory]);
+  // --- Immediate command execution（实现见 immediate-commands.ts）---
+  const executeImmediateCommand = useCallback(
+    (cmdName: string, args?: string) => runImmediateCommand(cmdName, args, setInputSync),
+    [setInputSync],
+  );
 
   // --- Slash command selection ---
   const handleSlashSelect = useCallback((cmd: UnifiedCommand) => {
@@ -816,65 +600,9 @@ export function InputBar() {
       let sentViaStdin = false;
 
       if (stdinId) {
-        // Check if API provider config changed since this process was spawned (TK-303).
-        // If so, the pre-warmed process has stale env vars — kill it and spawn fresh.
-        const currentFp = envFingerprint();
-        const sessionFp = getActiveTabState().sessionMeta.envFingerprint;
-        if (currentFp !== sessionFp) {
-          console.warn('[ClaudeDeck] API provider config changed, killing stale session');
-          bridge.killSession(stdinId).catch(() => {});
-          releaseStreamListener(stdinId);
-          // Keep sessionId so we attempt resume (preserving context).
-          // If the resume fails due to thinking signature mismatch, the
-          // stream error handler will auto-retry without resume.
-          setSessionMeta(tabId, { stdinId: undefined, envFingerprint: undefined, providerSwitched: true, providerSwitchPendingText: text });
+        if (dropStaleProcess(tabId, stdinId, text, selectedModel)) {
           stdinId = undefined;
         } else {
-          const currentMode = useSettingsStore.getState().sessionMode;
-          const spawnedMode = getActiveTabState().sessionMeta.snapshotMode;
-          if (spawnedMode && currentMode !== spawnedMode) {
-            console.warn(`[ClaudeDeck] Permission mode changed (${spawnedMode} -> ${currentMode}), killing stale session`);
-            bridge.killSession(stdinId).catch(() => {});
-            releaseStreamListener(stdinId);
-            setSessionMeta(tabId, { stdinId: undefined, snapshotMode: undefined });
-            stdinId = undefined;
-          } else {
-          const currentContextMode = useSettingsStore.getState().contextWindowMode;
-          const spawnedContextMode = getActiveTabState().sessionMeta.snapshotContextWindowMode ?? 'default';
-          if (currentContextMode !== spawnedContextMode) {
-            console.warn(`[ClaudeDeck] Context window mode changed (${spawnedContextMode} -> ${currentContextMode}), killing stale session`);
-            bridge.killSession(stdinId).catch(() => {});
-            releaseStreamListener(stdinId);
-            setSessionMeta(tabId, { stdinId: undefined, snapshotContextWindowMode: undefined });
-            stdinId = undefined;
-          } else {
-          // Check if model changed since this process was spawned.
-          // If so, kill the stale process and fall through to spawn a new one with --resume.
-          const currentModel = resolveModelForProvider(selectedModel);
-          const spawnedModel = getActiveTabState().sessionMeta.spawnedModel;
-          if (spawnedModel && currentModel !== spawnedModel) {
-            const oldShort = MODEL_OPTIONS.find((m) => m.id === spawnedModel)?.short ?? displayProviderModelName(spawnedModel);
-            const newShort = MODEL_OPTIONS.find((m) => m.id === currentModel)?.short ?? displayProviderModelName(currentModel);
-            console.warn(`[ClaudeDeck] Model changed (${oldShort} → ${newShort}), killing stale session`);
-            bridge.killSession(stdinId).catch(() => {});
-            releaseStreamListener(stdinId);
-            // System message already inserted by ModelSelector — no duplicate here.
-            // Keep sessionId so we attempt resume (preserving context).
-            setSessionMeta(tabId, { stdinId: undefined, spawnedModel: undefined, modelSwitched: true, modelSwitchPendingText: text });
-            // Clean thinking blocks from history to avoid signature mismatch on resume.
-            // Thinking signatures are model-specific; resuming with a different model
-            // causes the API to reject the request (400).
-            useChatStore.setState((state) => {
-              const tab = state.tabs.get(tabId!);
-              if (!tab) return {};
-              const cleanedMessages = tab.messages.filter(m => m.type !== 'thinking');
-              if (cleanedMessages.length === tab.messages.length) return {}; // nothing to clean
-              const newTabs = new Map(state.tabs);
-              newTabs.set(tabId!, { ...tab, messages: cleanedMessages });
-              return { tabs: newTabs };
-            });
-            stdinId = undefined;
-          } else {
           // ===== Send via stdin to existing persistent process (pre-warmed or follow-up) =====
           try {
             await bridge.sendStdin(stdinId, text);
@@ -891,10 +619,7 @@ export function InputBar() {
             setSessionMeta(tabId, { stdinId: undefined });
             stdinId = undefined;
           }
-          }
         }
-        }
-      }
       }
 
       if (!sentViaStdin) {
@@ -939,99 +664,7 @@ export function InputBar() {
         }
 
         // Register listeners BEFORE starting the session
-        const unlisten = await onClaudeStream(
-          preGeneratedId,
-          (msg: any) => {
-            msg.__stdinId = preGeneratedId;
-            handleStreamMessage(msg);
-          }
-        );
-
-        const unlistenStderr = await onClaudeStderr(
-          preGeneratedId,
-          (line: string) => {
-            handleStderrLine(line, preGeneratedId);
-          }
-        );
-
-        // SDK control protocol: listen for structured permission requests
-        const unlistenPermission = await onPermissionRequest(
-          preGeneratedId,
-          (req: PermissionRequest) => {
-            // Background routing: check if this stdinId belongs to a non-active tab
-            const reqOwnerTabId = useSessionStore.getState().getTabForStdin(preGeneratedId);
-            const reqActiveTabId = useSessionStore.getState().selectedSessionId;
-            if (reqOwnerTabId && reqOwnerTabId !== reqActiveTabId) {
-              // Route to background cache instead of foreground
-              const cache = useChatStore.getState();
-              cache.addMessage(reqOwnerTabId, {
-                id: generateMessageId(),
-                role: 'assistant',
-                type: 'permission',
-                content: req.description || `${req.tool_name} wants to execute`,
-                permissionTool: req.tool_name,
-                permissionDescription: req.description || '',
-                timestamp: Date.now(),
-                interactionState: 'pending',
-                permissionData: {
-                  requestId: req.request_id,
-                  toolName: req.tool_name,
-                  input: req.input,
-                  description: req.description,
-                  toolUseId: req.tool_use_id,
-                },
-              });
-              cache.setActivityStatus(reqOwnerTabId, { phase: 'awaiting' });
-              return;
-            }
-            const { addMessage: addMsg, setActivityStatus: setActivity } = useChatStore.getState();
-            const fgTabId = useSessionStore.getState().selectedSessionId;
-            if (fgTabId) {
-              addMsg(fgTabId, {
-                id: generateMessageId(),
-                role: 'assistant',
-                type: 'permission',
-                content: req.description || `${req.tool_name} wants to execute`,
-                permissionTool: req.tool_name,
-                permissionDescription: req.description || '',
-                timestamp: Date.now(),
-                interactionState: 'pending',
-                permissionData: {
-                  requestId: req.request_id,
-                  toolName: req.tool_name,
-                  input: req.input,
-                  description: req.description,
-                  toolUseId: req.tool_use_id,
-                },
-              });
-              setActivity(fgTabId, { phase: 'awaiting' });
-            }
-          }
-        );
-
-        // Backup exit detection: if process_exit from stdout stream is missed
-        // (e.g., listener was removed), this fires as a safety net.
-        const unlistenExit = await onSessionExit(preGeneratedId, () => {
-          // Resolve the tab that owns this stdinId
-          const exitTabId = useSessionStore.getState().getTabForStdin(preGeneratedId) || tabId;
-          const exitTab = useChatStore.getState().getTab(exitTabId!);
-          if (!exitTab) return;
-          // Only act if this is still the active stdinId (avoid stale cleanup)
-          if (exitTab.sessionMeta.stdinId === preGeneratedId) {
-            useChatStore.getState().setSessionMeta(exitTabId!, { stdinId: undefined });
-            if (exitTab.sessionStatus === 'running') {
-              useChatStore.getState().setSessionStatus(exitTabId!, 'idle');
-            }
-          }
-        });
-
-        // Store unlisten per stdinId for multi-session support
-        setStreamListener(preGeneratedId, () => {
-          unlisten();
-          unlistenStderr();
-          unlistenPermission();
-          unlistenExit();
-        });
+        await registerSessionListeners(preGeneratedId, () => tabId, handleStreamMessage, handleStderrLine);
 
         // Spawn persistent process (first message sent via stdin inside Rust)
         // If resuming a historical session, pass resume_session_id so the CLI
