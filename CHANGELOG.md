@@ -3,6 +3,13 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
+## [1.2.2] - 2026-10-14
+
+### 调整
+- 新图标「探头猫」：应用图标、任务栏、托盘、侧栏 Logo 统一为同一套图形
+- `icon.ico` 由单一 256px 改为 16–256px 八种尺寸，32px 及以下使用简化图形，任务栏图标不再发糊
+- 新增 `scripts/gen-icons.py`，从 `assets/icons/source/` 下的 SVG 一键生成全部图标
+
 ## [1.2.1] - 2026-10-14
 
 ### 新增

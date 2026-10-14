@@ -18,6 +18,29 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.2.2',
+    date: '2026-10-14',
+    highlights: {
+      zh: ['全新「探头猫」图标，应用、任务栏、托盘风格统一'],
+      en: ['New "peeking cat" icon, consistent across app, taskbar and tray'],
+    },
+    categories: [
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '应用图标、任务栏、托盘、侧栏 Logo 统一为「探头猫」',
+            '图标包含 16–256px 多种尺寸，小尺寸使用简化图形，任务栏不再发糊',
+          ],
+          en: [
+            'App icon, taskbar, tray and sidebar logo now share the "peeking cat" design',
+            'Icons ship in sizes from 16 to 256 px with a simplified small version, so the taskbar icon is no longer blurry',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.2.1',
     date: '2026-10-14',
     highlights: {
