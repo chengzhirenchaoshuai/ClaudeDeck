@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- 应用图标（48px 及以上）：探头猫。改完后运行 scripts/gen-icons.py 重新生成全部图标 -->
+  <rect width="256" height="256" rx="56" fill="#FFE9DF"/>
+  <path d="M72 126 L80 58 L114 88 H142 L176 58 L184 126 Z" fill="#F7A6B6"/>
+  <path d="M88 86 L91 70 L104 82 Z M168 86 L165 70 L152 82 Z" fill="#E46F88"/>
+  <circle cx="110" cy="106" r="7" fill="#2A2730"/>
+  <circle cx="146" cy="106" r="7" fill="#2A2730"/>
+  <rect x="36" y="120" width="184" height="100" rx="18" fill="#2A2730"/>
+  <circle cx="176" cy="138" r="5" fill="#F2777F"/>
+  <circle cx="192" cy="138" r="5" fill="#F6C25B"/>
+  <circle cx="208" cy="138" r="5" fill="#6CCB8B"/>
+  <ellipse cx="102" cy="122" rx="15" ry="10" fill="#F7A6B6"/>
+  <ellipse cx="154" cy="122" rx="15" ry="10" fill="#F7A6B6"/>
+  <path d="M60 160 L80 176 L60 192" fill="none" stroke="#FFD9B0" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M92 194 H122" stroke="#FFD9B0" stroke-width="11" stroke-linecap="round"/>
+</svg>

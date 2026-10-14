@@ -74,6 +74,10 @@ gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." 
 | 远程 | `remote.rs`、`src/lib/remote.ts`、`RemoteTab.tsx`、`EnvSwitcher.tsx` |
 | 用量 | `usageStore.ts`、`rateLimitsStore.ts`、`src/lib/usage.ts` |
 
+### 图标
+
+源文件在 `assets/icons/source/`：`icon.svg`（48px 及以上，带底板）和 `icon-small.svg`（32px 及以下与托盘）。修改后运行 `python scripts/gen-icons.py`（需要 Pillow 和系统自带的 Edge），会重新生成 `assets/icons/` 下的 PNG、多尺寸 `icon.ico`、`tray.png`，以及 `assets/public/` 下的 `app-icon.png`、`tray-icon.png`。
+
 ### 常见问题
 
 - **移动或重命名项目目录后打包失败**（报找不到 `旧路径\src-tauri\target\...`）：`src-tauri/target` 的构建缓存记录了绝对路径，执行 `cd src-tauri && cargo clean` 后重新构建。

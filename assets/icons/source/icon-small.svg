@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- 小号图标（32px 及以下、托盘）：去掉底板、加粗线条。改完后运行 scripts/gen-icons.py 重新生成全部图标 -->
+  <path d="M50 140 L62 22 L110 66 H146 L194 22 L206 140 Z" fill="#F7A6B6"/>
+  <path d="M76 72 L80 48 L98 64 Z M180 72 L176 48 L158 64 Z" fill="#E46F88"/>
+  <circle cx="104" cy="102" r="14" fill="#2A2730"/>
+  <circle cx="152" cy="102" r="14" fill="#2A2730"/>
+  <rect x="10" y="132" width="236" height="114" rx="28" fill="#2A2730" stroke="#F7A6B6" stroke-width="10"/>
+  <ellipse cx="92" cy="134" rx="26" ry="17" fill="#F7A6B6"/>
+  <ellipse cx="164" cy="134" rx="26" ry="17" fill="#F7A6B6"/>
+  <path d="M52 176 L84 198 L52 220" fill="none" stroke="#FFD9B0" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
