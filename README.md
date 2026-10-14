@@ -46,9 +46,37 @@ git tag -a v1.1.1 -m "ClaudeDeck v1.1.1"
 git push origin main v1.1.1
 pnpm release                     # 生成 MSI 安装包与免安装版，输出到 release/
 gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." \
-  src-tauri/target/release/bundle/msi/ClaudeDeck_1.1.1_x64_en-US.msi \
-  ClaudeDeck_1.1.1_x64_portable.exe
+  release/ClaudeDeck_1.1.1_x64_en-US.msi \
+  release/ClaudeDeck_1.1.1_x64_portable.exe
 ```
+
+### 架构说明
+
+- **后端模块**：`src-tauri/src/lib.rs` 只留公共辅助（找 CLI、PATH、配置目录、JSON 截断）、托盘与 `run()`；命令按领域分在 `commands/`：`session_process`（启动会话/stdin/权限/控制请求）、`claude_process`（ProcessManager/StdinManager）、`sessions`（会话列表/搜索/导出/元数据/标题）、`files`、`providers`、`skills`、`cli_setup`（CLI 安装/更新/登录）、`cli_resolver`（CLI 查找/诊断/固定版本）、`toolchain`（Node/Git 部署）、`network`（代理与 HTTP 客户端）、`usage`、`git`、`local_models`、`preview`、`remote`（SSH 远程）；`protocol.rs` 为 SDK 控制协议类型。
+- **CLI 启动参数**：`--input-format/--output-format stream-json --verbose --include-partial-messages --replay-user-messages --permission-mode <mode> --permission-prompt-tool stdio --settings <JSON>`，可选 `--resume` / `--resume-session-at --fork-session` / `--model`。
+- **环境注入**：`CLAUDE_CODE_EFFORT_LEVEL`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS`、`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW`（≥1M 上下文）、`CLAUDE_CODE_GIT_BASH_PATH`、服务商的 `ANTHROPIC_*` 及自定义变量。
+- **回溯流程**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
+- **数据目录**：`%APPDATA%\ClaudeDeck\` 下的 `config/`（配置）、`cache/`（缓存）、`tools/`（自动安装的 CLI/Git/Node）、`webview/`（WebView2 数据，debug 构建自动加 `-dev`），定义在 `src-tauri/src/app_paths.rs`。首次启动自动从 `~/.tokenicode` 和 `%LOCALAPPDATA%/<identifier>/EBWebView` 复制迁移。例外：会话名称留在 CLI 配置目录（远程客户端共享），附件放在 `<项目>/.tokenicode/tmp`。
+- **会话目录**：`<CLI 配置目录>/projects/<编码路径>/`（`/a/b-c` → `-a-b-c`），CLI 配置目录优先取 `CLAUDE_CONFIG_DIR`，否则为 `~/.claude`。`decode_project_name()` 靠逐段匹配文件系统还原路径，连字符有歧义。
+- **状态**：`src/stores/` 共 13 个 Zustand store；`providerStore` 由后端写 `config/providers.json`。
+
+### 排查入口
+
+| 现象 | 位置 |
+|------|------|
+| 消息不显示/流卡住 | `useStreamProcessor.ts`、`hooks/stream/`（handlers、buffer）、`chatStore.ts`、`session_process.rs` 的 stdout 读取循环 |
+| 发送无响应/恢复失败 | `InputBar.tsx`、`session-launch.ts`、`tauri-bridge.ts`、`session_process.rs` 的 `start_claude_session` |
+| 权限弹窗 | `PermissionCard.tsx`、`protocol.rs`、`respond_permission` |
+| 切标签丢状态 | `chatStore.ts`/`agentStore.ts` 的缓存方法 |
+| 服务商/API | `providerStore.ts`、`api-provider.ts`、`test_provider_connection` |
+| 找不到 CLI | `SetupWizard.tsx`、`CliTab.tsx`、`cli_resolver.rs` |
+| 回溯 | `useRewind.ts`、`turns.ts`、`rewind-point.ts`、`RewindPanel.tsx` |
+| 远程 | `remote.rs`、`src/lib/remote.ts`、`RemoteTab.tsx`、`EnvSwitcher.tsx` |
+| 用量 | `usageStore.ts`、`rateLimitsStore.ts`、`src/lib/usage.ts` |
+
+### 常见问题
+
+- **移动或重命名项目目录后打包失败**（报找不到 `旧路径\src-tauri\target\...`）：`src-tauri/target` 的构建缓存记录了绝对路径，执行 `cd src-tauri && cargo clean` 后重新构建。
 
 ## 技术栈
 
