@@ -18,6 +18,53 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.2.1',
+    date: '2026-10-14',
+    highlights: {
+      zh: ['长会话切换更流畅；会话列表显示后台任务；退出确认与运行状态修复'],
+      en: ['Smoother switching for long sessions; background task indicator; exit prompt and running state fixes'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: ['会话列表显示 CLI 后台任务运行状态（绿色转圈）'],
+          en: ['Session list shows running CLI background tasks (green spinner)'],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '长会话分段渲染，滚到顶部再加载更早的消息',
+            '加载会话时去掉截图等大块数据，切换会话不再卡顿',
+            '会话文件没变化时不再重复读取',
+          ],
+          en: [
+            'Long sessions render in pages; earlier messages load when scrolling up',
+            'Screenshots and other bulky data are dropped when loading sessions, so switching no longer stalls',
+            'Unchanged session files are no longer re-read',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '退出确认把已结束的会话也算作运行中',
+            '加载会话途中切走后一直显示「运行中」',
+            '右键菜单靠近窗口边缘时显示不全',
+          ],
+          en: [
+            'Exit prompt counted finished sessions as running',
+            'Session stuck in "running" after switching away during loading',
+            'Context menu clipped near window edges',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-10-12',
     highlights: {
