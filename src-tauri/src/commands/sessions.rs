@@ -701,18 +701,54 @@ pub(crate) fn decode_project_name(encoded: &str) -> String {
     format!("{}{}", root, decoded_segments.join(sep))
 }
 
+/// 去掉会话记录里前端用不到的大块数据，只影响传给前端的副本，不改动磁盘文件：
+/// - `toolUseResult`：工具结果的结构化副本（截图时是完整 base64），前端只判断它是否存在，对象/数组替换为 true；
+/// - `image` 内容块（含 tool_result 里的截图）：前端提取文字时本就忽略图片。
+///
+/// 截图多的会话里这两部分可占文件体积的 95% 以上（实测 155MB → 约 4MB），
+/// 不瘦身的话每次打开都要经 IPC 传输并在界面主线程上解析，切换会话会明显卡顿。
+/// 记录本身一条不删：回退要沿 parentUuid 回溯消息链。
+pub(crate) fn slim_session_record(record: &mut Value) {
+    let Some(obj) = record.as_object_mut() else { return };
+    // 只替换对象/数组（大块数据都在这里）；字符串等原样保留，避免改变前端的真假判断
+    if let Some(v) = obj.get_mut("toolUseResult") {
+        if v.is_object() || v.is_array() {
+            *v = Value::Bool(true);
+        }
+    }
+    let Some(blocks) = obj
+        .get_mut("message")
+        .and_then(|m| m.get_mut("content"))
+        .and_then(|c| c.as_array_mut())
+    else {
+        return;
+    };
+    blocks.retain(|b| b["type"].as_str() != Some("image"));
+    for block in blocks.iter_mut() {
+        if block["type"].as_str() != Some("tool_result") {
+            continue;
+        }
+        if let Some(inner) = block.get_mut("content").and_then(|c| c.as_array_mut()) {
+            inner.retain(|b| b["type"].as_str() != Some("image"));
+        }
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn load_session(path: String) -> Result<Vec<Value>, String> {
     // 远程会话（ssh:// URI）经 ssh 读取
     if path.starts_with(commands::remote::REMOTE_SCHEME) {
-        return commands::remote::load_remote_session(&path).await;
+        let mut records = commands::remote::load_remote_session(&path).await?;
+        records.iter_mut().for_each(slim_session_record);
+        return Ok(records);
     }
     run_blocking(move || {
         let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
         let reader = std::io::BufReader::new(file);
         let mut messages = vec![];
         for line in jsonl_lines(reader) {
-            if let Ok(json) = serde_json::from_str::<Value>(&line) {
+            if let Ok(mut json) = serde_json::from_str::<Value>(&line) {
+                slim_session_record(&mut json);
                 messages.push(json);
             }
         }

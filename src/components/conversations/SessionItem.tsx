@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
+import { useSessionStore } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
 import { t as tStatic } from '../../lib/i18n';
 
@@ -93,6 +94,7 @@ export const SessionItem = memo(function SessionItem({
   isHighlighted,
 }: SessionItemProps) {
   const t = useT();
+  const backgroundCount = useSessionStore((s) => s.backgroundTasks.get(session.id) ?? 0);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -172,10 +174,14 @@ export const SessionItem = memo(function SessionItem({
     >
       {/* 状态指示放在左侧缩进区（pl-7）里，不占标题行宽度，出现/消失也不会挤动标题：
           进行中显示转圈，否则未读显示圆点 */}
-      {(isRunning || isUnread) && (
-        <span className="absolute left-0 top-1.5 w-7 h-4 flex items-center justify-center pointer-events-none">
+      {(isRunning || backgroundCount > 0 || isUnread) && (
+        <span className="absolute left-0 top-1.5 w-7 h-4 flex items-center justify-center">
           {isRunning ? (
             <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-accent/30 border-t-accent animate-spin" />
+          ) : backgroundCount > 0 ? (
+            // 本轮已结束、CLI 仍有后台任务在跑：用绿色转圈与前台运行区分
+            <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-success/30 border-t-success animate-spin"
+              title={t('conv.backgroundTasks').replace('{n}', String(backgroundCount))} />
           ) : (
             <span className="w-1.5 h-1.5 rounded-full bg-accent" title={t('conv.unread')} />
           )}

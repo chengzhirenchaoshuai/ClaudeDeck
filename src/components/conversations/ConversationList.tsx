@@ -301,7 +301,14 @@ export function ConversationList() {
 
     try {
       const applied = await applyDiskSession(sessionId, sessionPath);
-      if (!applied) return;
+      if (!applied) {
+        // 加载途中切到了别的会话：撤销上面为显示加载状态设置的“运行中”，否则会一直残留
+        const tab = useChatStore.getState().getTab(sessionId);
+        if (tab?.sessionStatus === 'running' && !tab.sessionMeta.stdinId) {
+          setSessionStatus(sessionId, 'idle');
+        }
+        return;
+      }
 
       setSessionStatus(sessionId, 'completed');
     } catch (err) {

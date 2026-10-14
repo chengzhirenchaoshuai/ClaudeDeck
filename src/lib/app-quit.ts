@@ -1,4 +1,5 @@
 import { useSessionStore } from '../stores/sessionStore';
+import { useChatStore } from '../stores/chatStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { bridge } from './tauri-bridge';
 import { APP_NAME } from './edition';
@@ -14,23 +15,32 @@ export async function requestQuit(t: (key: string) => string): Promise<void> {
   if (quitPending) return;
   quitPending = true;
   try {
-    const { runningSessions, sessions } = useSessionStore.getState();
+    const { runningSessions, backgroundTasks, sessions } = useSessionStore.getState();
+    // 只统计退出时真的会被中断的任务：正在运行或仍有 CLI 后台任务，且本应用持有它存活的 CLI 进程。
+    // 没有进程的“运行中”只是界面状态残留（如加载历史会话途中切走），退出不会中断任何东西。
+    const active = new Set(await bridge.listActiveProcesses().catch(() => [] as string[]));
+    const chat = useChatStore.getState();
+    const candidates = new Set([...runningSessions, ...backgroundTasks.keys()]);
+    const interruptible = [...candidates].filter((id) => {
+      const stdinId = chat.getTab(id)?.sessionMeta.stdinId;
+      return !!stdinId && active.has(stdinId);
+    });
     let localCount = 0;
     const remoteCounts = new Map<string, number>();
-    for (const id of runningSessions) {
+    for (const id of interruptible) {
       const host = sessions.find((s) => s.id === id)?.host;
       if (host) remoteCounts.set(host, (remoteCounts.get(host) || 0) + 1);
       else localCount += 1;
     }
 
-    if (runningSessions.size > 0) {
+    if (interruptible.length > 0) {
       const parts: string[] = [];
       if (localCount > 0) parts.push(t('confirm.exitLocal').replace('{n}', String(localCount)));
       for (const [host, n] of remoteCounts) {
         parts.push(t('confirm.exitRemote').replace('{host}', host).replace('{n}', String(n)));
       }
       const message = t('confirm.exitRunning')
-        .replace('{n}', String(runningSessions.size))
+        .replace('{n}', String(interruptible.length))
         .replace('{detail}', parts.join('、'));
       const confirmed = await ask(message, {
         title: APP_NAME,

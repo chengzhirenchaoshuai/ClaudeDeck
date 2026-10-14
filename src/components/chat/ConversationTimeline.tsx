@@ -3,7 +3,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useT } from '../../lib/i18n';
 import { type Turn } from '../../lib/turns';
 
-export function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, onJumped, onJumpBottom }: {
+export function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, onJumped, onJumpBottom, ensureRendered }: {
   turns: Turn[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
   messageRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
@@ -11,6 +11,8 @@ export function ConversationTimeline({ turns, scrollRef, messageRefs, showScroll
   /** 跳转后通知聊天面板：暂停流式输出时的自动贴底，避免把视图拉回底部 */
   onJumped: () => void;
   onJumpBottom: () => void;
+  /** 消息列表分段渲染：目标消息尚未渲染时由聊天面板扩展渲染范围并返回 false */
+  ensureRendered?: (messageId: string) => boolean;
 }) {
   const t = useT();
   // 当前高亮的轮次放在这里而不是 ChatPanel：滚动时它频繁变化，放在上层会导致整个消息列表重渲染而卡顿
@@ -64,10 +66,24 @@ export function ConversationTimeline({ turns, scrollRef, messageRefs, showScroll
     };
   }, [scrollRef, recompute]);
 
+  // 目标消息还没渲染时先记下，等聊天面板补渲染后（本组件随之重新渲染）再跳转
+  const pendingJumpRef = useRef<Turn | null>(null);
+  useEffect(() => {
+    const pending = pendingJumpRef.current;
+    if (pending && messageRefs.current.has(pending.userMessageId)) {
+      pendingJumpRef.current = null;
+      jumpTo(pending);
+    }
+  });
+
   const jumpTo = (turn: Turn) => {
     const el = scrollRef.current;
     const node = messageRefs.current.get(turn.userMessageId);
-    if (!el || !node) return;
+    if (!el) return;
+    if (!node) {
+      if (ensureRendered && !ensureRendered(turn.userMessageId)) pendingJumpRef.current = turn;
+      return;
+    }
     onJumped();
     lockUntilRef.current = performance.now() + 300;
     setActiveTurnId(turn.userMessageId);

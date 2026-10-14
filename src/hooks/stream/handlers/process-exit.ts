@@ -16,6 +16,8 @@ export function handleProcessExit(ctx: StreamContext, msg: ProcessExitMessage): 
   commitPartialText(tabId, msgStdinId);
   clearPartial();
   console.log('[ClaudeDeck:session] process_exit received', { stdinId: msg.__stdinId });
+  // 进程退出后它的后台任务不再被跟踪（CLI 也不会再发 background_tasks_changed），清零
+  useSessionStore.getState().setBackgroundTasks(tabId, 0);
 
   // Bug C fix (#27): Clear stuck pendingCommandMsgId (e.g., /compact without result)
   const exitPendingCmd = useChatStore.getState().getTab(tabId)?.sessionMeta.pendingCommandMsgId;

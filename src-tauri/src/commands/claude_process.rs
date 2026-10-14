@@ -115,7 +115,14 @@ impl ProcessManager {
     /// after a browser refresh (frontend state is wiped but backend keeps processes alive).
     pub async fn active_ids(&self) -> Vec<String> {
         let map = self.processes.lock().await;
-        map.keys().cloned().collect()
+        let mut ids = Vec::with_capacity(map.len());
+        for (id, proc) in map.iter() {
+            // 进程自行退出后表项不会自动移除，这里排除已退出的，只返回仍在运行的进程
+            if matches!(proc.lock().await.child.try_wait(), Ok(None)) {
+                ids.push(id.clone());
+            }
+        }
+        ids
     }
 }
 

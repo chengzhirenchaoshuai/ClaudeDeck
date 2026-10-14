@@ -185,6 +185,8 @@ interface ChatState {
 
   // --- Tab-level operations (all take tabId) ---
   addMessage: (tabId: string, message: ChatMessage) => void;
+  /** 一次性替换全部消息（从磁盘加载会话用），避免逐条 addMessage 的 O(n²) 复制和反复通知订阅者 */
+  setMessages: (tabId: string, messages: ChatMessage[]) => void;
   updateMessage: (tabId: string, id: string, updates: Partial<ChatMessage>) => void;
   updatePartialMessage: (tabId: string, text: string) => void;
   updatePartialThinking: (tabId: string, text: string) => void;
@@ -312,6 +314,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         // explicitly by clearPartial() in the result/process_exit handlers and
         // in the assistant message handler when a text block supersedes streaming.
       });
+      return result ?? {};
+    }),
+
+  setMessages: (tabId, messages) =>
+    set((state) => {
+      const result = updateTab(state.tabs, tabId, (tab) => ({ ...tab, messages }));
       return result ?? {};
     }),
 

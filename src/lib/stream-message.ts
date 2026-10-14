@@ -102,6 +102,21 @@ export interface SystemMessage extends StreamMessageBase {
   /** error（旧版 CLI） */
   message?: string;
   error?: string;
+  /** background_tasks_changed：当前全部存活的后台任务（CLI v2.1.203+） */
+  tasks?: BackgroundTaskEntry[];
+}
+
+/** background_tasks_changed 中的一项（SDKBackgroundTasksChangedMessage.tasks） */
+export interface BackgroundTaskEntry {
+  task_id: string;
+  run_id?: string;
+  /** local_bash（后台 Bash / Monitor）、local_agent（子代理）、remote_agent */
+  task_type: string;
+  subagent_type?: string;
+  description: string;
+  parent_task_id?: string;
+  /** CLI 自身运行所需的任务，不算用户的工作，不应计入活动指示 */
+  ambient?: boolean;
 }
 
 export interface AssistantMessage extends StreamMessageBase {

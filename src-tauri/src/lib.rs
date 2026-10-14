@@ -610,7 +610,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod decode_tests {
-    use super::{compute_session_tokens, decode_project_name, extract_session_info, provider_messages_endpoint};
+    use super::{compute_session_tokens, decode_project_name, extract_session_info, provider_messages_endpoint, slim_session_record};
 
     #[test]
     fn test_session_tokens_use_latest_context_and_deduplicate_blocks() {
@@ -624,6 +624,35 @@ mod decode_tests {
         assert_eq!(usage["totalOutputTokens"], 30);
         assert_eq!(usage["contextInputTokens"], 1100);
         assert_eq!(usage["contextOutputTokens"], 10);
+    }
+
+    #[test]
+    fn test_slim_session_record_drops_images_and_tool_use_result() {
+        let mut record = serde_json::json!({
+            "type": "user",
+            "uuid": "u1",
+            "parentUuid": "a1",
+            "toolUseResult": { "type": "image", "file": { "base64": "AAAA" } },
+            "message": { "role": "user", "content": [
+                { "type": "image", "source": { "data": "BBBB" } },
+                { "type": "tool_result", "tool_use_id": "t1", "content": [
+                    { "type": "text", "text": "截图完成" },
+                    { "type": "image", "source": { "data": "CCCC" } }
+                ] }
+            ] }
+        });
+        slim_session_record(&mut record);
+        assert_eq!(record["toolUseResult"], true);
+        assert_eq!(record["uuid"], "u1");
+        assert_eq!(record["parentUuid"], "a1");
+        let blocks = record["message"]["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["content"], serde_json::json!([{ "type": "text", "text": "截图完成" }]));
+
+        // 字符串形式的 toolUseResult（如错误信息）原样保留
+        let mut err_record = serde_json::json!({ "type": "user", "toolUseResult": "Error: boom" });
+        slim_session_record(&mut err_record);
+        assert_eq!(err_record["toolUseResult"], "Error: boom");
     }
 
     #[test]

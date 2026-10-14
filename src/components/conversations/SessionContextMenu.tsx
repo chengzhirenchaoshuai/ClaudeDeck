@@ -1,7 +1,36 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
+
+/** 菜单与窗口边缘的最小间距 */
+const MENU_MARGIN = 8;
+
+/**
+ * 让右键菜单始终完整显示在窗口内：渲染后（绘制前）测量菜单尺寸，
+ * 下方放不下就翻到光标上方，右侧放不下就翻到光标左侧，最后再夹到窗口范围内。
+ */
+function useMenuPosition(x: number, y: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 用 offset 尺寸而非 getBoundingClientRect：后者会受淡入动画的 scale 影响而偏小
+    const width = el.offsetWidth;
+    const height = el.offsetHeight;
+    const maxLeft = window.innerWidth - width - MENU_MARGIN;
+    const maxTop = window.innerHeight - height - MENU_MARGIN;
+    let left = x > maxLeft ? x - width : x;
+    let top = y > maxTop ? y - height : y;
+    left = Math.max(MENU_MARGIN, Math.min(left, maxLeft));
+    top = Math.max(MENU_MARGIN, Math.min(top, maxTop));
+    setPos({ left, top });
+  }, [x, y]);
+
+  return { ref, pos };
+}
 
 interface SessionContextMenuProps {
   x: number;
@@ -43,7 +72,7 @@ export function SessionContextMenu({
   onClose,
 }: SessionContextMenuProps) {
   const t = useT();
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { ref: menuRef, pos } = useMenuPosition(x, y);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -60,14 +89,14 @@ export function SessionContextMenu({
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [onClose]);
+  }, [onClose, menuRef]);
 
   return createPortal(
     <div
       ref={menuRef}
       className="fixed z-[9999] min-w-[160px] py-1.5 rounded-xl
         bg-bg-card border border-border-subtle shadow-xl animate-fade-in"
-      style={{ left: x, top: y }}
+      style={pos}
     >
       <button
         onClick={() => { onClose(); onRename(session); }}
@@ -250,7 +279,7 @@ export function ProjectContextMenu({
   onClose,
 }: ProjectContextMenuProps) {
   const t = useT();
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { ref: menuRef, pos } = useMenuPosition(x, y);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -267,14 +296,14 @@ export function ProjectContextMenu({
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [onClose]);
+  }, [onClose, menuRef]);
 
   return createPortal(
     <div
       ref={menuRef}
       className="fixed z-[9999] min-w-[160px] py-1.5 rounded-xl
         bg-bg-card border border-border-subtle shadow-xl animate-fade-in"
-      style={{ left: x, top: y }}
+      style={pos}
     >
       <button
         onClick={() => { onClose(); onNewSession(project); }}

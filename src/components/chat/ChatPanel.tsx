@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback } from 'react';
 import { useActiveTab, type ChatMessage } from '../../stores/chatStore';
 import { MessageBubble } from './MessageBubble';
 import { ToolGroup } from './ToolGroup';
@@ -22,6 +22,11 @@ import { UsageStatusBar } from './UsageMeters';
 import { getModelDisplayName } from './chatFormat';
 import { ActivityIndicator } from './ActivityIndicator';
 import { usePlanPanelStore, PlanPanel } from './PlanPanel';
+
+/** 首次只渲染最近这么多项（一个工具组算一项）：长会话全部渲染（含 Markdown）会让切换会话明显卡顿 */
+const RENDER_WINDOW = 60;
+/** 滚到顶部附近时每次往前补渲染的项数 */
+const RENDER_PAGE = 60;
 
 export function ChatPanel() {
   const t = useT();
@@ -121,6 +126,29 @@ export function ChatPanel() {
     return items;
   }, [messages]);
 
+  // --- 分段渲染：只渲染从锚点项开始到末尾的部分，锚点按会话记录 ---
+  // 锚点用列表项的 key 而不是下标：流式输出追加消息、磁盘同步重新加载时位置都不会乱
+  const itemKey = (item: DisplayItem) => (item.kind === 'tool_group' ? `tg_${item.msgs[0].id}` : item.msg.id);
+  const [windowAnchor, setWindowAnchor] = useState<{ sessionId: string | null; key: string | null }>(
+    { sessionId: null, key: null },
+  );
+  const anchorKey = windowAnchor.sessionId === selectedSessionId ? windowAnchor.key : null;
+  const renderStart = useMemo(() => {
+    const autoStart = Math.max(0, displayItems.length - RENDER_WINDOW);
+    if (!anchorKey) return autoStart;
+    const idx = displayItems.findIndex((item) => itemKey(item) === anchorKey);
+    // 锚点找不到（如回退截断了消息）时退回默认窗口；任何情况下都至少渲染最近一个窗口
+    return idx === -1 ? autoStart : Math.min(idx, autoStart);
+  }, [displayItems, anchorKey]);
+  const renderedItems = useMemo(() => displayItems.slice(renderStart), [displayItems, renderStart]);
+
+  // 列表超过一个窗口后固定锚点，之后流式追加的新消息只会接在末尾，不会把顶部的消息挤掉导致视图跳动
+  useEffect(() => {
+    if (!anchorKey && displayItems.length > RENDER_WINDOW) {
+      setWindowAnchor({ sessionId: selectedSessionId, key: itemKey(displayItems[renderStart]) });
+    }
+  }, [anchorKey, displayItems, renderStart, selectedSessionId]);
+
   // Collect plan review messages from the session (created by ExitPlanMode)
   const planMessages = useMemo(
     () => messages.filter((m) => m.type === 'plan_review' || m.type === 'plan' || m.planContent),
@@ -143,6 +171,36 @@ export function ChatPanel() {
   const showScrollBtnRef = useRef(false);
   const scrollRafRef = useRef(0);
   const turns = useMemo(() => parseTurns(messages), [messages]);
+
+  /** 往前补渲染时记下补之前的滚动高度，渲染后据此恢复位置，避免视图跳到别处 */
+  const prependRef = useRef<{ height: number; top: number } | null>(null);
+  const loadEarlier = useCallback(() => {
+    if (renderStart === 0 || prependRef.current) return;
+    const el = scrollRef.current;
+    prependRef.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
+    const nextStart = Math.max(0, renderStart - RENDER_PAGE);
+    setWindowAnchor({ sessionId: selectedSessionId, key: itemKey(displayItems[nextStart]) });
+  }, [renderStart, displayItems, selectedSessionId]);
+  const loadEarlierRef = useRef(loadEarlier);
+  loadEarlierRef.current = loadEarlier;
+
+  useLayoutEffect(() => {
+    const prev = prependRef.current;
+    const el = scrollRef.current;
+    if (!prev || !el) return;
+    prependRef.current = null;
+    el.scrollTop = prev.top + (el.scrollHeight - prev.height);
+  }, [renderStart]);
+
+  /** 轮次导航跳转用：目标消息还没渲染时扩展渲染范围并返回 false，渲染后再跳转 */
+  const ensureMessageRendered = useCallback((messageId: string): boolean => {
+    const idx = displayItems.findIndex((item) => item.kind === 'message'
+      ? item.msg.id === messageId
+      : item.msgs.some((m) => m.id === messageId));
+    if (idx === -1 || idx >= renderStart) return true;
+    setWindowAnchor({ sessionId: selectedSessionId, key: itemKey(displayItems[idx]) });
+    return false;
+  }, [displayItems, renderStart, selectedSessionId]);
 
   const setMessageNode = useCallback((id: string) => (node: HTMLDivElement | null) => {
     if (node) {
@@ -170,6 +228,8 @@ export function ChatPanel() {
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // 接近顶部时往前补渲染更早的消息
+    if (el.scrollTop < 300) loadEarlierRef.current();
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     isNearBottomRef.current = nearBottom;
     if (nearBottom) {
@@ -337,11 +397,21 @@ export function ChatPanel() {
           <EmptyReadyState />
         ) : (
           <div className="max-w-5xl mx-auto">
-            {displayItems.map((item, displayIdx) => {
+            {renderStart > 0 && (
+              // 兜底入口：内容不足一屏、无法靠滚动触发时也能手动加载
+              <div className="flex justify-center mb-4">
+                <button onClick={loadEarlier}
+                  className="px-3 py-1 rounded-lg text-xs text-text-tertiary
+                    hover:bg-bg-secondary hover:text-text-primary transition-smooth">
+                  {t('chat.showEarlier').replace('{n}', String(renderStart))}
+                </button>
+              </div>
+            )}
+            {renderedItems.map((item, displayIdx) => {
               // Determine spacing based on item type
               const isCompact = item.kind === 'tool_group'
                 || (item.kind === 'message' && ['tool_use', 'tool_result', 'thinking', 'todo', 'plan', 'plan_review'].includes(item.msg.type));
-              const prevItem = displayIdx > 0 ? displayItems[displayIdx - 1] : null;
+              const prevItem = displayIdx > 0 ? renderedItems[displayIdx - 1] : null;
               const prevIsCompact = prevItem && (
                 prevItem.kind === 'tool_group'
                 || (prevItem.kind === 'message' && ['tool_use', 'tool_result', 'thinking', 'todo', 'plan', 'plan_review'].includes(prevItem.msg.type))
@@ -466,6 +536,7 @@ export function ChatPanel() {
           showScrollBtn={showScrollBtn}
           onJumped={handleTimelineJumped}
           onJumpBottom={scrollToBottom}
+          ensureRendered={ensureMessageRendered}
         />
       )}
 

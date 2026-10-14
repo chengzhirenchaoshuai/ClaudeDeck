@@ -1,6 +1,6 @@
-import { bridge, SessionListItem } from './tauri-bridge';
+import { bridge, isRemotePath, SessionListItem } from './tauri-bridge';
 import { parseSessionMessages } from './session-loader';
-import { useChatStore } from '../stores/chatStore';
+import { useChatStore, type ChatMessage } from '../stores/chatStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -9,6 +9,14 @@ import { LOCAL_ENV } from './remote';
 
 /** 每个会话上次同步时的 JSONL 记录数，用于跳过没有变化的重复加载 */
 const lastRecordCount = new Map<string, number>();
+/** 每个会话上次加载时的 JSONL 文件大小（仅本机会话）。JSONL 只追加写入，大小没变就不必重新读取整个文件 */
+const lastFileSize = new Map<string, number>();
+
+/** 本机会话文件的大小；远程会话或读取失败返回 null（此时不做大小判断） */
+async function localFileSize(path: string): Promise<number | null> {
+  if (isRemotePath(path)) return null;
+  return bridge.getFileSize(path).catch(() => null);
+}
 
 /** 该会话是否由本应用的 CLI 进程在驱动：是则内存中的状态比磁盘更完整，不能用磁盘内容覆盖 */
 async function isDrivenByThisApp(sessionId: string): Promise<boolean> {
@@ -30,8 +38,11 @@ export async function applyDiskSession(
 ): Promise<boolean> {
   const stillSelected = () => useSessionStore.getState().selectedSessionId === sessionId;
 
+  // 先取大小再读文件：读取期间文件又变大时，下次同步会因大小不同而重新加载
+  const fileSize = await localFileSize(sessionPath);
   const rawMessages = await bridge.loadSession(sessionPath);
   if (!stillSelected()) return false;
+  if (fileSize !== null) lastFileSize.set(sessionId, fileSize);
   if (opts.skipIfUnchanged && lastRecordCount.get(sessionId) === rawMessages.length) return false;
 
   const { messages, agents } = parseSessionMessages(rawMessages);
@@ -65,16 +76,20 @@ export async function applyDiskSession(
     agentStore.upsertAgent(agent);
   }
 
+  // 一次性写入：与逐条 addMessage 的结果相同（同 ID 的消息合并到首次出现的位置），
+  // 但只复制一次数组、只通知一次订阅者，大会话切换时不再卡顿
+  const merged: ChatMessage[] = [];
+  const indexById = new Map<string, number>();
   for (const msg of messages) {
-    if (msg.toolResultContent) {
-      // For messages that have tool results, add the base message first, then update
-      const { toolResultContent, ...baseMsg } = msg;
-      chat.addMessage(sessionId, baseMsg);
-      useChatStore.getState().updateMessage(sessionId, msg.id, { toolResultContent });
+    const idx = indexById.get(msg.id);
+    if (idx === undefined) {
+      indexById.set(msg.id, merged.length);
+      merged.push(msg);
     } else {
-      chat.addMessage(sessionId, msg);
+      merged[idx] = { ...merged[idx], ...msg };
     }
   }
+  chat.setMessages(sessionId, merged);
 
   lastRecordCount.set(sessionId, rawMessages.length);
   return true;
@@ -93,6 +108,11 @@ export async function syncSession(
 ): Promise<void> {
   if (!session || !session.path) return;
   if (!opts.force && !lastRecordCount.has(session.id)) return;
+  // 文件大小没变就跳过：避免每次轮询都把整个 JSONL 传到前端解析（大会话会让界面周期性卡顿）
+  if (!opts.force) {
+    const size = await localFileSize(session.path);
+    if (size !== null && lastFileSize.get(session.id) === size) return;
+  }
   if (await isDrivenByThisApp(session.id)) return;
   try {
     await applyDiskSession(session.id, session.path, { skipIfUnchanged: !opts.force });

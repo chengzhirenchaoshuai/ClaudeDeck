@@ -1,5 +1,6 @@
-// system 消息：init 模型、错误、思考 token、压缩边界。
+// system 消息：init 模型、错误、思考 token、压缩边界、后台任务数。
 import { useChatStore, generateMessageId } from '../../../stores/chatStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { formatErrorForUser } from '../errors';
 import { persistTokenState } from '../token-state';
 import { type SystemMessage } from '../../../lib/stream-message';
@@ -31,6 +32,15 @@ export function handleSystemMessage(ctx: StreamContext, msg: SystemMessage): voi
         totalThinkingTokens: (meta.totalThinkingTokens || 0) + (msg.estimated_tokens_delta || 0),
       });
     }
+  } else if (msg.subtype === 'background_tasks_changed') {
+    // tasks 是当前全部存活的后台任务，直接覆盖计数；ambient 是 CLI 自身的任务，不计入
+    const count = (msg.tasks ?? []).filter((task) => !task.ambient).length;
+    useSessionStore.getState().setBackgroundTasks(tabId, count);
+  } else if (
+    msg.subtype === 'task_started' || msg.subtype === 'task_progress'
+    || msg.subtype === 'task_updated' || msg.subtype === 'task_notification'
+  ) {
+    // 单个任务的事件：后台任务数以 background_tasks_changed 的完整列表为准，这里不处理
   } else if (msg.subtype === 'status') {
     // Session status updates (e.g. "requesting") — informational, silently tracked
     // We don't surface these as user-visible messages; they're internal CLI state

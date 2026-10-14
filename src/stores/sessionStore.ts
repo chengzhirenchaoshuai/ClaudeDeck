@@ -86,6 +86,8 @@ interface SessionState {
   customPreviews: Record<string, string>;
   /** Track which sessions are actively running (streaming/working) */
   runningSessions: Set<string>;
+  /** 各会话仍在运行的 CLI 后台任务数（后台 Bash、Monitor、后台子代理等，不含 CLI 内部任务），没有则不在表中 */
+  backgroundTasks: Map<string, number>;
   /** 未读会话（任务结束时用户不在该会话窗口），持久化在本地存储 */
   unreadSessions: Set<string>;
   /** Map stdinId → tabId so stream events can be routed to the correct session */
@@ -110,6 +112,8 @@ interface SessionState {
   setSessionRunning: (sessionId: string, running: boolean) => void;
   /** Check if a session is currently running */
   isSessionRunning: (sessionId: string) => boolean;
+  /** 记录会话当前的后台任务数，0 表示没有 */
+  setBackgroundTasks: (sessionId: string, count: number) => void;
   /** Register a stdinId → tabId mapping (persisted to sessionStorage) */
   registerStdinTab: (stdinId: string, tabId: string) => void;
   /** Remove a stdinId mapping on process exit (cleans sessionStorage too) */
@@ -138,6 +142,29 @@ interface SessionState {
   toggleUnread: (sessionId: string) => void;
 }
 
+/** 两个会话条目的字段是否完全相同（条目都是扁平的基本类型字段） */
+function sameSessionItem(a: SessionListItem, b: SessionListItem): boolean {
+  const ka = Object.keys(a) as (keyof SessionListItem)[];
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => a[k] === b[k]);
+}
+
+/**
+ * 内容没变的条目沿用旧对象，让 memo 过的 SessionItem 跳过重新渲染；
+ * 整个列表都没变时返回旧数组本身，调用方据此跳过 set。
+ */
+function reuseUnchanged(prev: SessionListItem[], next: SessionListItem[]): SessionListItem[] {
+  const prevById = new Map(prev.map((s) => [s.id, s]));
+  let changed = prev.length !== next.length;
+  const result = next.map((item, i) => {
+    const old = prevById.get(item.id);
+    const reused = old && sameSessionItem(old, item) ? old : item;
+    if (reused !== prev[i]) changed = true;
+    return reused;
+  });
+  return changed ? result : prev;
+}
+
 export const useSessionStore = create<SessionState>()((set, get) => ({
   sessions: [],
   remoteSessions: [],
@@ -150,6 +177,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   previousSessionId: null,
   customPreviews: loadCustomPreviewsSync(),
   runningSessions: new Set<string>(),
+  backgroundTasks: new Map<string, number>(),
   unreadSessions: loadUnreadSync(),
   stdinToTab: loadStdinToTabSync(),
   contentSearchResults: new Map<string, ContentSearchResult>(),
@@ -165,7 +193,13 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       const drafts = get().sessions.filter(
         (s) => s.path === '' && !diskSessions.some((d) => d.id === s.id),
       );
-      set({ sessions: [...drafts, ...diskSessions, ...get().remoteSessions], isLoading: false });
+      const next = reuseUnchanged(get().sessions, [...drafts, ...diskSessions, ...get().remoteSessions]);
+      // CLI 写会话文件时这里约每秒触发一次：列表没有任何变化就不更新，避免整个会话列表重新渲染
+      if (next === get().sessions) {
+        if (get().isLoading) set({ isLoading: false });
+      } else {
+        set({ sessions: next, isLoading: false });
+      }
     } catch {
       set({ isLoading: false });
     }
@@ -285,6 +319,14 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
 
   isSessionRunning: (sessionId) => get().runningSessions.has(sessionId),
 
+  setBackgroundTasks: (sessionId, count) => set((state) => {
+    if ((state.backgroundTasks.get(sessionId) ?? 0) === count) return {};
+    const next = new Map(state.backgroundTasks);
+    if (count > 0) next.set(sessionId, count);
+    else next.delete(sessionId);
+    return { backgroundTasks: next };
+  }),
+
   markUnread: (sessionId) => set((state) => {
     if (state.unreadSessions.has(sessionId)) return {};
     const next = new Set(state.unreadSessions);
@@ -344,6 +386,12 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       runningSessions.delete(oldDraftId);
       runningSessions.add(newRealId);
     }
+    const backgroundTasks = new Map(state.backgroundTasks);
+    const draftBgCount = backgroundTasks.get(oldDraftId);
+    if (draftBgCount !== undefined) {
+      backgroundTasks.delete(oldDraftId);
+      backgroundTasks.set(newRealId, draftBgCount);
+    }
 
     // 4) Migrate stdinToTab entries that pointed to oldDraftId
     const stdinToTab = { ...state.stdinToTab };
@@ -366,7 +414,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     }
 
     saveStdinToTab(stdinToTab);
-    return { sessions, selectedSessionId, previousSessionId, runningSessions, stdinToTab, customPreviews };
+    return { sessions, selectedSessionId, previousSessionId, runningSessions, backgroundTasks, stdinToTab, customPreviews };
   });
   },
 
