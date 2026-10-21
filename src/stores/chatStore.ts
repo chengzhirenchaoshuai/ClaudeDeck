@@ -169,12 +169,14 @@ export interface TabSession {
   pendingUserMessages: PendingUserMessage[];
 }
 
-/** 运行中提交、等待本轮结束再发送的消息 */
+/** 运行中提交的消息：已写入 stdin 等 CLI 插入（sent），或排队等本轮结束再发送 */
 export interface PendingUserMessage {
   /** 实际写入 stdin 的文本（含附件、技能等前缀） */
   text: string;
-  /** 轮到它发送时插入聊天记录的用户气泡；排队期间在消息列表底部单独显示。静默重启等场景没有气泡 */
+  /** 进入聊天记录时插入的用户气泡；等待期间在消息列表底部单独显示。静默重启等场景没有气泡 */
   message?: ChatMessage;
+  /** 已写入 stdin：CLI 会在下一个工具调用间隙或本轮结束后处理，收到它的回显时插入气泡 */
+  sent?: boolean;
 }
 
 // --- Store State & Actions ---
@@ -200,8 +202,12 @@ interface ChatState {
   setInputDraft: (tabId: string, text: string) => void;
   setPendingAttachments: (tabId: string, files: FileAttachment[]) => void;
   addPendingMessage: (tabId: string, pending: PendingUserMessage) => void;
-  /** Dequeue the first pending message (FIFO). Returns undefined if empty. */
+  /** 取出第一条还没写入 stdin 的排队消息（FIFO），没有时返回 undefined */
   shiftPendingMessage: (tabId: string) => PendingUserMessage | undefined;
+  /** 取出第一条已写入 stdin、文本与 CLI 回显一致的消息，没有时返回 undefined */
+  takeSentPendingMessage: (tabId: string, text: string) => PendingUserMessage | undefined;
+  /** 写入 stdin 失败或进程被替换：把这条（不传 id 时为全部）已发送消息改回排队，等本轮结束再发送 */
+  markPendingUnsent: (tabId: string, messageId?: string) => void;
   flushPendingMessages: (tabId: string) => PendingUserMessage[];
   clearPendingMessages: (tabId: string) => void;
   rewindToTurn: (tabId: string, startMsgIdx: number) => void;
@@ -265,6 +271,11 @@ function updateTab(
   const newTabs = new Map(tabs);
   newTabs.set(tabId, updater(tab));
   return { tabs: newTabs };
+}
+
+/** 比较写入 stdin 的文本与 CLI 回显时忽略换行符差异和首尾空白 */
+function normalizePendingText(text: string): string {
+  return text.replace(/\r\n/g, '\n').trim();
 }
 
 // --- Selector helpers ---
@@ -449,17 +460,43 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   shiftPendingMessage: (tabId) => {
     const tab = get().tabs.get(tabId);
-    if (!tab || tab.pendingUserMessages.length === 0) return undefined;
-    const first = tab.pendingUserMessages[0];
+    const first = tab?.pendingUserMessages.find((p) => !p.sent);
+    if (!first) return undefined;
     set((state) => {
       const r = updateTab(state.tabs, tabId, (t) => ({
         ...t,
-        pendingUserMessages: t.pendingUserMessages.slice(1),
+        pendingUserMessages: t.pendingUserMessages.filter((p) => p !== first),
       }));
       return r ?? {};
     });
     return first;
   },
+
+  takeSentPendingMessage: (tabId, text) => {
+    const tab = get().tabs.get(tabId);
+    const target = normalizePendingText(text);
+    const match = tab?.pendingUserMessages.find((p) => p.sent && normalizePendingText(p.text) === target);
+    if (!match) return undefined;
+    set((state) => {
+      const r = updateTab(state.tabs, tabId, (t) => ({
+        ...t,
+        pendingUserMessages: t.pendingUserMessages.filter((p) => p !== match),
+      }));
+      return r ?? {};
+    });
+    return match;
+  },
+
+  markPendingUnsent: (tabId, messageId) =>
+    set((state) => {
+      const result = updateTab(state.tabs, tabId, (tab) => ({
+        ...tab,
+        pendingUserMessages: tab.pendingUserMessages.map((p) =>
+          p.sent && (messageId === undefined || p.message?.id === messageId) ? { ...p, sent: false } : p,
+        ),
+      }));
+      return result ?? {};
+    }),
 
   flushPendingMessages: (tabId) => {
     const tab = get().tabs.get(tabId);

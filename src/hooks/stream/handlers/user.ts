@@ -6,6 +6,13 @@ import { type StreamContext } from '../context';
 export function handleUserMessage(ctx: StreamContext, msg: UserMessage): void {
   const { tabId } = ctx;
 
+  // 运行中发出的消息被 CLI 处理了：此时才把气泡插进聊天记录，位置就是它进入对话的地方。
+  // 要先于下面记录 checkpoint UUID，让 UUID 落到这条气泡上
+  if (msg.isReplay && typeof msg.message?.content === 'string') {
+    const sent = useChatStore.getState().takeSentPendingMessage(tabId, msg.message.content);
+    if (sent?.message) ctx.addMessage({ ...sent.message, timestamp: Date.now() });
+  }
+
   // Store CLI checkpoint UUID on the most recent user message (for rewind).
   // Only store from genuine user-input messages, NOT tool-result messages.
   // Tool-result user messages have content with tool_result blocks and their

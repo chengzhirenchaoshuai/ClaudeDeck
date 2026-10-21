@@ -31,6 +31,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'chat.turns': '轮',
     'chat.toggleFiles': '切换文件面板',
     'chat.queued': '排队中，本轮结束后发送',
+    'chat.sentWaiting': '已发送，模型处理到这里时插入对话',
     'chat.latest': '最新',
     'chat.welcome': `欢迎使用 ${APP_NAME}`,
     'chat.welcomeWithProject': '开始与当前模型协作，CLI 会话在后台运行。',
@@ -907,6 +908,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'chat.welcomeWithProject': 'Start working with the selected model. The CLI session runs in the background.',
     'chat.loadingSession': 'Loading conversation…',
     'chat.welcomeNoProject': 'Select a project folder to get started.',
+    'chat.sentWaiting': 'Sent — joins the conversation when the model picks it up',
 
     // InputBar
     'input.working': 'The model is working...',

@@ -137,6 +137,8 @@ export interface UserMessage extends StreamMessageBase {
   message?: { content?: string | ContentBlock[] };
   tool_use_result?: ToolUseResult;
   isSynthetic?: boolean;
+  /** --replay-user-messages：CLI 开始处理 stdin 送来的用户消息时的回显 */
+  isReplay?: boolean;
 }
 
 export interface ResultMessage extends StreamMessageBase {

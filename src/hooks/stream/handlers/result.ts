@@ -80,6 +80,8 @@ function retryAfterThinkingSignatureError(ctx: StreamContext, msg: ResultMessage
         bridge.killSession(failedStdinId).catch(() => {});
         releaseStreamListener(failedStdinId);
       }
+      // 已写入旧进程的消息改回排队，由新进程这一轮结束后再发送
+      useChatStore.getState().markPendingUnsent(tabId);
 
       // Clear sessionId (abandon resume) and switch flags
       setSessionMeta({
@@ -214,6 +216,8 @@ function restartAfterExitPlanMode(ctx: StreamContext, msg: ResultMessage): boole
       bridge.killSession(oldStdinId).catch(() => {});
       releaseStreamListener(oldStdinId);
     }
+    // 已写入旧进程的消息随进程一起没了，改回排队，等重启后的这一轮结束再发送
+    useChatStore.getState().markPendingUnsent(tabId);
     // Silently restart — no user message bubble
     silentRestartRef.current = true;
     setInputSync('Continue.');
@@ -316,9 +320,12 @@ function completePendingCommand(ctx: StreamContext, msg: ResultMessage): void {
 function finalizeTurn(ctx: StreamContext, msg: ResultMessage): void {
   const { tabId, agentActions, setSessionStatus, setSessionMeta } = ctx;
 
-  setSessionStatus(
-    msg.subtype === 'success' ? 'completed' : 'error'
-  );
+  // 还有已写入 stdin 未处理的消息时 CLI 会紧接着开始下一轮，保持运行状态（由 sendNextPendingMessage 重置计时）
+  if (!hasSentPendingMessage(tabId)) {
+    setSessionStatus(
+      msg.subtype === 'success' ? 'completed' : 'error'
+    );
+  }
   {
     // Correct cumulative totals for any drift between streaming
     // accumulation and the authoritative result values.
@@ -460,9 +467,36 @@ function maybeAutoCompact(ctx: StreamContext, msg: ResultMessage): boolean {
   return false;
 }
 
-/** 排队的消息按 FIFO 每轮发送一条。 */
+function hasSentPendingMessage(tabId: string): boolean {
+  return (useChatStore.getState().getTab(tabId)?.pendingUserMessages ?? []).some((p) => p.sent);
+}
+
+/** 本轮结束：已写入 stdin 的消息由 CLI 接着处理，只重置下一轮的状态；否则排队的消息按 FIFO 每轮发送一条。 */
 function sendNextPendingMessage(ctx: StreamContext): void {
   const { tabId, agentActions, setSessionStatus, setSessionMeta, setActivityStatus } = ctx;
+
+  const sentPending = (useChatStore.getState().getTab(tabId)?.pendingUserMessages ?? []).find((p) => p.sent);
+  if (sentPending) {
+    const nextTurnStartedAt = Date.now();
+    setSessionStatus('running');
+    setSessionMeta({
+      turnStartTime: nextTurnStartedAt,
+      lastProgressAt: nextTurnStartedAt,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    setActivityStatus({ phase: 'thinking' });
+    agentActions?.clearAgents();
+    agentActions?.upsertAgent({
+      id: 'main',
+      parentId: null,
+      description: sentPending.text.slice(0, 100),
+      phase: 'spawning',
+      startTime: Date.now(),
+      isMain: true,
+    });
+    return;
+  }
 
   // FIFO drain: dequeue ONE pending message and send it (#142/#70).
   // When this turn completes, the next result event will dequeue the next one.

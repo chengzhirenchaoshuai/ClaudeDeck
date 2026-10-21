@@ -495,11 +495,8 @@ export function InputBar() {
 
     setInputSync('');
 
-    // Gate: queue follow-up messages while AI is actively processing (#142).
-    // Previously only queued when an interaction card was pending, but direct stdin
-    // writes during streaming are unreliable — CLI may silently drop them.
-    // Now we always queue during running state; messages are flushed FIFO when the
-    // current turn completes (result event in useStreamProcessor).
+    // 运行中提交的消息：普通消息直接写入 stdin，CLI 自己排队（下一个工具调用间隙插入本轮，
+    // 或本轮结束后接着处理），收到它的回显时才插入气泡；斜杠命令等本轮结束再按 FIFO 发送。
     const currentTabState = getActiveTabState();
     const shouldQueue = !!currentTabState.sessionMeta.stdinId && currentTabState.sessionStatus === 'running';
 
@@ -539,9 +536,22 @@ export function InputBar() {
           : undefined,
       };
       if (shouldQueue) {
-        // 排队消息的气泡等真正发送时再插入，否则会排在本轮回复的正文前面
-        useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble });
+        // 气泡等 CLI 真正处理这条消息时再插入，否则会排在本轮回复的正文前面
         clearFiles();
+        // 普通消息直接写入 stdin，与终端一致：CLI 在下一个工具调用间隙插入本轮，或本轮结束后接着处理。
+        // 斜杠命令仍等本轮结束再发送
+        const midTurnStdinId = currentTabState.sessionMeta.stdinId;
+        if (midTurnStdinId && !text.startsWith('/')) {
+          useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble, sent: true });
+          try {
+            await bridge.sendStdin(midTurnStdinId, text);
+          } catch (err) {
+            console.warn('[ClaudeDeck] mid-turn sendStdin failed, queued instead:', err);
+            useChatStore.getState().markPendingUnsent(tabId, userBubble.id);
+          }
+        } else {
+          useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble });
+        }
         return;
       }
       addMessage(tabId, userBubble);

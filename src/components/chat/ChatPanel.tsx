@@ -517,11 +517,11 @@ export function ChatPanel() {
             {(sessionStatus === 'running' || activityStatus.phase === 'awaiting') && (
               <ActivityIndicator activityStatus={activityStatus} sessionMeta={sessionMeta} />
             )}
-            {/* 排队中的消息：本轮结束、真正发送时才进入消息列表 */}
+            {/* 运行中发出的消息：CLI 真正处理（已发送）或本轮结束后发送（排队）时才进入消息列表 */}
             {pendingUserMessages.map((p, i) => p.message && (
-              <div key={`queued_${p.message.id}`} className="mt-5 opacity-60" title={t('chat.queued')}>
+              <div key={`queued_${p.message.id}`} className="mt-5 opacity-60" title={t(p.sent ? 'chat.sentWaiting' : 'chat.queued')}>
                 <MessageBubble message={p.message} isFirstInGroup={i === 0} />
-                <div className="mt-1 text-right text-[11px] text-text-tertiary">{t('chat.queued')}</div>
+                <div className="mt-1 text-right text-[11px] text-text-tertiary">{t(p.sent ? 'chat.sentWaiting' : 'chat.queued')}</div>
               </div>
             ))}
           </div>
