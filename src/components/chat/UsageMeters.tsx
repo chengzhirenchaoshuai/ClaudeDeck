@@ -1,5 +1,5 @@
 // 用量相关的小组件：上下文占用进度条（含压缩按钮，显示在输入栏）和 5 小时/每周限额状态条。
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useChatStore, generateMessageId, type SessionMeta } from '../../stores/chatStore';
 import { useSettingsStore, getAutoCompactThreshold } from '../../stores/settingsStore';
 import { getContextUsedTokens } from '../../lib/context-usage';
@@ -130,17 +130,22 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   );
 }
 
-/** 把 unix 秒转成"还剩 Xh Ym" / "还剩 Xd Yh"这样的倒计时文案；已过期返回 null */
-function formatResetCountdown(resetsAtSec: number, t: (k: string) => string): string | null {
+/** 把 unix 秒转成"还剩 Xh Ym" / "还剩 Xd Yh"这样的倒计时文案；已过期返回 null。
+ *  compact 为 true 时去掉"还剩"前缀和空格（如"2小时14分"），用于紧跟在百分比后面的短显示。 */
+function formatResetCountdown(resetsAtSec: number, t: (k: string) => string, compact = false): string | null {
   const ms = resetsAtSec * 1000 - Date.now();
   if (ms <= 0) return null;
   const totalMin = Math.ceil(ms / 60000);
   const days = Math.floor(totalMin / 1440);
   const hours = Math.floor((totalMin % 1440) / 60);
   const mins = totalMin % 60;
-  if (days > 0) return `${t('chat.resetsIn')} ${days}${t('chat.days')} ${hours}${t('chat.hours')}`;
-  if (hours > 0) return `${t('chat.resetsIn')} ${hours}${t('chat.hours')} ${mins}${t('chat.minutes')}`;
-  return `${t('chat.resetsIn')} ${mins}${t('chat.minutes')}`;
+  const sep = compact ? '' : ' ';
+  const body = days > 0
+    ? `${days}${t('chat.days')}${sep}${hours}${t('chat.hours')}`
+    : hours > 0
+      ? `${hours}${t('chat.hours')}${sep}${mins}${t('chat.minutes')}`
+      : `${mins}${t('chat.minutes')}`;
+  return compact ? body : `${t('chat.resetsIn')} ${body}`;
 }
 
 /** 一个用量窗口（5 小时 / 7 天）的小段：有百分比就画进度条，没有(数据缺失、只知道
@@ -157,6 +162,7 @@ function RateLimitWindowView({ label, entry, t }: {
   const isRejected = percent !== null && percent >= 100;
   const colorClass = isRejected ? 'text-error' : isWarning ? 'text-warning' : 'text-text-tertiary';
   const countdown = entry.resetsAt ? formatResetCountdown(entry.resetsAt, t) : null;
+  const shortCountdown = entry.resetsAt ? formatResetCountdown(entry.resetsAt, t, true) : null;
   if (!hasPercent && !countdown) return null;
 
   return (
@@ -171,11 +177,14 @@ function RateLimitWindowView({ label, entry, t }: {
             />
           </div>
           <span className={colorClass}>{percent}%</span>
+          {shortCountdown && <span className="text-text-muted">· {shortCountdown}</span>}
         </>
       ) : (
-        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-success" />
+        <>
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-success" />
+          {countdown && <span className="text-text-tertiary">{countdown}</span>}
+        </>
       )}
-      {countdown && !hasPercent && <span className="text-text-tertiary">{countdown}</span>}
     </div>
   );
 }
@@ -187,6 +196,13 @@ export function UsageStatusBar() {
   const t = useT();
   const fiveHour = useRateLimitsStore((s) => s.fiveHour);
   const sevenDay = useRateLimitsStore((s) => s.sevenDay);
+  // 每 30 秒重渲染一次：倒计时要走动，过了重置时间的窗口也要及时隐藏，
+  // 不能只等下一条 rate_limit_event 到达才更新
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
   const live = (w?: RateLimitWindow) => (w && (!w.resetsAt || w.resetsAt * 1000 > Date.now()) ? w : undefined);
   const five = live(fiveHour);
   const seven = live(sevenDay);
