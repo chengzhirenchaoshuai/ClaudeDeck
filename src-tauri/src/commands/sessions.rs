@@ -121,7 +121,7 @@ pub(crate) fn start_sessions_watcher(app: AppHandle) {
 }
 
 /// 会话 JSONL 最后一条带 `entrypoint` 的记录的写入方：终端里的 claude 为 "cli"，
-/// 本应用（stream-json）为 "sdk-cli"。只读取文件末尾 256KB，大会话也不必整个读取。
+/// 本应用为 "claudedeck"（旧版本为 "sdk-cli"）。只读取文件末尾 256KB，大会话也不必整个读取。
 /// 找不到时返回 None。
 #[tauri::command]
 pub(crate) async fn session_last_entrypoint(path: String) -> Result<Option<String>, String> {

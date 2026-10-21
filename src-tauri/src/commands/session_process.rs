@@ -2,6 +2,11 @@
 
 use crate::*;
 
+/// 传给 CLI 的会话来源（CLAUDE_CODE_ENTRYPOINT）。stream-json 模式下 CLI 默认记为 sdk-cli，
+/// 而终端 `/resume` 列表会隐藏 sdk-cli/sdk-ts/sdk-py 的会话；改用自定义值后 App 的会话也能在终端里续接。
+/// 代价是 CLI 不再按 SDK 宿主对待本进程（与终端一致，例如会多出 Artifact 工具），控制协议与文件检查点不受影响。
+const APP_ENTRYPOINT: &str = "claudedeck";
+
 #[tauri::command]
 pub(crate) async fn start_claude_session(
     app: AppHandle,
@@ -107,6 +112,7 @@ pub(crate) async fn start_claude_session(
             .collect();
         let mut remote_env: Vec<(&str, &str)> = vec![
             ("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1"),
+            ("CLAUDE_CODE_ENTRYPOINT", APP_ENTRYPOINT),
         ];
         if !follow_cli {
             remote_env.push(("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000"));
@@ -167,6 +173,12 @@ pub(crate) async fn start_claude_session(
         resolved_env.insert(
             "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING".to_string(),
             "1".to_string(),
+        );
+
+        // 会话来源标记，见 APP_ENTRYPOINT
+        resolved_env.insert(
+            "CLAUDE_CODE_ENTRYPOINT".to_string(),
+            APP_ENTRYPOINT.to_string(),
         );
 
         // For long-context third-party routes, override Claude Code's internal compact window.

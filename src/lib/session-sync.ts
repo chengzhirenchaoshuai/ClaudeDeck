@@ -62,7 +62,7 @@ async function appProcessOf(sessionId: string): Promise<string | undefined> {
   return active.includes(stdinId) ? stdinId : undefined;
 }
 
-/** 会话最新的记录是否由外部（终端里的 claude）写入：终端为 "cli"，本应用为 "sdk-cli" */
+/** 会话最新的记录是否由外部（终端里的 claude）写入：终端为 "cli"，本应用为 "claudedeck"（旧版本为 "sdk-cli"） */
 async function writtenExternally(path: string): Promise<boolean> {
   if (isRemotePath(path)) return false;
   const entry = await bridge.sessionLastEntrypoint(path).catch(() => null);
