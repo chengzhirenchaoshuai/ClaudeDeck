@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useMemo, useEffect, type ReactNode } from 'react';
+import React, { memo, useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
@@ -346,6 +346,49 @@ const BASE_REHYPE_PLUGINS: any[] = [
   rehypeHighlight,
 ];
 
+/** 文字的显示宽度：中日韩等全角字符按 2 计，其余按 1 计 */
+function displayWidth(text: string): number {
+  let width = 0;
+  for (const ch of text.trim()) {
+    width += /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 2 : 1;
+  }
+  return width;
+}
+
+/**
+ * Markdown 表格：表头与单元格默认居中；某一列正文普遍较长（如“说明”列）时，该列单元格改为居左。
+ * 渲染后按列测量文字宽度，给长文字列的单元格加 md-cell-left。
+ */
+function MdTable({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLTableElement>(null);
+  useLayoutEffect(() => {
+    const table = ref.current;
+    if (!table) return;
+    const rows = Array.from(table.tBodies).flatMap((body) => Array.from(body.rows));
+    const widths: number[][] = [];
+    for (const row of rows) {
+      Array.from(row.cells).forEach((cell, i) => {
+        (widths[i] ??= []).push(displayWidth(cell.textContent || ''));
+      });
+    }
+    const leftCols = new Set<number>();
+    widths.forEach((col, i) => {
+      const avg = col.reduce((sum, w) => sum + w, 0) / col.length;
+      if (avg >= 16 || Math.max(...col) >= 30) leftCols.add(i);
+    });
+    for (const row of rows) {
+      Array.from(row.cells).forEach((cell, i) => {
+        cell.classList.toggle('md-cell-left', leftCols.has(i));
+      });
+    }
+  });
+  return (
+    <div className="md-table-wrap">
+      <table ref={ref} className="md-table">{children}</table>
+    </div>
+  );
+}
+
 /** Error boundary scoped to a single markdown block.
  *  A malformed message (e.g. truncated table from rate-limit) crashes only
  *  its own bubble, not the entire app. */
@@ -413,22 +456,10 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
 
   // Stable components object — only recreated if `t` or resolveBase changes
   const components = useMemo(() => ({
-    table: ({ children }: { children?: ReactNode }) => (
-      <div className="my-3 overflow-x-auto rounded-lg border border-border-subtle">
-        <table className="w-full border-collapse text-xs">{children}</table>
-      </div>
-    ),
-    thead: ({ children }: { children?: ReactNode }) => (
-      <thead className="bg-bg-secondary">{children}</thead>
-    ),
-    th: ({ children }: { children?: ReactNode }) => (
-      <th className="px-3 py-2 text-left font-medium text-text-muted
-        border-b border-border-subtle text-[11px]">{children}</th>
-    ),
-    td: ({ children }: { children?: ReactNode }) => (
-      <td className="px-3 py-2 text-text-primary border-b border-border-subtle
-        text-xs">{children}</td>
-    ),
+    // 表格样式见 App.css 的 .md-table。th / td 不接收 Markdown 的列对齐（:--- 等），统一由 MdTable 决定
+    table: ({ children }: { children?: ReactNode }) => <MdTable>{children}</MdTable>,
+    th: ({ children }: { children?: ReactNode }) => <th>{children}</th>,
+    td: ({ children }: { children?: ReactNode }) => <td>{children}</td>,
     a: ({ href, children }: { href?: string; children?: ReactNode }) => {
       // Detect false-positive autolinks: remark-gfm treats file-like text
       // (e.g. AGENTS.md, config.rs) as URLs because some extensions are
