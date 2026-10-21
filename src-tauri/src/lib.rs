@@ -1,3 +1,4 @@
+mod app_icon;
 mod app_paths;
 mod commands;
 mod protocol;
@@ -465,6 +466,15 @@ pub fn run() {
         .manage(StdinManager::new())
         .manage(WatcherManager::default())
         .plugin(tauri_plugin_process::init())
+        // DPI 变化（拖到不同缩放的显示器）后按新尺寸重新设置窗口图标
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::ScaleFactorChanged { .. } = event {
+                use tauri::Manager as _;
+                if let Some(w) = window.app_handle().get_webview_window(window.label()) {
+                    app_icon::apply(&w);
+                }
+            }
+        })
         .setup(|app| {
             // 先把旧位置的数据迁移到 %APPDATA%\ClaudeDeck，再创建主窗口：
             // 主窗口在 tauri.conf.json 里设为 create: false，由这里指定固定的 WebView 数据目录创建
@@ -483,7 +493,8 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 main_window = main_window.title(format!("{} Dev", window_config.title));
             }
-            main_window.build()?;
+            let main_window = main_window.build()?;
+            app_icon::apply(&main_window);
 
             // 监听 CLI 会话目录，让会话列表随 CLI 变化自动同步
             start_sessions_watcher(app.handle().clone());

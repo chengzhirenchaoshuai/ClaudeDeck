@@ -22,6 +22,9 @@ RENDER = 1024
 # 32px 及以下改用小号图形
 SMALL_MAX = 32
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
+# ICO（exe 资源：桌面快捷方式、任务栏、资源管理器）所有尺寸都用无底板的小号图形；
+# 改为 False 则 48px 及以上恢复带底板的完整图形
+ICO_ALL_SMALL = True
 
 EDGE_CANDIDATES = [
     Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
@@ -92,14 +95,17 @@ def main() -> None:
         tray.save(path)
         print(f"{path.relative_to(ROOT)}  64px（小号）")
 
-    # ICO：每个尺寸单独缩放，小尺寸用小号图形
-    frames = [sized(n) for n in ICO_SIZES]
+    # ICO：每个尺寸单独缩放
+    frames = [small.resize((n, n), Image.LANCZOS) if ICO_ALL_SMALL else sized(n) for n in ICO_SIZES]
     frames[-1].save(
         ICONS / "icon.ico",
         sizes=[(n, n) for n in ICO_SIZES],
         append_images=frames[:-1],
     )
     print(f"assets/icons/icon.ico  {ICO_SIZES}")
+
+    # tauri-build 不会因 icon.ico 变化而重新嵌入 exe 资源，更新 build.rs 的时间戳强制下次构建重新生成
+    (ROOT / "src-tauri" / "build.rs").touch()
 
 
 if __name__ == "__main__":

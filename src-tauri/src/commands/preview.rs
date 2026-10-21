@@ -82,6 +82,6 @@ pub(crate) async fn open_browser_window(app: AppHandle, url: String) -> Result<(
         .center()
         .data_directory(data_dir)
         .build()
-        .map(|_| ())
+        .map(|w| crate::app_icon::apply(&w))
         .map_err(|e| format!("打开浏览窗口失败: {}", e))
 }

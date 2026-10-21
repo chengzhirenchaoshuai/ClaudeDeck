@@ -76,7 +76,7 @@ gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." 
 
 ### 图标
 
-源文件在 `assets/icons/source/`：`icon.svg`（48px 及以上，带底板）和 `icon-small.svg`（32px 及以下与托盘）。修改后运行 `python scripts/gen-icons.py`（需要 Pillow 和系统自带的 Edge），会重新生成 `assets/icons/` 下的 PNG、多尺寸 `icon.ico`、`tray.png`，以及 `assets/public/` 下的 `app-icon.png`、`tray-icon.png`。
+源文件在 `assets/icons/source/`：`icon.svg`（48px 及以上，带底板）和 `icon-small.svg`（32px 及以下与托盘）。修改后运行 `python scripts/gen-icons.py`（需要 Pillow 和系统自带的 Edge），会重新生成 `assets/icons/` 下的 PNG、多尺寸 `icon.ico`、`tray.png`，以及 `assets/public/` 下的 `app-icon.png`、`tray-icon.png`。目前 `icon.ico`（exe 图标，即桌面快捷方式和任务栏）所有尺寸都用 `icon-small.svg`，由脚本里的 `ICO_ALL_SMALL` 控制。窗口图标由 `src-tauri/src/app_icon.rs` 按 DPI 从 exe 资源里取对应尺寸的帧（Tauri 默认只用 ICO 第一帧 16px，任务栏会发糊）。
 
 ### 常见问题
 
