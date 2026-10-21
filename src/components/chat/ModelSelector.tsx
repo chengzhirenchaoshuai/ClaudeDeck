@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
-import { useSettingsStore, MODEL_OPTIONS, MODEL_TIER_MAP as TIER_MAP } from '../../stores/settingsStore';
+import { CLI_DEFAULT, useSettingsStore, MODEL_OPTIONS, MODEL_TIER_MAP as TIER_MAP } from '../../stores/settingsStore';
+import { useT } from '../../lib/i18n';
 import { useChatStore, generateMessageId } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useProviderStore } from '../../stores/providerStore';
@@ -16,6 +17,7 @@ interface DisplayOption {
 }
 
 export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
+  const t = useT();
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
   const activeProvider = useProviderStore((s) => {
@@ -41,7 +43,12 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
   // Deduplicate: if multiple Claude models map to the same provider model, keep only the first.
   const displayOptions = useMemo((): DisplayOption[] => {
     if (!activeProvider || activeProvider.modelMappings.length === 0) {
-      return MODEL_OPTIONS.map((m) => ({ id: m.id, label: m.label, short: m.short, mapped: false, isExtra: false }));
+      // 没有服务商映射时提供“CLI 默认”：不传 --model，用 CLI 自己设置的模型
+      const cliDefault = t('model.cliDefault');
+      return [
+        { id: CLI_DEFAULT, label: cliDefault, short: cliDefault, mapped: false, isExtra: false },
+        ...MODEL_OPTIONS.map((m) => ({ id: m.id, label: m.label, short: m.short, mapped: false, isExtra: false })),
+      ];
     }
 
     // Official models with tier mapping.
@@ -73,7 +80,7 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
       });
 
     return [...official, ...extras];
-  }, [activeProvider]);
+  }, [activeProvider, t]);
 
   const fallbackOption = displayOptions.find((option) => option.mapped) || displayOptions[0];
 

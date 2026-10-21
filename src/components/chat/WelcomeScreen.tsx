@@ -9,7 +9,7 @@ import { bridge, onClaudeStream, onClaudeStderr } from '../../lib/tauri-bridge';
 import { setStreamListener } from '../../lib/stream-listeners';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
-import { envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../../lib/api-provider';
+import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../../lib/api-provider';
 import { useProviderStore } from '../../stores/providerStore';
 import { SetupWizard } from '../setup/SetupWizard';
 import { AiAvatar } from '../shared/AiAvatar';
@@ -82,12 +82,8 @@ async function startDraftSession(folderPath: string) {
     const session = await bridge.startSession({
       prompt: '',  // empty = pre-warm, no message sent
       cwd: folderPath,
-      model: resolvedModel,
       session_id: preWarmId,
-      thinking_level: resolveThinkingLevelForProvider(
-        selectedModel,
-        thinkingSetting,
-      ),
+      ...cliLaunchArgs(resolvedModel, resolveThinkingLevelForProvider(selectedModel, thinkingSetting)),
       provider_id: providerId || undefined,
       context_window: getContextWindowForModel(resolvedModel, contextWindowMode),
       permission_mode: mapSessionModeToPermissionMode(sessionMode),

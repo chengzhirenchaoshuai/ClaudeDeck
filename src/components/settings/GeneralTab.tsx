@@ -1,4 +1,5 @@
 import {
+  CLI_DEFAULT,
   useSettingsStore,
   MODEL_OPTIONS,
   ContextWindowMode,
@@ -53,6 +54,8 @@ export function GeneralTab() {
   const minimizeOnClose = useSettingsStore((s) => s.minimizeOnClose);
   const toggleMinimizeOnClose = useSettingsStore((s) => s.toggleMinimizeOnClose);
   const ctrlClickOpenExternally = useSettingsStore((s) => s.ctrlClickOpenExternally);
+  const followCli = useSettingsStore((s) => s.followCli);
+  const toggleFollowCli = useSettingsStore((s) => s.toggleFollowCli);
   const toggleCtrlClickOpenExternally = useSettingsStore((s) => s.toggleCtrlClickOpenExternally);
   const selectedTier = TIER_MAP[selectedModel];
   const selectedMapping = selectedTier
@@ -60,6 +63,7 @@ export function GeneralTab() {
     : undefined;
   const actualModel = selectedMapping?.providerModel || selectedModel;
   const contextWindow = getContextWindowForModel(actualModel, contextWindowMode);
+  const actualModelLabel = actualModel === CLI_DEFAULT ? t('model.cliDefault') : displayProviderModelName(actualModel);
   const compactThreshold = getAutoCompactThreshold(actualModel, contextWindowMode, autoCompactThresholdTokens);
   const tierMappings = activeProvider?.modelMappings
     .filter((m) => ['opus', 'sonnet', 'haiku'].includes(m.tier) && m.providerModel)
@@ -70,10 +74,45 @@ export function GeneralTab() {
     <div className="space-y-6">
       {/* Settings row */}
       <div className="flex items-start gap-8 flex-wrap">
+        {/* 跟随 CLI 配置 */}
+        <div className="w-full">
+          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.followCli')}</h3>
+          <button
+            onClick={toggleFollowCli}
+            className="inline-flex items-center gap-2 text-[12px] text-text-secondary
+              hover:text-text-primary transition-smooth"
+          >
+            <span className={`relative w-8 h-4 rounded-full transition-smooth border
+              ${followCli ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
+            >
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+                ${followCli ? 'right-0.5' : 'left-0.5'}`}
+              />
+            </span>
+            {t('settings.followCliToggle')}
+          </button>
+          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
+            {t('settings.followCliHint')}
+          </p>
+        </div>
+
         {/* Default Model */}
         <div>
           <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.defaultModel')}</h3>
           <div className="flex flex-wrap gap-2">
+            {!activeProvider && (
+              <button
+                onClick={() => setSelectedModel(CLI_DEFAULT)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2
+                  rounded-lg text-[13px] font-medium transition-smooth
+                  ${selectedModel === CLI_DEFAULT
+                    ? 'bg-accent/10 text-accent border border-accent/30'
+                    : 'text-text-muted hover:bg-bg-secondary border border-border-subtle'
+                  }`}
+              >
+                {t('model.cliDefault')}
+              </button>
+            )}
             {MODEL_OPTIONS.map((model) => (
               <button
                 key={model.id}
@@ -101,7 +140,7 @@ export function GeneralTab() {
             ))}
           </div>
           <div className="mt-2 text-xs text-text-tertiary leading-relaxed">
-            Actual model: <span className="font-mono text-text-muted">{displayProviderModelName(actualModel)}</span>
+            Actual model: <span className="font-mono text-text-muted">{actualModelLabel}</span>
             {activeProvider && tierMappings && (
               <span className="ml-2">Mappings: {tierMappings}</span>
             )}
@@ -128,7 +167,7 @@ export function GeneralTab() {
             ))}
           </div>
           <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
-            当前模型（{displayProviderModelName(actualModel)}）的上下文窗口：{contextWindow.toLocaleString()} tokens
+            当前模型（{actualModelLabel}）的上下文窗口：{contextWindow.toLocaleString()} tokens
             （{contextWindowMode === 'large1m' ? '已声明 1M' : '按模型自动识别'}）；
             自动 compact 阈值：{compactThreshold.toLocaleString()} tokens。
             如果当前供应商路由实际支持 1M 而这里显示 200K，请选择“声明 1M”。
@@ -178,6 +217,7 @@ export function GeneralTab() {
             </div>
           </div>
           <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
+            {followCli && <>{t('settings.followCliCompactHint')}<br /></>}
             这个值会直接决定自动发送 `/compact` 的时机；改完后对当前会话立即生效。
             选择“自动”时，阈值随所选模型变化，取上下文窗口的 80%（200K 为 160K，1M 为 800K）。
           </p>

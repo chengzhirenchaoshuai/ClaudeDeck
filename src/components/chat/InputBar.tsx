@@ -16,7 +16,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
 import { SlashCommandPopover, getFilteredCommandList } from './SlashCommandPopover';
 import { useCommandStore } from '../../stores/commandStore';
-import { envFingerprint, resolveModelForProvider, resolveModelOrError, resolveThinkingLevelForProvider } from '../../lib/api-provider';
+import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveModelOrError, resolveThinkingLevelForProvider } from '../../lib/api-provider';
 import { useProviderStore } from '../../stores/providerStore';
 import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
 import { stripAnsi } from '../../lib/strip-ansi';
@@ -447,7 +447,16 @@ export function InputBar() {
       }
     }
 
-    if (selectedSkills.length > 0) {
+    // 跟随 CLI 配置时，CLI 自己认识的技能（不在本应用额外添加的技能目录里）按 /技能名 交给 CLI 加载，
+    // 与终端里的调用方式一致；多个技能或额外目录里的技能 CLI 处理不了，仍把技能全文拼进消息。
+    const normalizePath = (p: string) => p.replace(/[\\/]+/g, '/').toLowerCase();
+    const extraSkillRoots = useSettingsStore.getState().skillDirectories.map((dir) => `${normalizePath(dir)}/`);
+    const cliKnownSkill = selectedSkills.length === 1
+      && !extraSkillRoots.some((root) => normalizePath(selectedSkills[0].path || '').startsWith(root));
+    if (useSettingsStore.getState().followCli && cliKnownSkill) {
+      const skillName = selectedSkills[0].name.startsWith('/') ? selectedSkills[0].name : `/${selectedSkills[0].name}`;
+      text = text ? `${skillName} ${text}` : skillName;
+    } else if (selectedSkills.length > 0) {
       try {
         const loadedSkills = await Promise.all(selectedSkills.map(async (skill) => ({
           skill,
@@ -689,14 +698,13 @@ export function InputBar() {
         const session = await bridge.startSession({
           prompt: text,
           cwd,
-          model: liveResolvedModel,
           session_id: preGeneratedId,
           resume_session_id: existingSessionId || undefined,
           // 回退后的第一次启动：续接到回退点并分叉出新会话，模型只记得回退点之前的历史
           resume_session_at: existingSessionId
             ? getActiveTabState().sessionMeta.resumeAtUuid || undefined
             : undefined,
-          thinking_level: liveThinkingLevel,
+          ...cliLaunchArgs(liveResolvedModel, liveThinkingLevel),
           session_mode: (liveSessionMode === 'ask' || liveSessionMode === 'plan') ? liveSessionMode : undefined,
           provider_id: liveProviderId || undefined,
           context_window: liveContextWindow,

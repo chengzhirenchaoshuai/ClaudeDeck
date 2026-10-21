@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useSessionStore } from './sessionStore';
-import { useSettingsStore, mapSessionModeToPermissionMode, takeSkipModeSync } from './settingsStore';
+import { CLI_DEFAULT, useSettingsStore, mapSessionModeToPermissionMode, takeSkipModeSync } from './settingsStore';
 import { bridge } from '../lib/tauri-bridge';
 import type { FileAttachment } from '../hooks/useFileAttachments';
 
@@ -628,5 +628,19 @@ useSettingsStore.subscribe((state, prevState) => {
   if (!stdinId) return;
   bridge.setPermissionMode(stdinId, cliMode).catch((err: unknown) => {
     console.error('[ClaudeDeck] Failed to set permission mode:', err);
+  });
+});
+
+// --- 跟随 CLI 配置时，模型 / 思考档位的临时修改只对所在会话生效 ---
+// 切换到某个标签页时，恢复它启动 CLI 时用的选择；新会话（没有快照）回到“CLI 默认”。
+useSessionStore.subscribe((state, prevState) => {
+  if (state.selectedSessionId === prevState.selectedSessionId) return;
+  if (!useSettingsStore.getState().followCli) return;
+  const meta = state.selectedSessionId
+    ? useChatStore.getState().getTab(state.selectedSessionId)?.sessionMeta
+    : undefined;
+  useSettingsStore.setState({
+    selectedModel: meta?.snapshotModel ?? CLI_DEFAULT,
+    thinkingLevel: meta?.snapshotThinking ?? CLI_DEFAULT,
   });
 });

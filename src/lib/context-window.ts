@@ -1,7 +1,7 @@
 /**
  * 计算某个会话实际的上下文窗口（上下文占用条、运行中提示、自动压缩阈值共用）。
  */
-import { getContextWindowForModel, type ContextWindowMode } from '../stores/settingsStore';
+import { CLI_DEFAULT, getContextWindowForModel, type ContextWindowMode } from '../stores/settingsStore';
 import type { SessionMeta } from '../stores/chatStore';
 import { resolveModelForProvider } from './api-provider';
 import { getContextUsedTokens } from './context-usage';
@@ -27,10 +27,13 @@ export function resolveSessionContextWindow(
   selectedModel: string,
   contextWindowMode: ContextWindowMode,
 ): SessionContextWindow {
-  const model = meta.model
-    || meta.spawnedModel
-    || meta.snapshotModel
-    || resolveModelForProvider(selectedModel);
+  // “CLI 默认”不是真实模型名，跳过，等 CLI 的 init 事件报告实际模型
+  const real = (m?: string) => (m && m !== CLI_DEFAULT ? m : undefined);
+  const model = real(meta.model)
+    || real(meta.spawnedModel)
+    || real(meta.snapshotModel)
+    || real(resolveModelForProvider(selectedModel))
+    || '';
   const mode = meta.snapshotContextWindowMode ?? contextWindowMode;
   const window = getContextWindowForModel(model, mode);
   if (getContextUsedTokens(meta) > window) {

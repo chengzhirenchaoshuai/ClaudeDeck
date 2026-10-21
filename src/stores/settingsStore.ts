@@ -41,7 +41,9 @@ export function mapSessionModeToPermissionMode(mode: SessionMode): CliPermission
     case 'bypass': return 'bypassPermissions';
   }
 }
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** 模型 / 思考档位选“CLI 默认”时的值：启动 CLI 时不传对应参数，沿用 CLI 自己的配置 */
+export const CLI_DEFAULT = 'cli-default';
+export type ThinkingLevel = typeof CLI_DEFAULT | 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ContextWindowMode = 'default' | 'large1m';
 
 function defaultAutoCompactThreshold(mode: ContextWindowMode): number {
@@ -159,6 +161,8 @@ interface SettingsState {
   minimizeOnClose: boolean;
   /** 在会话中加载 MCP 服务器（默认关闭：加载 MCP 会拖慢每个会话的启动） */
   enableMcp: boolean;
+  /** 跟随 CLI 配置（默认开启）：不注入 MCP、思考、输出上限、代理等参数，行为与终端里的 claude 一致 */
+  followCli: boolean;
   /** Whether Ctrl+Click on a file opens it with the system default app */
   ctrlClickOpenExternally: boolean;
   /** Whether to show image thumbnail previews in chat for images < 50MB */
@@ -219,6 +223,7 @@ interface SettingsState {
   toggleCtrlEnterToSend: () => void;
   toggleMinimizeOnClose: () => void;
   toggleEnableMcp: () => void;
+  toggleFollowCli: () => void;
   /** 打开/关闭用量面板；传入 tab 时同时切到该 Tab（仅在从关闭状态打开时生效） */
   toggleUsage: (tab?: 'usage' | 'activity') => void;
   /** 面板打开时手动切换 Tab */
@@ -265,7 +270,7 @@ export const useSettingsStore = create<SettingsState>()(
       agentPanelOpen: false,
       workingDirectory: '',
       activeEnv: 'local',
-      selectedModel: 'claude-sonnet-4-6',
+      selectedModel: CLI_DEFAULT,
       sessionMode: 'bypass',
       locale: 'zh',
       fontSize: 18,
@@ -273,7 +278,7 @@ export const useSettingsStore = create<SettingsState>()(
       monoFontFollowsInterface: true,
       sidebarWidth: 280,
       setupCompleted: false,
-      thinkingLevel: 'medium' as ThinkingLevel,
+      thinkingLevel: CLI_DEFAULT as ThinkingLevel,
       contextWindowMode: 'default',
       autoCompactThresholdTokens: null,
       updateAvailable: false,
@@ -288,6 +293,7 @@ export const useSettingsStore = create<SettingsState>()(
       ctrlEnterToSend: false,
       minimizeOnClose: true,
       enableMcp: false,
+      followCli: true,
       ctrlClickOpenExternally: false,
       showImageThumbnails: false,
       skillDirectories: [],
@@ -421,6 +427,9 @@ export const useSettingsStore = create<SettingsState>()(
       toggleEnableMcp: () =>
         set((state) => ({ enableMcp: !state.enableMcp })),
 
+      toggleFollowCli: () =>
+        set((state) => ({ followCli: !state.followCli })),
+
       toggleUsage: (tab) => set((state) => ({
         usageOpen: !state.usageOpen,
         usageModalTab: !state.usageOpen && tab ? tab : state.usageModalTab,
@@ -449,7 +458,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'tokenicode-settings',
-      version: 16,
+      version: 17,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -533,6 +542,12 @@ export const useSettingsStore = create<SettingsState>()(
           const old = persisted.autoCompactThresholdTokens;
           if (old === 160_000 || old === 800_000) persisted.autoCompactThresholdTokens = null;
         }
+        if (version < 17) {
+          // 新增“跟随 CLI 配置”，默认开启；模型与思考档位改为跟随 CLI 自己的设置
+          persisted.followCli = true;
+          persisted.selectedModel = CLI_DEFAULT;
+          persisted.thinkingLevel = CLI_DEFAULT;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -563,6 +578,7 @@ export const useSettingsStore = create<SettingsState>()(
         ctrlEnterToSend: state.ctrlEnterToSend,
         minimizeOnClose: state.minimizeOnClose,
         enableMcp: state.enableMcp,
+        followCli: state.followCli,
         customModelPrices: state.customModelPrices,
         ctrlClickOpenExternally: state.ctrlClickOpenExternally,
         showImageThumbnails: state.showImageThumbnails,

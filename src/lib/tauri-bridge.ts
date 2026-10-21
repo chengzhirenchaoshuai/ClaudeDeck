@@ -25,6 +25,8 @@ export interface StartSessionParams {
   enable_mcp?: boolean;
   /** 回退：续接时只保留到该助手消息（uuid）为止的历史，并分叉出新会话 */
   resume_session_at?: string;
+  /** 跟随 CLI 配置：不注入 MCP、思考、输出上限、代理等参数；model / thinking_level 不传表示 CLI 默认 */
+  follow_cli?: boolean;
   /** Permission mode for CLI control protocol.
    *  "acceptEdits" | "default" | "plan" | "bypassPermissions"
    *  When not "bypassPermissions", enables structured permission requests via SDK protocol. */
@@ -392,6 +394,10 @@ export const bridge = {
   loadSession: (path: string) =>
     invoke<any[]>('load_session', { path }),
 
+  /** 增量读取本机会话：从字节偏移 offset 读到末尾；reset 为 true 表示是从头读取的，需丢弃旧缓存 */
+  loadSessionTail: (path: string, offset: number) =>
+    invoke<{ records: any[]; end: number; reset: boolean }>('load_session_tail', { path, offset }),
+
   getSessionTokens: (sessionId: string) =>
     invoke<{
       totalInputTokens: number;
@@ -473,6 +479,10 @@ export const bridge = {
   /** 远程项目里拖入的本机文件：上传到远端 <项目>/.tokenicode/tmp，返回远端路径 */
   uploadTempFileToRemote: (srcPath: string, cwd: string) =>
     invoke<string>('upload_temp_file_to_remote', { srcPath, cwd }),
+
+  /** 会话 JSONL 最后的写入方：'cli'（终端）或 'sdk-cli'（本应用），找不到为 null */
+  sessionLastEntrypoint: (path: string) =>
+    invoke<string | null>('session_last_entrypoint', { path }),
 
   getFileSize: (path: string) =>
     invoke<number>('get_file_size', { path }),

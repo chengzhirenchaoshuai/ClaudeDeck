@@ -1,7 +1,7 @@
 // 输入栏工具行上的小控件：思考等级选择器、计划面板开关。
 import { useState, useRef, useEffect } from 'react';
 import { useActiveTab } from '../../stores/chatStore';
-import { useSettingsStore, type ThinkingLevel } from '../../stores/settingsStore';
+import { CLI_DEFAULT, useSettingsStore, type ThinkingLevel } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
 import { useProviderStore } from '../../stores/providerStore';
 import { PROVIDER_PRESETS } from '../../lib/provider-presets';
@@ -9,6 +9,7 @@ import { usePlanPanelStore } from './PlanPanel';
 
 /** Thinking effort level configuration data */
 const THINK_LEVELS: { id: ThinkingLevel; labelKey: string }[] = [
+  { id: CLI_DEFAULT, labelKey: 'think.cliDefault' },
   { id: 'off', labelKey: 'think.off' },
   { id: 'low', labelKey: 'think.low' },
   { id: 'medium', labelKey: 'think.medium' },
@@ -42,7 +43,7 @@ export function ThinkLevelSelector({ disabled = false }: { disabled?: boolean })
   }, [open]);
 
   const isOff = thinkingLevel === 'off';
-  const current = THINK_LEVELS.find((l) => l.id === thinkingLevel) || THINK_LEVELS[3];
+  const current = THINK_LEVELS.find((l) => l.id === thinkingLevel) || THINK_LEVELS[0];
 
   return (
     <div ref={ref} className={`relative flex-shrink-0 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>

@@ -6,7 +6,7 @@ import { resolveAgentId } from '../../../stores/agentStore';
 import { useProviderStore } from '../../../stores/providerStore';
 import { bridge, onClaudeStream, onClaudeStderr } from '../../../lib/tauri-bridge';
 import { releaseStreamListener, setStreamListener } from '../../../lib/stream-listeners';
-import { envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../../../lib/api-provider';
+import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../../../lib/api-provider';
 import { t } from '../../../lib/i18n';
 import { getContextUsedTokens } from '../../../lib/context-usage';
 import { type StreamMessage, type ResultMessage } from '../../../lib/stream-message';
@@ -142,12 +142,11 @@ function retryAfterThinkingSignatureError(ctx: StreamContext, msg: ResultMessage
           const session = await bridge.startSession({
             prompt: retryText,
             cwd,
-            model: retryResolvedModel,
             session_id: retryId,
             // No resume_session_id — fresh start to avoid thinking signature issue
-            thinking_level: resolveThinkingLevelForProvider(
-              selectedModel,
-              useSettingsStore.getState().thinkingLevel,
+            ...cliLaunchArgs(
+              retryResolvedModel,
+              resolveThinkingLevelForProvider(selectedModel, useSettingsStore.getState().thinkingLevel),
             ),
             session_mode: (sessionMode === 'ask' || sessionMode === 'plan') ? sessionMode : undefined,
             provider_id: useProviderStore.getState().activeProviderId || undefined,
@@ -415,7 +414,8 @@ function maybeAutoCompact(ctx: StreamContext, msg: ResultMessage): boolean {
     useSettingsStore.getState().autoCompactThresholdTokens,
   );
   // autoCompactFiredRef 属于 InputBar 实例、不分标签页，自动压缩只对前台生效
-  if (isForeground && resultContextTokens > autoCompactThreshold && !autoCompactFiredRef.current && compactStdinId && msg.subtype === 'success') {
+  // 跟随 CLI 配置时交给 CLI 自带的自动压缩，App 不再额外发 /compact
+  if (!useSettingsStore.getState().followCli && isForeground && resultContextTokens > autoCompactThreshold && !autoCompactFiredRef.current && compactStdinId && msg.subtype === 'success') {
     autoCompactFiredRef.current = true;
     console.log('[ClaudeDeck] Auto-compact triggered:', { contextTokens: resultContextTokens, threshold: autoCompactThreshold });
     const compactMsgId = generateMessageId();

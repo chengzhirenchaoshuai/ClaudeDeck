@@ -29,10 +29,14 @@ pub(crate) async fn start_claude_session(
         "--replay-user-messages".to_string(),
     ];
 
+    // 跟随 CLI 配置时不注入任何影响模型行为的参数与环境变量
+    let follow_cli = params.follow_cli.unwrap_or(false);
+
     // 默认跳过全部 MCP 服务器以加快冷启动：MCP 服务器（chrome-devtools、codex 等）
     // 需要逐个初始化，CLI 才会接受输入，可能多出 20-30 秒。
     // 用户在“MCP 服务器”页打开“会话中加载 MCP”后，按 CLI 自身的配置加载。
-    if !params.enable_mcp.unwrap_or(false) {
+    // 跟随 CLI 时始终按 CLI 自身配置加载。
+    if !follow_cli && !params.enable_mcp.unwrap_or(false) {
         args.push("--strict-mcp-config".to_string());
     }
 
@@ -77,12 +81,21 @@ pub(crate) async fn start_claude_session(
     let remote_target = commands::remote::parse_remote_uri(&params.cwd);
 
     // Extended thinking + effort level
-    let thinking_level = params.thinking_level.as_deref().unwrap_or("high");
-    let settings_obj = serde_json::json!({
-        "alwaysThinkingEnabled": thinking_level != "off",
-    });
-    args.push("--settings".to_string());
-    args.push(settings_obj.to_string());
+    // 跟随 CLI 且未手动选择档位时为 None：不传 --settings、不设 effort，沿用 CLI 配置
+    let thinking_level: Option<&str> = match params.thinking_level.as_deref() {
+        Some(level) => Some(level),
+        None if follow_cli => None,
+        None => Some("high"),
+    };
+    if let Some(level) = thinking_level {
+        let settings_obj = serde_json::json!({
+            "alwaysThinkingEnabled": level != "off",
+        });
+        args.push("--settings".to_string());
+        args.push(settings_obj.to_string());
+    }
+    // 需要注入的 effort 档位（关闭思考时不注入）
+    let effort_level = thinking_level.filter(|level| *level != "off");
     let (mut child, claude_bin, env_count) = if let Some((host_id, remote_path)) = remote_target {
         let host = commands::remote::find_host(&host_id)?;
         // 去掉本机专用的 --strict-mcp-config（远端沿用自己的 MCP 配置）。
@@ -92,13 +105,14 @@ pub(crate) async fn start_claude_session(
             .filter(|arg| arg.as_str() != "--strict-mcp-config")
             .cloned()
             .collect();
-        let effort = thinking_level.to_string();
         let mut remote_env: Vec<(&str, &str)> = vec![
             ("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING", "1"),
-            ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000"),
         ];
-        if thinking_level != "off" {
-            remote_env.push(("CLAUDE_CODE_EFFORT_LEVEL", effort.as_str()));
+        if !follow_cli {
+            remote_env.push(("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000"));
+        }
+        if let Some(effort) = effort_level {
+            remote_env.push(("CLAUDE_CODE_EFFORT_LEVEL", effort));
         }
         let remote_cmd = commands::remote::build_remote_claude_command(
             &remote_path,
@@ -131,19 +145,21 @@ pub(crate) async fn start_claude_session(
         args.extend(provider_extra_args);
 
         // Inject effort level env var for non-off thinking levels
-        if thinking_level != "off" {
+        if let Some(effort) = effort_level {
             resolved_env.insert(
                 "CLAUDE_CODE_EFFORT_LEVEL".to_string(),
-                thinking_level.to_string(),
+                effort.to_string(),
             );
         }
 
         // Raise the per-turn output token cap from the CLI default (32K) to 64K.
         // This prevents "response exceeded the 32000 output token maximum" errors
         // when generating large files (e.g. HTML presentations).
-        resolved_env
-            .entry("CLAUDE_CODE_MAX_OUTPUT_TOKENS".to_string())
-            .or_insert_with(|| "64000".to_string());
+        if !follow_cli {
+            resolved_env
+                .entry("CLAUDE_CODE_MAX_OUTPUT_TOKENS".to_string())
+                .or_insert_with(|| "64000".to_string());
+        }
 
         // Enable CLI-managed file checkpoints for rewind functionality.
         // With --replay-user-messages, user messages in stream output carry a uuid
@@ -161,7 +177,8 @@ pub(crate) async fn start_claude_session(
                 if m.contains("mimo") || m.contains("[1m]") { 1_000_000 } else { 200_000 }
             }).unwrap_or(200_000)
         });
-        if declared_context_window >= 1_000_000 {
+        // 跟随 CLI 时由 CLI 自己的 modelSettings.autoCompactWindow 决定
+        if !follow_cli && declared_context_window >= 1_000_000 {
             resolved_env.insert(
                 "CLAUDE_CODE_AUTO_COMPACT_WINDOW".to_string(),
                 declared_context_window.to_string(),
@@ -177,10 +194,13 @@ pub(crate) async fn start_claude_session(
         // Without this, MSYS2 converts Windows paths (e.g. F:\秀\input\file.xlsx)
         // to Unix-style paths (/f/秀/input/file.xlsx), which breaks file operations
         // especially with non-ASCII (Chinese) characters in paths.
-        resolved_env.entry("MSYS_NO_PATHCONV".to_string())
-            .or_insert_with(|| "1".to_string());
-        resolved_env.entry("MSYS2_ARG_CONV_EXCL".to_string())
-            .or_insert_with(|| "*".to_string());
+        // 跟随 CLI 时不设，Bash 工具的路径转换行为与终端一致。
+        if !follow_cli {
+            resolved_env.entry("MSYS_NO_PATHCONV".to_string())
+                .or_insert_with(|| "1".to_string());
+            resolved_env.entry("MSYS2_ARG_CONV_EXCL".to_string())
+                .or_insert_with(|| "*".to_string());
+        }
 
         // On Windows, auto-detect git-bash and inject CLAUDE_CODE_GIT_BASH_PATH
         // so Claude Code CLI can find bash.exe without user manual configuration.
@@ -198,7 +218,8 @@ pub(crate) async fn start_claude_session(
         }
 
         // If still no proxy env vars, try system proxy + port probing
-        {
+        // 跟随 CLI 时不探测，直接继承系统环境变量（服务商自带的代理仍然生效）。
+        if !follow_cli {
             let has_proxy = resolved_env.keys().any(|k| {
                 let kl = k.to_lowercase();
                 kl == "https_proxy" || kl == "http_proxy" || kl == "all_proxy"

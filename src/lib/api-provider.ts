@@ -1,7 +1,7 @@
 import { useProviderStore } from '../stores/providerStore';
 import { PROVIDER_PRESETS } from './provider-presets';
 import { isRemotePath } from './tauri-bridge';
-import { MODEL_TIER_MAP as TIER_MAP, useSettingsStore, type ModelId } from '../stores/settingsStore';
+import { CLI_DEFAULT, MODEL_TIER_MAP as TIER_MAP, useSettingsStore, type ModelId } from '../stores/settingsStore';
 import {
   DEEPSEEK_V4_FLASH,
   DEEPSEEK_V4_PRO,
@@ -113,5 +113,22 @@ export function envFingerprint(): string {
     updatedAt: provider?.updatedAt ?? 0,
     // MCP 开关只能在进程启动时决定，切换后旧进程需要重启
     enableMcp: useSettingsStore.getState().enableMcp,
+    followCli: useSettingsStore.getState().followCli,
   });
+}
+
+/**
+ * 启动 CLI 时与模型 / 思考档位相关的参数。“CLI 默认”转成不传，由 CLI 自己的配置决定。
+ * resolvedModel、thinkingLevel 应是 resolveModelForProvider / resolveThinkingLevelForProvider 的结果。
+ */
+export function cliLaunchArgs(resolvedModel: string, thinkingLevel: string): {
+  model?: string;
+  thinking_level?: string;
+  follow_cli: boolean;
+} {
+  return {
+    model: resolvedModel && resolvedModel !== CLI_DEFAULT ? resolvedModel : undefined,
+    thinking_level: thinkingLevel !== CLI_DEFAULT ? thinkingLevel : undefined,
+    follow_cli: useSettingsStore.getState().followCli,
+  };
 }

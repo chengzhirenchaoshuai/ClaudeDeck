@@ -156,4 +156,8 @@ pub struct StartSessionParams {
     /// 回退用：续接（resume_session_id）时只保留到该消息（含）之前的历史，并分叉出新会话。
     /// 值为 JSONL 里助手消息记录的 uuid。
     pub resume_session_at: Option<String>,
+    /// 跟随 CLI 配置：只保留 App 通信必需的参数，MCP、思考档位、输出上限、代理等全部交给
+    /// CLI 自己的 settings.json 与系统环境决定，使行为与终端里直接运行 claude 一致。
+    /// 此时 model / thinking_level 为 None 表示“CLI 默认”，不传对应参数。
+    pub follow_cli: Option<bool>,
 }
