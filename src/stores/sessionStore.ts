@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { bridge, SessionListItem, ContentSearchResult, RemoteHost } from '../lib/tauri-bridge';
+import { bridge, SessionListItem, ContentSearchResult, RemoteHost, type TerminalSessionStatus } from '../lib/tauri-bridge';
 import { useSettingsStore } from './settingsStore';
 
 /** 从 ssh://<主机>/<路径> 中取出主机 id；本机路径返回 undefined */
@@ -88,6 +88,8 @@ interface SessionState {
   runningSessions: Set<string>;
   /** 各会话仍在运行的 CLI 后台任务数（后台 Bash、Monitor、后台子代理等，不含 CLI 内部任务），没有则不在表中 */
   backgroundTasks: Map<string, number>;
+  /** 终端里直接运行的 claude 会话（本机与当前远程主机）：会话 ID → busy（正在回复）/ idle（等待输入） */
+  terminalSessions: Map<string, TerminalSessionStatus>;
   /** 未读会话（任务结束时用户不在该会话窗口），持久化在本地存储 */
   unreadSessions: Set<string>;
   /** Map stdinId → tabId so stream events can be routed to the correct session */
@@ -114,6 +116,8 @@ interface SessionState {
   isSessionRunning: (sessionId: string) => boolean;
   /** 记录会话当前的后台任务数，0 表示没有 */
   setBackgroundTasks: (sessionId: string, count: number) => void;
+  /** 用轮询结果整体替换终端会话状态，内容没变时不触发更新 */
+  setTerminalSessions: (next: Map<string, TerminalSessionStatus>) => void;
   /** Register a stdinId → tabId mapping (persisted to sessionStorage) */
   registerStdinTab: (stdinId: string, tabId: string) => void;
   /** Remove a stdinId mapping on process exit (cleans sessionStorage too) */
@@ -178,6 +182,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   customPreviews: loadCustomPreviewsSync(),
   runningSessions: new Set<string>(),
   backgroundTasks: new Map<string, number>(),
+  terminalSessions: new Map<string, TerminalSessionStatus>(),
   unreadSessions: loadUnreadSync(),
   stdinToTab: loadStdinToTabSync(),
   contentSearchResults: new Map<string, ContentSearchResult>(),
@@ -325,6 +330,12 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     if (count > 0) next.set(sessionId, count);
     else next.delete(sessionId);
     return { backgroundTasks: next };
+  }),
+
+  setTerminalSessions: (next) => set((state) => {
+    const prev = state.terminalSessions;
+    if (prev.size === next.size && [...next].every(([id, st]) => prev.get(id) === st)) return {};
+    return { terminalSessions: next };
   }),
 
   markUnread: (sessionId) => set((state) => {

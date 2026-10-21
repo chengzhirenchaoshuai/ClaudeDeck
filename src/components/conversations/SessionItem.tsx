@@ -95,6 +95,8 @@ export const SessionItem = memo(function SessionItem({
 }: SessionItemProps) {
   const t = useT();
   const backgroundCount = useSessionStore((s) => s.backgroundTasks.get(session.id) ?? 0);
+  // 终端里直接运行的 claude（不经本应用）：busy 正在回复，idle 等待输入
+  const terminalStatus = useSessionStore((s) => s.terminalSessions.get(session.id));
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -173,8 +175,8 @@ export const SessionItem = memo(function SessionItem({
         }`}
     >
       {/* 状态指示放在左侧缩进区（pl-7）里，不占标题行宽度，出现/消失也不会挤动标题：
-          进行中显示转圈，否则未读显示圆点 */}
-      {(isRunning || backgroundCount > 0 || isUnread) && (
+          进行中显示转圈，否则未读显示圆点；终端里运行的会话用紫色区分 */}
+      {(isRunning || backgroundCount > 0 || terminalStatus || isUnread) && (
         <span className="absolute left-0 top-1.5 w-7 h-4 flex items-center justify-center">
           {isRunning ? (
             <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-accent/30 border-t-accent animate-spin" />
@@ -182,8 +184,14 @@ export const SessionItem = memo(function SessionItem({
             // 本轮已结束、CLI 仍有后台任务在跑：用绿色转圈与前台运行区分
             <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-success/30 border-t-success animate-spin"
               title={t('conv.backgroundTasks').replace('{n}', String(backgroundCount))} />
-          ) : (
+          ) : terminalStatus === 'busy' ? (
+            <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-violet-500/30 border-t-violet-500 animate-spin"
+              title={t('conv.terminalBusy')} />
+          ) : isUnread ? (
             <span className="w-1.5 h-1.5 rounded-full bg-accent" title={t('conv.unread')} />
+          ) : (
+            // 终端里开着、等待输入
+            <span className="w-2 h-2 rounded-full border-[1.5px] border-violet-500/70" title={t('conv.terminalIdle')} />
           )}
         </span>
       )}

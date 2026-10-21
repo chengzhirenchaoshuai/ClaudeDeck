@@ -24,6 +24,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
+import { useTerminalSessions } from './hooks/useTerminalSessions';
 import {
   getContextInputTokens,
   getContextOutputTokens,
@@ -155,6 +156,7 @@ function App() {
 
   // 会话结束时不在该会话窗口，则标记为未读
   useUnreadSessions();
+  useTerminalSessions();
 
   // TK-329: On app startup (incl. browser F5 refresh), handle active backend processes.
   // - Processes WITH stdinToTab mapping: re-register event listeners and restore streaming state

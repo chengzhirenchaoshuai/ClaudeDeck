@@ -812,6 +812,62 @@ pub async fn list_remote_sessions(host_id: String) -> Result<Vec<Value>, String>
     Ok(sessions)
 }
 
+/// 列出远端终端里正在运行的 claude 会话的脚本：读取 <配置目录>/sessions/<pid>.json，
+/// 只保留进程仍存活、且创建时间与 procStart 一致的条目（排除残留文件和 PID 复用）。
+const LIST_TERMINAL_SESSIONS_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$root = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$dir = Join-Path $root 'sessions'
+$out = @()
+if (Test-Path -LiteralPath $dir) {
+  foreach ($f in Get-ChildItem -LiteralPath $dir -Filter *.json -File) {
+    try { $j = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
+    if (-not $j.pid -or -not $j.sessionId) { continue }
+    $p = Get-Process -Id ([int]$j.pid) -ErrorAction SilentlyContinue
+    if (-not $p) { continue }
+    if ($j.procStart) {
+      $created = $null
+      try { $created = [string]$p.StartTime.ToFileTimeUtc() } catch {}
+      if ($created -and $created -ne [string]$j.procStart) { continue }
+    }
+    $out += [pscustomobject]@{ pid = [int64]$j.pid; sessionId = [string]$j.sessionId; status = [string]$j.status; entrypoint = [string]$j.entrypoint }
+  }
+}
+Out-AsciiJson (ConvertTo-Json -InputObject @($out) -Compress)
+"#;
+
+/// 列出远端终端里正在运行的 claude 会话及其状态（与本机的 list_terminal_sessions 返回格式相同）。
+#[tauri::command]
+pub async fn list_remote_terminal_sessions(host_id: String) -> Result<Vec<Value>, String> {
+    let host = find_host(&host_id)?;
+    let (stdout, stderr, code) = run_remote(
+        &host,
+        &powershell_command(LIST_TERMINAL_SESSIONS_SCRIPT),
+        Duration::from_secs(30),
+    )
+    .await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("读取远端终端会话失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    if text.is_empty() {
+        return Ok(vec![]);
+    }
+    let items: Vec<Value> =
+        serde_json::from_str(text).map_err(|e| format!("解析远端终端会话失败: {}", e))?;
+    // 存活校验已在远端做过，这里只按入口过滤并统一字段
+    Ok(items
+        .iter()
+        .filter_map(|item| crate::commands::sessions::terminal_session_entry(item).map(|(_, _, v)| v))
+        .collect())
+}
+
 /// 本地增量缓存文件所在目录：<数据目录>/cache/remote_cache/
 fn remote_cache_dir() -> Result<std::path::PathBuf, String> {
     let dir = crate::app_paths::cache_path("remote_cache")?;

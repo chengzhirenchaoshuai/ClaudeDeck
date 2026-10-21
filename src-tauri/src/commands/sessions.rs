@@ -150,6 +150,79 @@ pub(crate) async fn session_last_entrypoint(path: String) -> Result<Option<Strin
     .await
 }
 
+/// 按 PID 与进程创建时间（FILETIME，与 CLI 写入的 procStart 同一单位）判断进程是否仍在运行。
+/// 比较创建时间是为了排除 PID 被系统回收给其它进程的情况。
+fn process_alive(pid: u32, proc_start: Option<u64>) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut code = 0u32;
+        let running = GetExitCodeProcess(handle, &mut code) != 0 && code == STILL_ACTIVE as u32;
+        let empty = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let (mut created, mut exited, mut kernel, mut user) = (empty, empty, empty, empty);
+        let times_ok = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) != 0;
+        CloseHandle(handle);
+        if !running {
+            return false;
+        }
+        match proc_start {
+            Some(expected) if times_ok => {
+                ((created.dwHighDateTime as u64) << 32 | created.dwLowDateTime as u64) == expected
+            }
+            _ => true,
+        }
+    }
+}
+
+/// 从 CLI 的进程状态文件（<配置目录>/sessions/<pid>.json）中取出终端会话的状态。
+/// 本应用启动的进程（entrypoint 为 claudedeck，旧版本为 sdk-*）由应用自己跟踪，这里跳过。
+pub(crate) fn terminal_session_entry(record: &Value) -> Option<(u32, Option<u64>, Value)> {
+    let entrypoint = record["entrypoint"].as_str().unwrap_or("");
+    if entrypoint == "claudedeck" || entrypoint.starts_with("sdk") {
+        return None;
+    }
+    let pid = u32::try_from(record["pid"].as_u64()?).ok()?;
+    let session_id = record["sessionId"].as_str().filter(|s| !s.is_empty())?;
+    // procStart 是字符串形式的 FILETIME
+    let proc_start = match &record["procStart"] {
+        Value::String(s) => s.parse::<u64>().ok(),
+        v => v.as_u64(),
+    };
+    let status = record["status"].as_str().unwrap_or("idle");
+    Some((pid, proc_start, serde_json::json!({ "sessionId": session_id, "status": status })))
+}
+
+/// 列出本机终端里正在运行的 claude 会话及其状态（busy：正在回复，idle：等待输入）。
+/// 只返回进程仍然存活的条目：进程被强制结束时状态文件可能残留。
+#[tauri::command]
+pub(crate) async fn list_terminal_sessions() -> Result<Vec<Value>, String> {
+    let dir = claude_config_dir()?.join("sessions");
+    run_blocking(move || {
+        let Ok(entries) = std::fs::read_dir(&dir) else { return Ok(vec![]) };
+        let mut result = vec![];
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            let Ok(record) = serde_json::from_str::<Value>(&text) else { continue };
+            let Some((pid, proc_start, item)) = terminal_session_entry(&record) else { continue };
+            if process_alive(pid, proc_start) {
+                result.push(item);
+            }
+        }
+        Ok(result)
+    })
+    .await
+}
+
 /// Delete a session: delete the .jsonl file under the CLI projects dir
 #[tauri::command]
 pub(crate) async fn delete_session(_session_id: String, session_path: String) -> Result<(), String> {
@@ -1423,5 +1496,38 @@ mod tail_tests {
         assert_eq!(misaligned["reset"], true);
         assert_eq!(misaligned["records"].as_array().unwrap().len(), 1);
         std::fs::remove_file(&path).ok();
+    }
+}
+
+#[cfg(test)]
+mod terminal_session_tests {
+    use super::{process_alive, terminal_session_entry};
+
+    #[test]
+    fn test_terminal_session_entry_filters_sdk_and_parses_proc_start() {
+        let cli = serde_json::json!({
+            "pid": 24960, "sessionId": "s1", "procStart": "134370654482608522",
+            "entrypoint": "cli", "status": "busy"
+        });
+        let (pid, start, item) = terminal_session_entry(&cli).unwrap();
+        assert_eq!(pid, 24960);
+        assert_eq!(start, Some(134370654482608522));
+        assert_eq!(item, serde_json::json!({ "sessionId": "s1", "status": "busy" }));
+
+        // 本应用启动的进程由应用自己跟踪
+        let sdk = serde_json::json!({ "pid": 1, "sessionId": "s2", "entrypoint": "sdk-cli" });
+        assert!(terminal_session_entry(&sdk).is_none());
+        let app = serde_json::json!({ "pid": 1, "sessionId": "s3", "entrypoint": "claudedeck" });
+        assert!(terminal_session_entry(&app).is_none());
+        // 缺少 sessionId 的条目无法对应到会话
+        assert!(terminal_session_entry(&serde_json::json!({ "pid": 1 })).is_none());
+    }
+
+    #[test]
+    fn test_process_alive_checks_creation_time() {
+        let pid = std::process::id();
+        assert!(process_alive(pid, None));
+        // 创建时间对不上，视为 PID 已被其它进程复用
+        assert!(!process_alive(pid, Some(1)));
     }
 }

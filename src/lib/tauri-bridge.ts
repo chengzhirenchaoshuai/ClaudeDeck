@@ -52,6 +52,16 @@ export interface SessionListItem {
   host?: string;
 }
 
+/** 终端里直接运行的 claude 会话状态：busy 正在回复，idle 等待输入 */
+export type TerminalSessionStatus = 'busy' | 'idle';
+
+/** CLI 进程状态文件（<配置目录>/sessions/<pid>.json）中的一条，进程已确认存活 */
+export interface TerminalSessionInfo {
+  sessionId: string;
+  /** CLI 写入的原始状态，通常为 busy / idle */
+  status: string;
+}
+
 /** 远程主机配置：id 同时作为 ssh://<id>/<路径> 中的主机名 */
 export interface RemoteHost {
   id: string;
@@ -370,6 +380,9 @@ export const bridge = {
     invoke<RemoteTestResult>('test_remote_connection', { id }),
   listRemoteSessions: (hostId: string) =>
     invoke<SessionListItem[]>('list_remote_sessions', { hostId }),
+  /** 远端终端里正在运行的 claude 会话（经 ssh 读取） */
+  listRemoteTerminalSessions: (hostId: string) =>
+    invoke<TerminalSessionInfo[]>('list_remote_terminal_sessions', { hostId }),
   readRemoteConfig: (hostId: string) =>
     invoke<RemoteConfig>('read_remote_config', { hostId }),
   /** 读取远程主机自己保存的会话改名文件——远程主机是这些名字的源端 */
@@ -480,9 +493,13 @@ export const bridge = {
   uploadTempFileToRemote: (srcPath: string, cwd: string) =>
     invoke<string>('upload_temp_file_to_remote', { srcPath, cwd }),
 
-  /** 会话 JSONL 最后的写入方：'cli'（终端）或 'sdk-cli'（本应用），找不到为 null */
+  /** 会话 JSONL 最后的写入方：'cli'（终端）或 'claudedeck'（本应用，旧版本为 'sdk-cli'），找不到为 null */
   sessionLastEntrypoint: (path: string) =>
     invoke<string | null>('session_last_entrypoint', { path }),
+
+  /** 本机终端里正在运行的 claude 会话 */
+  listTerminalSessions: () =>
+    invoke<TerminalSessionInfo[]>('list_terminal_sessions'),
 
   getFileSize: (path: string) =>
     invoke<number>('get_file_size', { path }),
