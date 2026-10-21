@@ -454,6 +454,12 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
   }, [needsMath, katexPlugins]);
   const rehypePlugins = katexPlugins ?? BASE_REHYPE_PLUGINS;
 
+  // 脚注区标题与返回箭头的文字
+  const remarkRehypeOptions = useMemo(() => ({
+    footnoteLabel: t('md.footnotes'),
+    footnoteBackLabel: t('md.footnoteBack'),
+  }), [t]);
+
   // Stable components object — only recreated if `t` or resolveBase changes
   const components = useMemo(() => ({
     // 表格样式见 App.css 的 .md-table。th / td 不接收 Markdown 的列对齐（:--- 等），统一由 MdTable 决定
@@ -472,6 +478,30 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
         (href === `http://${childText}` || href === `https://${childText}`)
       ) {
         return <code className="rounded bg-black/[0.06] px-1 py-0.5 text-[0.9em] dark:bg-white/[0.08]">{children}</code>;
+      }
+
+      // 页内锚点（脚注编号与脚注末尾的返回箭头）：在本条消息内滚动到目标并短暂高亮，不当作外部链接打开。
+      // sanitize 会给 id 加 user-content- 前缀，两种写法都试一下
+      if (href?.startsWith('#')) {
+        return (
+          <a
+            href={href}
+            onClick={(e) => {
+              e.preventDefault();
+              const id = decodeURIComponent(href.slice(1));
+              const root = e.currentTarget.closest('.prose');
+              const target = root?.querySelector(`[id="${CSS.escape(id)}"]`)
+                || root?.querySelector(`[id="${CSS.escape(`user-content-${id}`)}"]`);
+              if (!target) return;
+              target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              target.classList.add('md-footnote-flash');
+              window.setTimeout(() => target.classList.remove('md-footnote-flash'), 1200);
+            }}
+            className="text-accent cursor-pointer no-underline hover:underline"
+          >
+            {children}
+          </a>
+        );
       }
 
       return (
@@ -625,6 +655,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
         <Markdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
+          remarkRehypeOptions={remarkRehypeOptions}
           components={components}
         >
           {processedContent}

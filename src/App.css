@@ -1369,6 +1369,8 @@ thead {
 .katex-display {
   margin: 1em 0;
   overflow-x: auto;
+  /* overflow-x: auto 会让纵向也裁剪，留出上下空间，避免分子、上标被切掉 */
+  padding: 0.35em 0;
 }
 
 /* Dark mode: ensure KaTeX text is visible on dark backgrounds */
@@ -1470,4 +1472,83 @@ pre code {
 
 .md-table code {
   font-size: 0.92em;
+}
+
+/* ── Markdown 细节 ── */
+
+/* 行内代码：去掉排版插件自动加的反引号，靠底色区分即可 */
+.prose code::before,
+.prose code::after {
+  content: none !important;
+}
+
+/* 代码块里的 code 不要继承行内代码的内边距和底色：
+   code 是行内元素，左内边距只作用在第一行，会让首行看起来多了一个空格 */
+.prose pre code {
+  padding: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+/* 有序列表嵌套：第二层 a. b. c.，第三层 i. ii. iii.（与终端里的 CLI 一致） */
+.prose ol ol {
+  list-style-type: lower-alpha;
+}
+.prose ol ol ol {
+  list-style-type: lower-roman;
+}
+
+/* 引用：左侧主题色竖条 + 浅底色 + 右侧圆角，去掉排版插件自动加的引号 */
+.prose blockquote {
+  margin: 0.9em 0;
+  padding: 0.55em 1em;
+  border-left: 3px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  color: var(--color-text-secondary);
+  font-style: normal;
+  quotes: none;
+}
+.prose blockquote p:first-of-type::before,
+.prose blockquote p:last-of-type::after {
+  content: none;
+}
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+.prose blockquote blockquote {
+  margin: 0.6em 0 0.2em;
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+}
+
+/* 脚注：正文里的上标编号与文末的脚注区 */
+.prose sup a[data-footnote-ref] {
+  padding: 0 0.15em;
+  font-size: 0.85em;
+  text-decoration: none;
+}
+.prose section[data-footnotes] {
+  margin-top: 1.5em;
+  padding-top: 0.6em;
+  border-top: 1px dashed color-mix(in srgb, var(--color-text-primary) 18%, transparent);
+  font-size: 0.875em;
+  color: var(--color-text-secondary);
+}
+.prose section[data-footnotes] > h2 {
+  margin: 0 0 0.4em;
+  font-size: 0.95em;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.prose section[data-footnotes] ol {
+  margin: 0;
+}
+/* 点击脚注跳转后短暂高亮目标 */
+.prose .md-footnote-flash {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  transition: background 0.6s ease;
 }

@@ -3,3 +3,8 @@ packages:
 
 allowBuilds:
   esbuild: true
+
+# rehype-katex 自带的 katex 版本必须与应用加载的 katex.min.css 一致，
+# 否则公式的 HTML 结构与样式不匹配（分数的分子分母会压到分数线上）
+overrides:
+  katex: "$katex"
