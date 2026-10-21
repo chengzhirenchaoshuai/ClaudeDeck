@@ -58,7 +58,7 @@ pub(crate) async fn hide_session(session_id: String) -> Result<(), String> {
 }
 
 /// 监听 CLI 会话目录（<配置目录>/projects），jsonl 有新增、修改或删除时，
-/// 经 1 秒防抖向前端发送 `cli-sessions:changed`（附带变化的文件路径），
+/// 经 250 毫秒防抖向前端发送 `cli-sessions:changed`（附带变化的文件路径），
 /// 使会话列表和已打开的会话内容与 CLI 保持同步。
 /// projects 目录尚未创建时（CLI 从未运行）每 3 秒重试，不主动创建该目录。
 pub(crate) fn start_sessions_watcher(app: AppHandle) {
@@ -107,7 +107,8 @@ pub(crate) fn start_sessions_watcher(app: AppHandle) {
         // watcher 需在此作用域内保持存活，否则监听会随之停止
         while let Some(first) = rx.recv().await {
             let mut changed: std::collections::HashSet<String> = first.into_iter().collect();
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            // 合并 CLI 连续写入的多次事件；前端还有“文件大小没变就跳过”兜底，短一些也不会重复解析
+            tokio::time::sleep(Duration::from_millis(250)).await;
             while let Ok(more) = rx.try_recv() {
                 changed.extend(more);
             }
@@ -117,6 +118,36 @@ pub(crate) fn start_sessions_watcher(app: AppHandle) {
             );
         }
     });
+}
+
+/// 会话 JSONL 最后一条带 `entrypoint` 的记录的写入方：终端里的 claude 为 "cli"，
+/// 本应用（stream-json）为 "sdk-cli"。只读取文件末尾 256KB，大会话也不必整个读取。
+/// 找不到时返回 None。
+#[tauri::command]
+pub(crate) async fn session_last_entrypoint(path: String) -> Result<Option<String>, String> {
+    if !path.ends_with(".jsonl") {
+        return Err("not a session file".to_string());
+    }
+    run_blocking(move || {
+        use std::io::{Read, Seek, SeekFrom};
+        const TAIL: u64 = 256 * 1024;
+        let mut file = std::fs::File::open(&path).map_err(|e| format!("Cannot open session: {}", e))?;
+        let len = file.metadata().map_err(|e| e.to_string())?.len();
+        let start = len.saturating_sub(TAIL);
+        file.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        let text = String::from_utf8_lossy(&buf);
+        // 从后往前找；从文件中间开始读时第一行可能不完整，解析失败会被跳过
+        for line in text.lines().rev() {
+            let Ok(value) = serde_json::from_str::<Value>(line) else { continue };
+            if let Some(entry) = value.get("entrypoint").and_then(|v| v.as_str()) {
+                return Ok(Some(entry.to_string()));
+            }
+        }
+        Ok(None)
+    })
+    .await
 }
 
 /// Delete a session: delete the .jsonl file under the CLI projects dir
@@ -757,6 +788,60 @@ pub(crate) async fn load_session(path: String) -> Result<Vec<Value>, String> {
     .await
 }
 
+/// 增量读取本机会话 JSONL：从字节偏移 offset 开始读到末尾最后一个完整行，返回新记录与新的偏移。
+/// offset 为 0、超过文件长度（文件被截断或重写）、或不在行首时，改为从头读取并置 reset=true，
+/// 前端据此丢弃缓存的旧记录。末尾尚未写完的半行留到下次再读。
+#[tauri::command]
+pub(crate) async fn load_session_tail(path: String, offset: u64) -> Result<Value, String> {
+    if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        return Err("remote sessions do not support incremental loading".to_string());
+    }
+    run_blocking(move || read_session_tail(&path, offset)).await
+}
+
+/// load_session_tail 的同步实现
+pub(crate) fn read_session_tail(path: &str, offset: u64) -> Result<Value, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).map_err(|e| format!("Failed to open session: {}", e))?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+
+    // 偏移仍有效的条件：在文件范围内，且前一个字节是换行（即位于行首）
+    let mut start = offset;
+    if start > len {
+        start = 0;
+    } else if start > 0 {
+        let mut prev = [0u8; 1];
+        file.seek(SeekFrom::Start(start - 1)).map_err(|e| e.to_string())?;
+        file.read_exact(&mut prev).map_err(|e| e.to_string())?;
+        if prev[0] != b'\n' {
+            start = 0;
+        }
+    }
+
+    file.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    // 只处理到最后一个换行为止
+    let complete = buf.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+
+    let mut records = vec![];
+    for line in buf[..complete].split(|b| *b == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(line);
+        if let Ok(mut json) = serde_json::from_str::<Value>(text.trim_end_matches('\r')) {
+            slim_session_record(&mut json);
+            records.push(json);
+        }
+    }
+    Ok(serde_json::json!({
+        "records": records,
+        "end": start + complete as u64,
+        "reset": start == 0,
+    }))
+}
+
 /// Compute billing totals and the latest occupied-context snapshot from a
 /// persisted Claude session JSONL file. Assistant records may be repeated once
 /// per content block, so totals are de-duplicated by message id.
@@ -1289,4 +1374,54 @@ pub(crate) async fn generate_session_title(
         return Err("Could not parse title from CLI output".to_string());
     }
     Ok(raw)
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::read_session_tail;
+
+    fn temp_file(name: &str, content: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("claudedeck_tail_{}_{}.jsonl", name, std::process::id()));
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    #[test]
+    fn 增量读取只返回新的完整行() {
+        let path = temp_file("append", "{\"a\":1}
+{\"a\":2}
+{\"a\":3");
+        let p = path.to_str().unwrap();
+        let first = read_session_tail(p, 0).unwrap();
+        assert_eq!(first["records"].as_array().unwrap().len(), 2);
+        assert_eq!(first["reset"], true);
+        let end = first["end"].as_u64().unwrap();
+
+        // 补全半行并追加一行
+        std::fs::write(&path, "{\"a\":1}
+{\"a\":2}
+{\"a\":3}
+{\"a\":4}
+").unwrap();
+        let next = read_session_tail(p, end).unwrap();
+        let records = next["records"].as_array().unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["a"], 3);
+        assert_eq!(next["reset"], false);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn 文件被截断或偏移不在行首时从头读取() {
+        let path = temp_file("reset", "{\"a\":1}
+");
+        let p = path.to_str().unwrap();
+        let truncated = read_session_tail(p, 1000).unwrap();
+        assert_eq!(truncated["reset"], true);
+        assert_eq!(truncated["records"].as_array().unwrap().len(), 1);
+        let misaligned = read_session_tail(p, 3).unwrap();
+        assert_eq!(misaligned["reset"], true);
+        assert_eq!(misaligned["records"].as_array().unwrap().len(), 1);
+        std::fs::remove_file(&path).ok();
+    }
 }

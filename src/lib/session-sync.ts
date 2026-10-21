@@ -6,11 +6,47 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUsageStore } from '../stores/usageStore';
 import { LOCAL_ENV } from './remote';
+import { releaseStreamListener } from './stream-listeners';
 
 /** 每个会话上次同步时的 JSONL 记录数，用于跳过没有变化的重复加载 */
 const lastRecordCount = new Map<string, number>();
 /** 每个会话上次加载时的 JSONL 文件大小（仅本机会话）。JSONL 只追加写入，大小没变就不必重新读取整个文件 */
 const lastFileSize = new Map<string, number>();
+
+/** 已读取的原始记录与读到的字节偏移（仅本机会话），同步时只读取新追加的部分 */
+const rawCache = new Map<string, { path: string; records: any[]; end: number }>();
+/** 最多缓存的会话数：只有正在查看的会话需要，留几个给来回切换 */
+const RAW_CACHE_LIMIT = 4;
+
+/**
+ * 读取会话的全部原始记录。本机会话按字节偏移增量读取，再与缓存拼接；
+ * 远程会话或 full 为 true 时整个读取。changed 为 false 表示自上次读取以来没有新记录。
+ */
+async function readSessionRecords(
+  sessionId: string,
+  path: string,
+  full: boolean,
+): Promise<{ records: any[]; changed: boolean }> {
+  if (isRemotePath(path)) return { records: await bridge.loadSession(path), changed: true };
+  const cached = !full ? rawCache.get(sessionId) : undefined;
+  const usable = cached && cached.path === path ? cached : undefined;
+  const tail = await bridge.loadSessionTail(path, usable?.end ?? 0);
+  let records: any[];
+  if (tail.reset || !usable) {
+    records = tail.records;
+  } else if (tail.records.length === 0) {
+    records = usable.records;
+  } else {
+    records = usable.records.concat(tail.records);
+  }
+  rawCache.delete(sessionId);
+  rawCache.set(sessionId, { path, records, end: tail.end });
+  // Map 按插入顺序迭代，删掉最早的
+  while (rawCache.size > RAW_CACHE_LIMIT) {
+    rawCache.delete(rawCache.keys().next().value as string);
+  }
+  return { records, changed: !usable || tail.reset || tail.records.length > 0 };
+}
 
 /** 本机会话文件的大小；远程会话或读取失败返回 null（此时不做大小判断） */
 async function localFileSize(path: string): Promise<number | null> {
@@ -18,12 +54,19 @@ async function localFileSize(path: string): Promise<number | null> {
   return bridge.getFileSize(path).catch(() => null);
 }
 
-/** 该会话是否由本应用的 CLI 进程在驱动：是则内存中的状态比磁盘更完整，不能用磁盘内容覆盖 */
-async function isDrivenByThisApp(sessionId: string): Promise<boolean> {
+/** 本应用驱动该会话的 CLI 进程（stdinId）；没有或进程已退出时返回 undefined */
+async function appProcessOf(sessionId: string): Promise<string | undefined> {
   const stdinId = useChatStore.getState().getTab(sessionId)?.sessionMeta.stdinId;
-  if (!stdinId) return false;
+  if (!stdinId) return undefined;
   const active = await bridge.listActiveProcesses().catch(() => [] as string[]);
-  return active.includes(stdinId);
+  return active.includes(stdinId) ? stdinId : undefined;
+}
+
+/** 会话最新的记录是否由外部（终端里的 claude）写入：终端为 "cli"，本应用为 "sdk-cli" */
+async function writtenExternally(path: string): Promise<boolean> {
+  if (isRemotePath(path)) return false;
+  const entry = await bridge.sessionLastEntrypoint(path).catch(() => null);
+  return entry === 'cli';
 }
 
 /**
@@ -34,16 +77,17 @@ async function isDrivenByThisApp(sessionId: string): Promise<boolean> {
 export async function applyDiskSession(
   sessionId: string,
   sessionPath: string,
-  opts: { skipIfUnchanged?: boolean } = {},
+  opts: { skipIfUnchanged?: boolean; full?: boolean } = {},
 ): Promise<boolean> {
   const stillSelected = () => useSessionStore.getState().selectedSessionId === sessionId;
 
   // 先取大小再读文件：读取期间文件又变大时，下次同步会因大小不同而重新加载
   const fileSize = await localFileSize(sessionPath);
-  const rawMessages = await bridge.loadSession(sessionPath);
+  // 本机会话只读新追加的部分，与缓存拼接；full（手动刷新）时整个重读
+  const { records: rawMessages, changed } = await readSessionRecords(sessionId, sessionPath, !!opts.full);
   if (!stillSelected()) return false;
   if (fileSize !== null) lastFileSize.set(sessionId, fileSize);
-  if (opts.skipIfUnchanged && lastRecordCount.get(sessionId) === rawMessages.length) return false;
+  if (opts.skipIfUnchanged && (!changed || lastRecordCount.get(sessionId) === rawMessages.length)) return false;
 
   const { messages, agents } = parseSessionMessages(rawMessages);
 
@@ -97,25 +141,40 @@ export async function applyDiskSession(
 
 /**
  * 同步一个已在界面中打开的会话：重新读取磁盘上的最新内容。
- * - 草稿（尚未落盘）和正由本应用进程驱动的会话不处理。
- * - 自动同步只处理“从磁盘加载过”的会话：由本应用创建的会话，内存里有磁盘上没有的卡片
- *   （权限确认、命令处理等），不能被磁盘内容覆盖。
- * - force 为 true（手动同步）时不受以上限制，并且即使内容看起来没变也重新加载。
+ * - 草稿（尚未落盘）不处理。
+ * - 由本应用驱动（有存活的 CLI 进程）或由本应用创建的会话，内存里有磁盘上没有的卡片
+ *   （权限确认、命令处理等），平时不用磁盘内容覆盖；但最新记录来自终端里的 claude 时，
+ *   说明会话已在外部继续：结束本应用闲置的旧进程（它的上下文已过时，下次发送会 --resume
+ *   续接最新内容），改为显示磁盘内容。本应用正在回复时不打断。
+ * - force 为 true（手动同步）时即使内容看起来没变也重新加载。
  */
 export async function syncSession(
   session: SessionListItem | undefined,
   opts: { force?: boolean } = {},
 ): Promise<void> {
   if (!session || !session.path) return;
-  if (!opts.force && !lastRecordCount.has(session.id)) return;
   // 文件大小没变就跳过：避免每次轮询都把整个 JSONL 传到前端解析（大会话会让界面周期性卡顿）
-  if (!opts.force) {
-    const size = await localFileSize(session.path);
-    if (size !== null && lastFileSize.get(session.id) === size) return;
+  const size = await localFileSize(session.path);
+  if (!opts.force && size !== null && lastFileSize.get(session.id) === size) return;
+
+  const appProcess = await appProcessOf(session.id);
+  const ownedByApp = !!appProcess || !lastRecordCount.has(session.id);
+  if (ownedByApp && !(opts.force && !appProcess)) {
+    if (!(await writtenExternally(session.path))) {
+      // 本应用自己写入的变化：记下大小，避免每次轮询都重复检查
+      if (size !== null) lastFileSize.set(session.id, size);
+      return;
+    }
+    const tab = useChatStore.getState().getTab(session.id);
+    if (tab?.sessionStatus === 'running') return;
+    if (appProcess) {
+      bridge.killSession(appProcess).catch(() => {});
+      releaseStreamListener(appProcess);
+      useChatStore.getState().setSessionMeta(session.id, { stdinId: undefined });
+    }
   }
-  if (await isDrivenByThisApp(session.id)) return;
   try {
-    await applyDiskSession(session.id, session.path, { skipIfUnchanged: !opts.force });
+    await applyDiskSession(session.id, session.path, { skipIfUnchanged: !opts.force, full: opts.force });
   } catch (err) {
     console.warn('[ClaudeDeck] session sync failed:', err);
   }

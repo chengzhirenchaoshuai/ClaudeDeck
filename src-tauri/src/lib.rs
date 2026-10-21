@@ -513,6 +513,8 @@ pub fn run() {
             commands::session_process::kill_session,
             commands::session_process::list_active_processes,
             commands::sessions::hide_session,
+            commands::sessions::session_last_entrypoint,
+            commands::sessions::load_session_tail,
             get_claude_config_paths,
             commands::usage::get_usage_stats,
             commands::providers::get_provider_balance,
