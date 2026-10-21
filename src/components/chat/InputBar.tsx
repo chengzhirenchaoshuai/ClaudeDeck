@@ -1010,15 +1010,21 @@ export function InputBar() {
 
   return (
     <div className="p-4 relative">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-5xl mx-auto relative">
         {/* Rewind Panel — positioned above the input area */}
         {showRewindPanel && (
           <RewindPanel key={selectedSessionId || 'new'} onClose={() => setShowRewindPanel(false)} />
         )}
 
-        {/* Floating approval card — plan_review, question, or permission awaiting user response */}
+        {/* Floating approval card — plan_review, question, or permission awaiting user response.
+            悬浮在输入栏上方、盖在消息区之上：不占布局，消息区不会被挤矮；
+            卡片之外的区域透明且不拦截点击，只有卡片本身挡住后面的内容。 */}
         {floatingCard && (
-          <div key={`${selectedSessionId || 'new'}-${floatingCard.id}`} className="mb-3 animate-scale-in">
+          <div key={`${selectedSessionId || 'new'}-${floatingCard.id}`}
+            className="absolute left-0 right-0 bottom-full mb-3 z-20 pointer-events-none
+              [&>div>div:first-child]:pointer-events-auto
+              [&>div>div:first-child]:bg-bg-card [&>div>div:first-child]:shadow-lg
+              animate-scale-in">
             {floatingCard.type === 'plan_review'
               ? <PlanReviewCard message={floatingCard} floating />
               : floatingCard.type === 'permission'

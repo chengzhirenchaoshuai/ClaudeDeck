@@ -5,10 +5,44 @@ import { bridge } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
 import { buildAskUserQuestionAnswers } from '../../lib/ask-user-question';
 
-/** Decode literal Unicode escape sequences (e.g. `\u2014`) that appear in text. */
+/** Decode literal Unicode escape sequences (e.g. `—`) that appear in text. */
 function decodeUnicodeEscapes(text: string): string {
   return text.replace(/\\u([0-9A-Fa-f]{4})/g, (_, hex) =>
     String.fromCharCode(parseInt(hex, 16)),
+  );
+}
+
+/** 选项文字末尾的“(Recommended)”/“（推荐）”拆出来，改为显示“推荐”角标 */
+function splitRecommended(label: string): { text: string; recommended: boolean } {
+  const match = label.match(/\s*[(（]\s*(recommended|推荐)\s*[)）]\s*$/i);
+  if (!match) return { text: label, recommended: false };
+  return { text: label.slice(0, match.index).trimEnd(), recommended: true };
+}
+
+/** 已回答摘要里去掉选项文字中的推荐标记（回答可能是多个选项用逗号连接） */
+function stripRecommended(answer: string): string {
+  return answer.replace(/\s*[(（]\s*(recommended|推荐)\s*[)）]/gi, '');
+}
+
+/** 选项左侧的指示器：单选为圆点，多选为方框打勾 */
+function OptionIndicator({ multi, checked }: { multi: boolean; checked: boolean }) {
+  if (multi) {
+    return (
+      <span className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-[5px] border-[1.5px] flex items-center justify-center transition-colors
+        ${checked ? 'bg-accent border-accent text-text-inverse' : 'border-text-tertiary/50'}`}>
+        {checked && (
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2.5 6.2l2.4 2.4 4.6-4.9" />
+          </svg>
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-colors
+      ${checked ? 'border-accent' : 'border-text-tertiary/50'}`}>
+      {checked && <span className="w-2 h-2 rounded-full bg-accent" />}
+    </span>
   );
 }
 
@@ -19,13 +53,9 @@ interface Props {
 }
 
 /**
- * QuestionCard — enhanced interactive question flow (AskUserQuestion).
- *
- * Enhancements over the inline version:
- * - Card wrapper with accent left border when active
- * - Visual progress bar (colored segments) replacing "1 / 3" text
- * - Better option styling with hover scale effect
- * - Answered questions shown with timeline connector
+ * QuestionCard — AskUserQuestion 的交互卡片。
+ * 卡片头（标题 + 进度）、问题与单选/多选提示、带指示器的选项列表、“其他”自定义输入、底部操作按钮。
+ * 已回答的问题在卡片内以列表形式保留。
  */
 export function QuestionCard({ message, floating }: Props) {
   const t = useT();
@@ -122,6 +152,20 @@ export function QuestionCard({ message, floating }: Props) {
     }
   }, [isFullyResolved, isSending, awaitingSdkPatch, currentIdx, questions, selectedMap, useOther, otherText, message.id, message.permissionData, message.toolInput, getCurrentAnswer]);
 
+  // 上一步：回到前一个问题，之前的选择与自定义文字都保留，只撤销它的“已回答”记录
+  const handleBack = useCallback(() => {
+    if (isFullyResolved || isSending || currentIdx === 0) return;
+    const prevIdx = currentIdx - 1;
+    setAnsweredMap((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if (Number(key) >= prevIdx) delete next[Number(key)];
+      }
+      return next;
+    });
+    setCurrentIdx(prevIdx);
+  }, [isFullyResolved, isSending, currentIdx]);
+
   const handleSkip = useCallback(async () => {
     if (isFullyResolved || isSending || awaitingSdkPatch) return;
     const skipTabId = useSessionStore.getState().selectedSessionId;
@@ -143,190 +187,234 @@ export function QuestionCard({ message, floating }: Props) {
     }
   }, [isFullyResolved, isSending, awaitingSdkPatch, message.id]);
 
-  return (
-    <div className={`${floating ? '' : 'ml-11'} animate-scale-in ${isFullyResolved ? 'opacity-80' : ''}`}>
-      <div className={`rounded-xl border overflow-hidden transition-all duration-200
-        ${isFullyResolved
-          ? 'border-border-subtle bg-bg-secondary/20'
-          : 'border-l-[3px] border-l-accent border-r border-t border-b border-r-accent/15 border-t-accent/15 border-b-accent/15 bg-gradient-to-r from-accent/[0.03] to-transparent'
-        }`}>
-
-        {/* Already answered questions — timeline view */}
-        {Object.keys(answeredMap).length > 0 && (
-          <div className="px-3 pt-2 pb-1 space-y-1">
-            {Object.entries(answeredMap).map(([idxStr, answer]) => {
-              const qIdx = Number(idxStr);
-              const q = questions[qIdx];
-              if (!q) return null;
-              return (
-                <div key={qIdx} className="flex items-start gap-2 py-1">
-                  {/* Timeline connector dot */}
-                  <div className="flex flex-col items-center flex-shrink-0 mt-0.5">
-                    <div className="w-2 h-2 rounded-full bg-success" />
-                    {qIdx < Object.keys(answeredMap).length - 1 && (
-                      <div className="w-px h-3 bg-border-subtle mt-0.5" />
-                    )}
-                  </div>
-                  <div className="text-xs text-text-muted min-w-0">
-                    <span className="text-text-secondary">{decodeUnicodeEscapes(q.question)}</span>
-                    {' \u2192 '}
-                    <span className="text-text-primary font-medium">{decodeUnicodeEscapes(answer)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Resolved state — show all answers */}
-        {isFullyResolved && Object.keys(answeredMap).length === 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-2">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"
-              stroke="currentColor" strokeWidth="1.5" className="text-success">
+  // 已完成的卡片：一行“已响应”，有本地记录的回答时逐条列出
+  if (isFullyResolved) {
+    const answered = Object.entries(answeredMap);
+    return (
+      <div className={`${floating ? '' : 'ml-11'} max-w-[50rem] animate-scale-in`}>
+        <div className="rounded-xl border border-border-subtle bg-bg-secondary/30 px-3.5 py-2.5">
+          <div className="flex items-center gap-1.5 text-xs text-text-muted">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-success">
               <path d="M2.5 6l2.5 2.5 4.5-4.5" />
             </svg>
-            <span className="text-xs text-text-muted">{t('msg.responded')}</span>
+            {t('msg.responded')}
           </div>
-        )}
-
-        {/* Current question — interactive */}
-        {!isFullyResolved && currentQ && (
-          <div className="px-3 py-3">
-            {/* Visual progress bar for multi-question */}
-            {questions.length > 1 && (
-              <div className="flex items-center gap-1.5 mb-3">
-                <div className="flex gap-0.5 flex-1">
-                  {questions.map((_, i) => (
-                    <div key={i} className={`h-1 rounded-full flex-1 transition-all duration-300
-                      ${i < currentIdx
-                        ? 'bg-success'
-                        : i === currentIdx
-                          ? 'bg-accent'
-                          : 'bg-border-subtle'
-                      }`} />
-                  ))}
-                </div>
-                <span className="text-[10px] text-text-tertiary font-mono flex-shrink-0">
-                  {currentIdx + 1}/{questions.length}
-                </span>
-              </div>
-            )}
-
-            {/* Question text with header badge */}
-            <div className="flex items-start gap-2 mb-3">
-              {currentQ.header && (
-                <span className="flex-shrink-0 px-1.5 py-0.5 rounded
-                  bg-accent/10 text-accent text-[10px] font-bold
-                  uppercase tracking-wider mt-px">
-                  {decodeUnicodeEscapes(currentQ.header)}
-                </span>
-              )}
-              <span className="text-xs text-text-primary font-medium leading-relaxed">
-                {decodeUnicodeEscapes(currentQ.question)}
-              </span>
-            </div>
-
-            {/* Options */}
-            <div className="flex flex-col gap-1.5 mb-3">
-              {currentQ.options.map((opt, optIdx) => {
-                const isSelected = selectedMap[currentIdx]?.has(optIdx) || false;
+          {answered.length > 0 && (
+            <div className="mt-1.5 space-y-1">
+              {answered.map(([idxStr, answer]) => {
+                const q = questions[Number(idxStr)];
+                if (!q) return null;
                 return (
-                  <button
-                    key={optIdx}
-                    onClick={() => handleToggle(optIdx, !!currentQ.multiSelect)}
-                    className={`text-left px-3 py-2 rounded-lg text-xs
-                      transition-all duration-150 border cursor-pointer
-                      hover:scale-[1.01]
-                      ${isSelected
-                        ? 'border-accent bg-accent/10 text-accent shadow-sm'
-                        : 'border-border-subtle text-text-secondary hover:border-accent/30 hover:bg-bg-secondary/50'
-                      }`}
-                  >
-                    <span className="font-medium">{decodeUnicodeEscapes(opt.label)}</span>
-                    {opt.description && (
-                      <span className="text-text-tertiary ml-1.5">{'\u2014'} {decodeUnicodeEscapes(opt.description)}</span>
-                    )}
-                  </button>
+                  <div key={idxStr} className="text-xs text-text-muted">
+                    <span className="text-text-secondary">{decodeUnicodeEscapes(q.question)}</span>
+                    <span className="mx-1.5 text-text-tertiary">{'→'}</span>
+                    <span className="text-text-primary font-medium">{stripRecommended(decodeUnicodeEscapes(answer))}</span>
+                  </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
-              {/* Other option */}
+  if (!currentQ) return null;
+  const multi = !!currentQ.multiSelect;
+  const isLast = currentIdx >= questions.length - 1;
+
+  return (
+    <div className={`${floating ? '' : 'ml-11'} max-w-[50rem] animate-scale-in`}>
+      {/* 悬浮在消息区上方时限制高度，选项很多时在卡片内滚动 */}
+      <div className={`rounded-2xl border border-accent/25 bg-bg-card shadow-[0_4px_18px_-6px_rgba(0,0,0,0.12)]
+        ${floating ? 'max-h-[65vh] overflow-y-auto' : 'overflow-hidden'}`}>
+
+        {/* 卡片头：标题 + 问题分类 + 进度 */}
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle bg-accent/[0.04]">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round" className="text-accent flex-shrink-0">
+            <circle cx="8" cy="8" r="6.25" />
+            <path d="M6.3 6.2a1.8 1.8 0 0 1 3.5.6c0 1.2-1.8 1.5-1.8 2.6" />
+            <path d="M8 11.4h.01" />
+          </svg>
+          <span className="text-xs font-semibold text-text-primary">{t('msg.questionTitle')}</span>
+          {currentQ.header && (
+            <span className="px-1.5 py-px rounded-md bg-accent/10 text-accent text-[10px] font-medium">
+              {decodeUnicodeEscapes(currentQ.header)}
+            </span>
+          )}
+          {questions.length > 1 && (
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex gap-1">
+                {questions.map((_, i) => (
+                  <span key={i} className={`h-1.5 rounded-full transition-all duration-300
+                    ${i < currentIdx ? 'w-1.5 bg-success' : i === currentIdx ? 'w-4 bg-accent' : 'w-1.5 bg-border'}`} />
+                ))}
+              </div>
+              <span className="text-[11px] text-text-tertiary tabular-nums">
+                {currentIdx + 1} / {questions.length}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 pt-3.5 pb-3">
+          {/* 已回答的问题 */}
+          {Object.keys(answeredMap).length > 0 && (
+            <div className="mb-3 space-y-1">
+              {Object.entries(answeredMap).map(([idxStr, answer]) => {
+                const q = questions[Number(idxStr)];
+                if (!q) return null;
+                return (
+                  <div key={idxStr} className="flex items-start gap-1.5 text-xs text-text-muted">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6"
+                      className="text-success mt-0.5 flex-shrink-0">
+                      <path d="M2.5 6l2.5 2.5 4.5-4.5" />
+                    </svg>
+                    <span className="min-w-0">
+                      <span className="text-text-secondary">{decodeUnicodeEscapes(q.question)}</span>
+                      <span className="mx-1.5 text-text-tertiary">{'→'}</span>
+                      <span className="text-text-primary font-medium">{stripRecommended(decodeUnicodeEscapes(answer))}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 问题 */}
+          <div className="text-[13px] font-semibold text-text-primary leading-relaxed">
+            {decodeUnicodeEscapes(currentQ.question)}
+          </div>
+          <div className="mt-0.5 mb-3 text-[11px] text-text-tertiary">
+            {multi ? t('msg.questionMultiHint') : t('msg.questionSingleHint')}
+          </div>
+
+          {/* 选项 */}
+          <div className="flex flex-col gap-2">
+            {currentQ.options.map((opt, optIdx) => {
+              const isSelected = selectedMap[currentIdx]?.has(optIdx) || false;
+              const { text, recommended } = splitRecommended(decodeUnicodeEscapes(opt.label));
+              return (
+                <button
+                  key={optIdx}
+                  onClick={() => handleToggle(optIdx, multi)}
+                  className={`w-full flex items-start gap-2.5 text-left px-3 py-2.5 rounded-xl border cursor-pointer
+                    transition-colors duration-150
+                    ${isSelected
+                      ? 'border-accent/70 bg-accent/[0.07]'
+                      : 'border-border-subtle hover:border-accent/35 hover:bg-bg-secondary/60'
+                    }`}
+                >
+                  <OptionIndicator multi={multi} checked={isSelected} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[13px] font-medium ${isSelected ? 'text-accent' : 'text-text-primary'}`}>{text}</span>
+                      {recommended && (
+                        <span className="px-1.5 py-px rounded-md bg-success/12 text-success text-[10px] font-medium">
+                          {t('msg.questionRecommended')}
+                        </span>
+                      )}
+                    </span>
+                    {opt.description && (
+                      <span className="block mt-0.5 text-xs text-text-tertiary leading-relaxed">
+                        {decodeUnicodeEscapes(opt.description)}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* 其他：自定义回答 */}
+            <div className={`rounded-xl border transition-colors duration-150
+              ${useOther[currentIdx] ? 'border-accent/70 bg-accent/[0.07]' : 'border-dashed border-border hover:border-accent/35'}`}>
               <button
                 onClick={handleOtherToggle}
-                className={`text-left px-3 py-2 rounded-lg text-xs
-                  transition-all duration-150 border cursor-pointer
-                  hover:scale-[1.01]
-                  ${useOther[currentIdx]
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-border-subtle text-text-tertiary hover:border-accent/30 hover:bg-bg-secondary/50'
-                  }`}
+                className="w-full flex items-center gap-2.5 text-left px-3 py-2.5 cursor-pointer"
               >
-                {t('msg.questionOther')}
+                <OptionIndicator multi={false} checked={!!useOther[currentIdx]} />
+                <span className={`text-[13px] ${useOther[currentIdx] ? 'text-accent font-medium' : 'text-text-secondary'}`}>
+                  {t('msg.questionOther')}
+                </span>
               </button>
-            </div>
-
-            {/* Other text input */}
-            {useOther[currentIdx] && (
-              <div className="mb-3">
-                <input
-                  type="text"
-                  value={otherText[currentIdx] || ''}
-                  onChange={(e) => setOtherText((p) => ({ ...p, [currentIdx]: e.target.value }))}
-                  placeholder={t('msg.questionOtherPlaceholder')}
-                  autoFocus
-                  className="w-full max-w-xs px-3 py-1.5 rounded-lg text-xs
-                    bg-transparent border border-border-subtle
-                    focus:border-border-focus outline-none text-text-primary
-                    placeholder:text-text-tertiary transition-smooth"
-                  onKeyDown={(e) => {
-                    if (e.nativeEvent.isComposing) return;
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (hasCurrentSelection) handleConfirm();
-                    }
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Error state */}
-            {isFailed && message.interactionError && (
-              <div className="mb-2 text-[11px] text-error bg-error/5 rounded-lg px-2.5 py-1.5
-                border border-error/20">
-                {message.interactionError}
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleConfirm}
-                disabled={!hasCurrentSelection || isSending || awaitingSdkPatch}
-                className={`px-4 py-1.5 rounded-lg text-xs font-semibold
-                  bg-accent text-text-inverse hover:bg-accent-hover
-                  transition-smooth cursor-pointer shadow-sm
-                  disabled:opacity-30 disabled:cursor-not-allowed
-                  ${isSending ? 'animate-pulse-soft' : ''}`}
-              >
-                {isSending
-                  ? 'Sending...'
-                  : awaitingSdkPatch
-                    ? t('msg.questionLoading')
-                    : currentIdx >= questions.length - 1 ? t('msg.questionSubmit') : t('msg.questionNext')}
-              </button>
-              <button
-                onClick={handleSkip}
-                disabled={isSending || awaitingSdkPatch}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium
-                  text-text-tertiary hover:text-text-primary
-                  hover:bg-bg-tertiary transition-smooth cursor-pointer
-                  disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {t('msg.questionSkip')}
-              </button>
+              {useOther[currentIdx] && (
+                <div className="px-3 pb-2.5 pl-[2.375rem]">
+                  <input
+                    type="text"
+                    value={otherText[currentIdx] || ''}
+                    onChange={(e) => setOtherText((p) => ({ ...p, [currentIdx]: e.target.value }))}
+                    placeholder={t('msg.questionOtherPlaceholder')}
+                    autoFocus
+                    className="w-full px-3 py-1.5 rounded-lg text-[13px]
+                      bg-bg-card border border-border-subtle
+                      focus:border-accent/60 outline-none text-text-primary
+                      placeholder:text-text-tertiary transition-smooth"
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (hasCurrentSelection) handleConfirm();
+                      }
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
-        )}
+
+          {/* 错误提示 */}
+          {isFailed && message.interactionError && (
+            <div className="mt-3 text-[11px] text-error bg-error/5 rounded-lg px-2.5 py-1.5 border border-error/20">
+              {message.interactionError}
+            </div>
+          )}
+        </div>
+
+        {/* 底部操作 */}
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-subtle bg-bg-secondary/30">
+          {currentIdx > 0 && (
+            <button
+              onClick={handleBack}
+              disabled={isSending}
+              className="mr-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                text-text-secondary hover:text-text-primary hover:bg-bg-tertiary
+                transition-smooth cursor-pointer
+                disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6"
+                strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7.5 2.5L4 6l3.5 3.5" />
+              </svg>
+              {t('msg.questionBack')}
+            </button>
+          )}
+          <button
+            onClick={handleSkip}
+            disabled={isSending || awaitingSdkPatch}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium
+              text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary
+              transition-smooth cursor-pointer
+              disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {t('msg.questionSkip')}
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!hasCurrentSelection || isSending || awaitingSdkPatch}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold
+              bg-accent text-text-inverse hover:bg-accent-hover
+              transition-smooth cursor-pointer shadow-sm
+              disabled:opacity-35 disabled:cursor-not-allowed
+              ${isSending ? 'animate-pulse-soft' : ''}`}
+          >
+            {isSending
+              ? t('msg.questionSending')
+              : awaitingSdkPatch
+                ? t('msg.questionLoading')
+                : isLast ? t('msg.questionSubmit') : t('msg.questionNext')}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -94,7 +94,7 @@ export function ConversationTimeline({ turns, scrollRef, messageRefs, showScroll
   if (turns.length === 0) return null;
 
   return (
-    <div className="hidden lg:flex absolute right-3 top-24 bottom-28 z-10
+    <div className="hidden lg:flex absolute right-3 top-24 bottom-3 z-10
       flex-col items-center gap-2 pointer-events-none">
       <div className="flex-1 min-h-0 px-1 py-2 rounded-lg
         bg-bg-card/80 backdrop-blur border border-border-subtle shadow-lg
