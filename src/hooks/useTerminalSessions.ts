@@ -8,6 +8,8 @@ import { LOCAL_ENV } from '../lib/remote';
 const LOCAL_INTERVAL_MS = 3000;
 /** 远程每次都要建立 ssh 连接，间隔放长 */
 const REMOTE_INTERVAL_MS = 10000;
+/** 窗口隐藏（最小化、收到托盘）时远程进一步放慢；本机照常轮询，回复完成时任务栏角标仍能及时更新 */
+const REMOTE_HIDDEN_INTERVAL_MS = 30000;
 
 function toStatus(info: TerminalSessionInfo): TerminalSessionStatus {
   return info.status === 'busy' ? 'busy' : 'idle';
@@ -63,19 +65,39 @@ export function useTerminalSessions(): void {
       }
     };
 
+    // 远程按窗口可见性决定下一次的间隔，用 setTimeout 逐次排期
+    let remoteTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRemote = () => {
+      clearTimeout(remoteTimer);
+      if (disposed) return;
+      remoteTimer = setTimeout(async () => {
+        await pollRemote();
+        scheduleRemote();
+      }, document.hidden ? REMOTE_HIDDEN_INTERVAL_MS : REMOTE_INTERVAL_MS);
+    };
+    const pollRemoteNow = () => {
+      void pollRemote();
+      scheduleRemote();
+    };
+
     void pollLocal();
-    void pollRemote();
+    pollRemoteNow();
     const localTimer = setInterval(pollLocal, LOCAL_INTERVAL_MS);
-    const remoteTimer = setInterval(pollRemote, REMOTE_INTERVAL_MS);
     // 切换环境时立即刷新一次，不必等下一个周期
     const unsubscribe = useSettingsStore.subscribe((state, prev) => {
-      if (state.activeEnv !== prev.activeEnv) void pollRemote();
+      if (state.activeEnv !== prev.activeEnv) pollRemoteNow();
     });
+    // 窗口重新显示时立即刷新，补上隐藏期间放慢的那部分
+    const onVisibility = () => {
+      if (!document.hidden) pollRemoteNow();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       disposed = true;
       clearInterval(localTimer);
-      clearInterval(remoteTimer);
+      clearTimeout(remoteTimer);
       unsubscribe();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 }
