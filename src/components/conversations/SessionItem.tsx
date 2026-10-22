@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { useSessionStore } from '../../stores/sessionStore';
+import { sessionSortTime } from './session-list-model';
 import { useT } from '../../lib/i18n';
 import { t as tStatic } from '../../lib/i18n';
 
@@ -241,7 +242,8 @@ export const SessionItem = memo(function SessionItem({
         <span className="relative flex-shrink-0 flex items-center justify-end min-w-[16px]">
           <span className={`text-[10px] text-text-tertiary
             ${!multiSelect && !isRenaming && onPin ? 'group-hover:invisible' : ''}`}>
-            {formatRelativeTime(session.modifiedAt)}
+            {/* 与列表排序一致：显示最后发言时间，未知时为修改时间 */}
+            {formatRelativeTime(sessionSortTime(session))}
           </span>
           {!multiSelect && !isRenaming && onPin && (
             <span

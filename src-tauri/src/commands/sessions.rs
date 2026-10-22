@@ -253,6 +253,147 @@ pub(crate) async fn delete_session(_session_id: String, session_path: String) ->
     Ok(())
 }
 
+/// 是否为用户亲自发出的消息：普通输入、粘贴内容、/命令都算；
+/// 工具结果、CLI 注入的提示（isMeta）、压缩摘要、后台任务通知、本地命令的输出不算。
+pub(crate) fn is_user_prompt(record: &Value) -> bool {
+    if record["type"].as_str() != Some("user")
+        || record["isMeta"].as_bool() == Some(true)
+        || record["isCompactSummary"].as_bool() == Some(true)
+        || record["isSidechain"].as_bool() == Some(true)
+    {
+        return false;
+    }
+    // origin 缺失为旧格式（视为用户输入）；有 origin 时只认 human
+    if let Some(kind) = record["origin"]["kind"].as_str() {
+        if kind != "human" {
+            return false;
+        }
+    }
+    let text = match &record["message"]["content"] {
+        Value::String(s) => s.as_str(),
+        Value::Array(blocks) => {
+            // 只有 tool_result 的是工具结果回传
+            if !blocks.iter().any(|b| b["type"].as_str() != Some("tool_result")) {
+                return false;
+            }
+            blocks.iter().find_map(|b| b["text"].as_str()).unwrap_or("")
+        }
+        _ => return false,
+    };
+    let text = text.trim_start();
+    !(text.starts_with("<local-command-stdout") || text.starts_with("<local-command-stderr"))
+}
+
+/// 把 JSONL 里的 ISO 8601 UTC 时间（如 2026-10-21T14:12:54.123Z）转成 Unix 毫秒
+pub(crate) fn parse_iso_millis(ts: &str) -> Option<u64> {
+    let b = ts.as_bytes();
+    if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || b[13] != b':' || b[16] != b':' {
+        return None;
+    }
+    let num = |r: std::ops::Range<usize>| ts.get(r)?.parse::<i64>().ok();
+    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (h, mi, s) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    let mut ms = 0i64;
+    if b[19] == b'.' {
+        let frac: String = ts[20..].chars().take_while(|c| c.is_ascii_digit()).collect();
+        let digits = format!("{:0<3}", &frac[..frac.len().min(3)]);
+        ms = digits.parse().ok()?;
+    }
+    // 公历日期转天数（Howard Hinnant 的 days_from_civil）
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let total = ((days * 24 + h) * 60 + mi) * 60 + s;
+    u64::try_from(total * 1000 + ms).ok()
+}
+
+/// 一行 JSONL 若是用户亲自发出的消息，返回它的时间（Unix 毫秒）
+fn prompt_time_of_line(line: &[u8]) -> Option<u64> {
+    // 先做廉价的字节匹配，绝大多数行（助手回复、工具结果）不必解析 JSON
+    if !line.windows(6).any(|w| w == b"\"user\"") {
+        return None;
+    }
+    let record: Value = serde_json::from_slice(line).ok()?;
+    if !is_user_prompt(&record) {
+        return None;
+    }
+    parse_iso_millis(record["timestamp"].as_str()?)
+}
+
+/// 最后一条用户消息时间的缓存：路径 → (已扫描到的位置（最后一个换行之后），结果)。
+/// JSONL 只追加写入，文件变大时只需扫描新追加的完整行。
+type LastPromptCache = std::sync::Mutex<HashMap<std::path::PathBuf, (u64, Option<u64>)>>;
+static LAST_PROMPT_CACHE: std::sync::LazyLock<LastPromptCache> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// 从后往前最多扫描的字节数：超大会话里找不到时放弃，退回按修改时间排序
+const LAST_PROMPT_SCAN_LIMIT: u64 = 32 * 1024 * 1024;
+
+/// 会话里最后一条用户消息的时间（Unix 毫秒），用于会话列表排序：
+/// 正在回复的会话会持续写入文件，按修改时间排序会让几个同时运行的会话来回跳动。
+pub(crate) fn last_prompt_at(path: &std::path::Path) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let cached = LAST_PROMPT_CACHE.lock().ok()?.get(path).copied();
+
+    let (scanned_to, result) = match cached {
+        // 文件没有新的完整行
+        Some((pos, value)) if pos == len => return value,
+        // 增量：只看新追加的部分，没有新的用户消息就沿用缓存
+        Some((pos, value)) if pos < len => {
+            file.seek(SeekFrom::Start(pos)).ok()?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).ok()?;
+            let Some(last_nl) = buf.iter().rposition(|b| *b == b'\n') else { return value };
+            let found = buf[..last_nl]
+                .split(|b| *b == b'\n')
+                .rev()
+                .find_map(prompt_time_of_line);
+            (pos + last_nl as u64 + 1, found.or(value))
+        }
+        // 首次或文件被截断：从文件末尾按块往前找
+        _ => {
+            const CHUNK: u64 = 256 * 1024;
+            let mut pos = len;
+            let mut carry: Vec<u8> = Vec::new();
+            let mut scanned_to = None;
+            let mut found = None;
+            while pos > 0 && len - pos < LAST_PROMPT_SCAN_LIMIT {
+                let start = pos.saturating_sub(CHUNK);
+                file.seek(SeekFrom::Start(start)).ok()?;
+                let mut buf = vec![0u8; (pos - start) as usize];
+                file.read_exact(&mut buf).ok()?;
+                if scanned_to.is_none() {
+                    // 末尾可能是正在写入的半行，缓存位置记在最后一个换行之后
+                    if let Some(i) = buf.iter().rposition(|b| *b == b'\n') {
+                        scanned_to = Some(start + i as u64 + 1);
+                    }
+                }
+                buf.extend_from_slice(&carry);
+                let mut segs: Vec<&[u8]> = buf.split(|b| *b == b'\n').collect();
+                // 块开头可能是不完整的行，留到下一块拼接
+                let head = if start > 0 { segs.remove(0).to_vec() } else { Vec::new() };
+                found = segs.into_iter().rev().find_map(prompt_time_of_line);
+                if found.is_some() {
+                    break;
+                }
+                carry = head;
+                pos = start;
+            }
+            (scanned_to.unwrap_or(0), found)
+        }
+    };
+    if let Ok(mut cache) = LAST_PROMPT_CACHE.lock() {
+        cache.insert(path.to_path_buf(), (scanned_to, result));
+    }
+    result
+}
+
 #[tauri::command]
 pub(crate) async fn list_sessions() -> Result<Vec<Value>, String> {
     run_blocking(list_sessions_blocking).await
@@ -307,6 +448,8 @@ fn list_sessions_blocking() -> Result<Vec<Value>, String> {
                                     "project": project_name,
                                     "projectDir": project_dir,
                                     "modifiedAt": modified,
+                                    // 最后一条用户消息的时间，列表按它排序；找不到时为 0，前端退回修改时间
+                                    "lastPromptAt": last_prompt_at(&path).unwrap_or(0),
                                     "preview": preview,
                                 }));
                             }
@@ -1529,5 +1672,64 @@ mod terminal_session_tests {
         assert!(process_alive(pid, None));
         // 创建时间对不上，视为 PID 已被其它进程复用
         assert!(!process_alive(pid, Some(1)));
+    }
+}
+
+#[cfg(test)]
+mod last_prompt_tests {
+    use super::{is_user_prompt, last_prompt_at, parse_iso_millis};
+    use serde_json::json;
+    use std::io::Write;
+
+    #[test]
+    fn test_parse_iso_millis() {
+        assert_eq!(parse_iso_millis("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_iso_millis("2026-10-21T14:12:54.123Z"), Some(1792591974123));
+        assert_eq!(parse_iso_millis("2000-03-01T00:00:00.5Z"), Some(951868800500));
+        assert_eq!(parse_iso_millis("bad"), None);
+    }
+
+    #[test]
+    fn test_is_user_prompt() {
+        assert!(is_user_prompt(&json!({ "type": "user", "message": { "content": "你好" } })));
+        assert!(is_user_prompt(&json!({ "type": "user", "origin": { "kind": "human" },
+            "message": { "content": [{ "type": "text", "text": "看图" }, { "type": "image" }] } })));
+        // 工具结果、注入提示、后台任务通知、本地命令输出都不算
+        assert!(!is_user_prompt(&json!({ "type": "user", "message": { "content": [{ "type": "tool_result" }] } })));
+        assert!(!is_user_prompt(&json!({ "type": "user", "isMeta": true, "message": { "content": "x" } })));
+        assert!(!is_user_prompt(&json!({ "type": "user", "origin": { "kind": "task-notification" },
+            "message": { "content": "<task-notification>" } })));
+        assert!(!is_user_prompt(&json!({ "type": "user", "message": { "content": "<local-command-stdout>ok</local-command-stdout>" } })));
+        assert!(!is_user_prompt(&json!({ "type": "assistant", "message": { "content": "hi" } })));
+    }
+
+    fn line(v: serde_json::Value) -> String {
+        format!("{}\n", v)
+    }
+
+    #[test]
+    fn test_last_prompt_at_incremental() {
+        let path = std::env::temp_dir().join(format!("claudedeck_prompt_{}.jsonl", std::process::id()));
+        let prompt = |ts: &str| line(json!({ "type": "user", "timestamp": ts, "message": { "content": "问" } }));
+        let reply = |ts: &str| line(json!({ "type": "assistant", "timestamp": ts, "message": { "content": "答" } }));
+        std::fs::write(&path, prompt("1970-01-01T00:00:01Z") + &reply("1970-01-01T00:00:02Z")).unwrap();
+        assert_eq!(last_prompt_at(&path), Some(1000));
+
+        // 追加回复和写到一半的行：结果不变
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        write!(f, "{}{{\"type\":\"user\"", reply("1970-01-01T00:00:03Z")).unwrap();
+        assert_eq!(last_prompt_at(&path), Some(1000));
+
+        // 补完那一行，并追加新的用户消息
+        write!(f, ",\"timestamp\":\"1970-01-01T00:00:04Z\",\"message\":{{\"content\":\"半行\"}}}}\n").unwrap();
+        assert_eq!(last_prompt_at(&path), Some(4000));
+        write!(f, "{}", prompt("1970-01-01T00:00:05Z")).unwrap();
+        assert_eq!(last_prompt_at(&path), Some(5000));
+        drop(f);
+
+        // 文件被截断后从头重新扫描
+        std::fs::write(&path, prompt("1970-01-01T00:00:09Z")).unwrap();
+        assert_eq!(last_prompt_at(&path), Some(9000));
+        std::fs::remove_file(&path).ok();
     }
 }

@@ -79,7 +79,16 @@ export function filterSessions(
   return result;
 }
 
-/** 按项目分组：组内按修改时间倒序，置顶项目在前，其余按最近真实会话的时间排序 */
+/**
+ * 会话的排序时间：用户最后一次发消息的时间，未知时（草稿、找不到用户消息）退回修改时间。
+ * 不直接用修改时间：正在回复的会话会持续写入 JSONL，几个同时运行的会话会轮流跳到最前；
+ * 按最后发言时间排序，会话只在用户给它发消息时上移，回复过程中和结束时都不动。
+ */
+export function sessionSortTime(s: SessionListItem): number {
+  return s.lastPromptAt || s.modifiedAt;
+}
+
+/** 按项目分组：组内按排序时间倒序，置顶项目在前，其余按最近真实会话的排序时间排序 */
 export function groupByProject(
   filtered: SessionListItem[],
   pinnedSessions: Set<string>,
@@ -92,7 +101,7 @@ export function groupByProject(
     map.get(key)!.push(s);
   }
   for (const items of map.values()) {
-    items.sort((a, b) => b.modifiedAt - a.modifiedAt);
+    items.sort((a, b) => sessionSortTime(b) - sessionSortTime(a));
   }
   // 项目在列表里的排序位置，只看这个项目下"已经落盘"的真实会话，不算草稿——
   // 新建会话时草稿的 modifiedAt 是创建时刻（Date.now()），如果拿它参与排序，
@@ -100,7 +109,8 @@ export function groupByProject(
   // 项目下全是草稿（刚新建的项目，还没有任何历史会话）时才退回用草稿的时间。
   const sortKey = (items: SessionListItem[]) => {
     const real = items.find((s) => s.path !== '');
-    return (real ?? items[0])?.modifiedAt || 0;
+    const first = real ?? items[0];
+    return first ? sessionSortTime(first) : 0;
   };
   const entries = Array.from(map.entries());
   entries.sort((a, b) => {

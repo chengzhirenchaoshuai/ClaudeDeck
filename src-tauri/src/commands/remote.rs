@@ -291,7 +291,40 @@ if (Test-Path -LiteralPath $proj) {
       }
       if ($prev.Length -gt 120) { $prev = $prev.Substring(0, 120) }
       $ms = [int64](([DateTimeOffset]$f.LastWriteTimeUtc).ToUnixTimeMilliseconds())
-      $out += [pscustomobject]@{ id = $f.BaseName; path = $f.FullName; projectDir = $d.Name; modifiedAt = $ms; cwd = $cwd; preview = $prev }
+      # 最后一条用户亲自发出的消息的时间（规则同本机 is_user_prompt），只看文件末尾 1MB，找不到为 0。
+      # 直接按字节读取末尾：Windows PowerShell 5.1 的 Get-Content -Tail 和 ConvertFrom-Json
+      # 遇到几 MB 的工具结果行（截图）都极慢。只用正则匹配原始文本，
+      # 键名后紧跟 ": 的模式不会匹配到消息正文里被转义的文字。
+      $lastPrompt = [int64]0
+      $tail = @()
+      try {
+        $fs = [IO.File]::Open($f.FullName, 'Open', 'Read', 'ReadWrite')
+        try {
+          $n = [int][Math]::Min($fs.Length, 1048576)
+          [void]$fs.Seek(-$n, 'End')
+          $buf = New-Object byte[] $n
+          $read = 0
+          while ($read -lt $n) { $r = $fs.Read($buf, $read, $n - $read); if ($r -le 0) { break }; $read += $r }
+          $tail = [Text.Encoding]::UTF8.GetString($buf, 0, $read).Split("`n")
+          # 从文件中间开始读时，第一段是不完整的行
+          if ($n -lt $fs.Length -and $tail.Count -gt 0) { $tail[0] = '' }
+        } finally { $fs.Dispose() }
+      } catch {}
+      for ($i = $tail.Count - 1; $i -ge 0; $i--) {
+        $line = $tail[$i]
+        # 一律区分大小写（-cmatch）：附件记录里有 "type":"User" 这样的字段
+        if ($line -cnotmatch '"type":"user"') { continue }
+        if ($line -cmatch '"attachment":\{') { continue }
+        if ($line -cmatch '"(isMeta|isCompactSummary|isSidechain)":true') { continue }
+        if ($line -cmatch '"(toolUseResult|tool_use_id)":') { continue }
+        if ($line -cmatch '"origin":\{"kind":"([^"]*)"' -and $Matches[1] -cne 'human') { continue }
+        if ($line -cmatch '"(content|text)":"<local-command-std') { continue }
+        if ($line -cmatch '"timestamp":"([^"]+)"') {
+          try { $lastPrompt = [DateTimeOffset]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds() } catch {}
+        }
+        break
+      }
+      $out += [pscustomobject]@{ id = $f.BaseName; path = $f.FullName; projectDir = $d.Name; modifiedAt = $ms; lastPromptAt = $lastPrompt; cwd = $cwd; preview = $prev }
     }
   }
 }
@@ -801,6 +834,7 @@ pub async fn list_remote_sessions(host_id: String) -> Result<Vec<Value>, String>
                 "project": to_uri(&host_id, cwd),
                 "projectDir": project_dir,
                 "modifiedAt": item["modifiedAt"].as_u64().unwrap_or(0),
+                "lastPromptAt": item["lastPromptAt"].as_u64().unwrap_or(0),
                 "preview": item["preview"].as_str().unwrap_or(""),
                 "host": host_id,
             }))

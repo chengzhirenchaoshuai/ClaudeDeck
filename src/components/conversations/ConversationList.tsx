@@ -22,6 +22,7 @@ import {
   projectLabel,
   filterSessions,
   groupByProject,
+  sessionSortTime,
   findContentOnlyMatches,
 } from './session-list-model';
 import { usePinnedArchived } from './usePinnedArchived';
@@ -220,10 +221,10 @@ export function ConversationList() {
   // Group by project
   const projectGroups = useMemo(() => groupByProject(filtered, pinnedSessions), [filtered, pinnedSessions]);
 
-  // 最近活跃视图：按修改时间从新到旧平铺。会话置顶只在所属项目内生效（文件夹视图），
+  // 最近活跃视图：按最后发言时间从新到旧平铺。会话置顶只在所属项目内生效（文件夹视图），
   // 这里不跨项目把置顶会话排到整个列表最前，只在标题前显示图钉
   const recentlyActiveGroups = useMemo(() => {
-    const others = [...filtered].sort((a, b) => b.modifiedAt - a.modifiedAt);
+    const others = [...filtered].sort((a, b) => sessionSortTime(b) - sessionSortTime(a));
     return { others };
   }, [filtered]);
 
