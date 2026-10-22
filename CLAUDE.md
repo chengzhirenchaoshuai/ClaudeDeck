@@ -21,7 +21,7 @@ scripts/bump-version.sh <版本号>    # 同步三处版本号
 - **CLI 进程**：首条消息由 `start_claude_session` 启动 CLI，之后的消息、权限响应（`can_use_tool`）、`set_permission_mode`/`set_model`/`interrupt`/`rewind_files` 都走 stdin 上的 SDK 控制协议，不新建进程。模式映射 `code/ask/plan/bypass` → `acceptEdits/default/plan/bypassPermissions`。
 - **流解析**：`useStreamProcessor.ts` 按 stdinId 路由到标签页，分发给 `src/hooks/stream/handlers/`，前后台共用；依赖 InputBar ref、`agentStore` 或当前选中标签页的操作要用 `isForeground` 限定。消息类型见 `src/lib/stream-message.ts`：**实时 stream-json 用蛇形字段，磁盘 JSONL 用驼峰**，不要混用。
 - **多标签页**：`chatStore` 的方法都带 `tabId`；`agentStore` 只存当前标签页，切换时 `saveToCache`/`restoreFromCache`；后台会话按 `sessionStore.stdinToTab` 路由。
-- **状态持久化**：`settingsStore` 存 localStorage（version 16），改结构必须加迁移。
+- **状态持久化**：`settingsStore` 存 localStorage（version 17），改结构必须加迁移。
 - **远程主机**：项目路径 `ssh://<主机别名>/<远端路径>`，经系统 ssh 在远端运行，不注入本机服务商配置。
 - **窗口**：主窗口 `create: false`，新窗口也必须在后端用 `data_directory` 创建（数据目录见 `app_paths.rs`）。
 - **Windows**：`.cmd`/`.bat` 经 `cmd /C` 启动，子进程加 CREATE_NO_WINDOW。

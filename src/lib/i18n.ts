@@ -910,12 +910,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'chat.turns': 'turns',
     'chat.toggleFiles': 'Toggle file panel',
     'chat.queued': 'Queued — sends when this turn ends',
+    'chat.sentWaiting': 'Sent — joins the conversation when the model picks it up',
     'chat.latest': 'Latest',
     'chat.welcome': `Welcome to ${APP_NAME}`,
     'chat.welcomeWithProject': 'Start working with the selected model. The CLI session runs in the background.',
     'chat.loadingSession': 'Loading conversation…',
     'chat.welcomeNoProject': 'Select a project folder to get started.',
-    'chat.sentWaiting': 'Sent — joins the conversation when the model picks it up',
 
     // InputBar
     'input.working': 'The model is working...',

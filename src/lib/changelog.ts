@@ -18,6 +18,59 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.0',
+    date: '2026-10-22',
+    highlights: {
+      zh: ['与终端 claude 打通：跟随 CLI 配置、会话互相续接、显示终端会话'],
+      en: ['Works hand in hand with terminal claude: follow CLI config, shared sessions, terminal sessions in the list'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '「跟随 CLI 配置」：App 启动的会话与终端行为一致，模型与思考档位可选「CLI 默认」',
+            '终端续接会话时 App 自动同步，下次发送接上最新上下文',
+            '运行中发送的消息直接交给 CLI，在工具调用间隙插入本轮',
+            '会话列表显示终端里运行的 claude 会话（本机与远程），回复完成时标记未读',
+            'App 启动的会话出现在终端 /resume 列表里',
+            '用量显示距重置的剩余时间',
+          ],
+          en: [
+            '"Follow CLI config": sessions started by the app behave like terminal claude; model and thinking level can use "CLI default"',
+            'Sessions continued in the terminal sync back automatically, and the next message resumes the latest context',
+            'Messages sent while running go straight to the CLI and join the current turn between tool calls',
+            'Session list shows claude sessions running in terminals (local and remote) and marks them unread when they finish',
+            'Sessions started by the app appear in the terminal /resume list',
+            'Usage shows time remaining until reset',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '会话列表按最后发言时间排序，不再来回跳动',
+            '选项卡重新设计，支持上一步，悬浮显示不挤占消息区',
+            '美化 Markdown 表格、代码、引用、列表与脚注',
+          ],
+          en: [
+            'Sessions are sorted by last prompt time and no longer jump around',
+            'Redesigned question cards with a Back button, floating above the input bar',
+            'Polished Markdown tables, code, quotes, lists and footnotes',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['公式错位与裁切', '任务栏图标发糊'],
+          en: ['Misaligned or clipped math formulas', 'Blurry taskbar icon'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.2.2',
     date: '2026-10-14',
     highlights: {

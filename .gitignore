@@ -49,3 +49,6 @@ package-lock.json
 
 # Obsidian
 .obsidian/
+
+# 设计草稿
+design/
