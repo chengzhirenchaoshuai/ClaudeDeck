@@ -18,6 +18,57 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.0',
+    date: '2026-10-23',
+    highlights: {
+      zh: ['全新主题方案与自绘标题栏；对话中显示上下文压缩提示'],
+      en: ['New theme presets and custom title bar; context compaction notices in the conversation'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '主题方案：浅色、深色各选一套，随外观自动切换',
+            '自绘标题栏，与主题背景或自定义壁纸融为一体',
+            '上下文压缩后，对话里显示压缩前后 token 数、保留的文件和压缩摘要',
+            '文件预览可复制内容',
+            '消息里的文件路径支持行号和中文路径',
+          ],
+          en: [
+            'Theme presets: pick one light and one dark theme, switched with the appearance',
+            'Custom title bar that blends with the theme background or wallpaper',
+            'After context compaction, the conversation shows token counts, kept files and the summary',
+            'Copy content from the file preview',
+            'File paths in messages support line numbers and non-ASCII names',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '自定义背景上传时自动压缩，固定铺满',
+            '打开设置时长会话不再卡顿',
+            '远程文件树扫描更深、条目上限更高',
+          ],
+          en: [
+            'Custom backgrounds are compressed on upload and always fill the window',
+            'Opening settings no longer stalls long conversations',
+            'Remote file tree scans deeper and lists more entries',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['远程项目的文件打开、附件读取与路径恢复问题', '背景图过大时操作被打断'],
+          en: ['Opening files, reading attachments and restoring paths in remote projects', 'Actions interrupted when the background image was too large'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-10-22',
     highlights: {
