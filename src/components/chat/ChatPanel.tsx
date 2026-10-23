@@ -9,6 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { UsageChip } from '../usage/UsageChip';
 import { useFileStore } from '../../stores/fileStore';
+import { toSessionFilePath } from '../../lib/remote';
 import { useAgentStore } from '../../stores/agentStore';
 import { AgentPanel } from '../agents/AgentPanel';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -91,7 +92,8 @@ export function ChatPanel() {
       if (!filePath) return;
       // Open secondary panel to files tab and select the file
       useSettingsStore.getState().setSecondaryTab('files');
-      useFileStore.getState().selectFile(filePath);
+      // 输入框里的文件块在远程项目中存的是远端原生路径，要转成 ssh:// 才能读取
+      useFileStore.getState().selectFile(toSessionFilePath(filePath));
     };
     window.addEventListener('tokenicode:open-file', onOpenFile);
     return () => window.removeEventListener('tokenicode:open-file', onOpenFile);

@@ -15,8 +15,17 @@ pub(crate) struct WatcherManager {
 }
 
 
+/// 远程文件在远端，不能交给本机程序：cmd start 会把 ssh:// 当协议链接打开
+fn reject_remote_path(path: &str) -> Result<(), String> {
+    if path.starts_with(commands::remote::REMOTE_SCHEME) {
+        return Err("远程文件不能用本机程序打开".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) async fn open_in_vscode(path: String) -> Result<(), String> {
+    reject_remote_path(&path)?;
     let mut cmd = Command::new("code");
     cmd.arg(&path);
     cmd.creation_flags(0x08000000);
@@ -27,6 +36,7 @@ pub(crate) async fn open_in_vscode(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub(crate) async fn reveal_in_finder(path: String) -> Result<(), String> {
+    reject_remote_path(&path)?;
     let mut cmd = Command::new("explorer");
     cmd.args(["/select,", &path]);
     cmd.creation_flags(0x08000000);
@@ -37,6 +47,7 @@ pub(crate) async fn reveal_in_finder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub(crate) async fn open_with_default_app(path: String) -> Result<(), String> {
+    reject_remote_path(&path)?;
     Command::new("cmd")
         .args(["/C", "start", "", &path])
         .creation_flags(0x08000000)

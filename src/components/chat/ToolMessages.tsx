@@ -4,7 +4,7 @@ import { useFileStore } from '../../stores/fileStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
-import { toSessionFilePath } from '../../lib/remote';
+import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
 import { safeContent, type MessageProps } from './messageShared';
 
 /* ================================================================
@@ -170,14 +170,14 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+              if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(input.file_path)) {
                 bridge.openWithDefaultApp(input.file_path);
               } else {
                 useFileStore.getState().selectFile(toSessionFilePath(input.file_path));
               }
             }}
             onContextMenu={(e) => {
-              if (e.ctrlKey || e.metaKey) {
+              if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(input.file_path)) {
                 e.preventDefault();
                 e.stopPropagation();
                 bridge.revealInFinder(input.file_path);

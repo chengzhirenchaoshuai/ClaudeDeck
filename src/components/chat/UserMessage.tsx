@@ -6,7 +6,8 @@ import { useLightboxStore } from '../shared/ImageLightbox';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
 import { useRewind } from '../../hooks/useRewind';
-import { toSessionFilePath } from '../../lib/remote';
+import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
+import { parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { UserAvatar } from '../shared/UserAvatar';
 import { safeContent, type MessageProps } from './messageShared';
 
@@ -22,31 +23,26 @@ function getFileExt(name: string): string {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-/** Detect file paths in inline code — same regexes as MarkdownRenderer */
-const FILE_PATH_RE = /^(?:\/|\.\/|\.\.\/|[a-zA-Z]:[/\\]|src\/|lib\/|components\/|stores\/|hooks\/|utils\/|tests\/|__tests__\/)[\w.@/-]+\.\w{1,10}$/;
-const KNOWN_EXT_RE = /^[\w][\w.-]*\.(?:md|mdx|ts|tsx|js|jsx|mjs|cjs|json|jsonl|toml|yaml|yml|py|pyi|rs|go|html|htm|css|scss|sass|less|vue|svelte|sh|bash|zsh|fish|env|conf|cfg|ini|xml|sql|graphql|gql|proto|lock|log|txt|csv|rb|php|java|kt|swift|c|cpp|h|hpp|cs|r|lua|zig|ex|exs|erl|ml|mli|tf|hcl|dockerfile|makefile)$/i;
-
 /** Render a single backtick-inner segment: file path → clickable chip, else → inline code */
 function renderCodeSegment(inner: string, key: number): ReactNode {
-  if (FILE_PATH_RE.test(inner) || KNOWN_EXT_RE.test(inner)) {
-    const wd = useSettingsStore.getState().workingDirectory || '';
-    const resolved = toSessionFilePath(inner.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(inner)
-      ? inner
-      : wd ? `${wd.replace(/\/$/, '')}/${inner}` : inner);
-    const fileName = inner.split(/[\\/]/).pop() || inner;
+  const filePath = parseInlineFilePath(inner);
+  if (filePath) {
+    const resolved = resolveSessionPath(filePath.path, useSettingsStore.getState().workingDirectory || '');
+    const fileName = (filePath.path.split(/[\\/]/).pop() || filePath.path)
+      + (filePath.line ? `:${filePath.line}` : '');
     return (
       <button
         key={key}
         onClick={(e) => {
           e.stopPropagation();
-          if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+          if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(resolved)) {
             bridge.openWithDefaultApp(resolved);
           } else {
             useFileStore.getState().selectFile(resolved);
           }
         }}
         onContextMenu={(e) => {
-          if (e.ctrlKey || e.metaKey) {
+          if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(resolved)) {
             e.preventDefault();
             bridge.revealInFinder(resolved);
           }
@@ -227,16 +223,17 @@ export function UserMsg({ message }: MessageProps) {
               <button
                 key={i}
                 onClick={(e) => {
-                  if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+                  if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(att.path)) {
                     bridge.openWithDefaultApp(att.path);
                   } else if (att.isImage) {
-                    useLightboxStore.getState().openFile(att.path, att.name);
+                    // 远程项目里附件在远端：转成 ssh:// 路径读取
+                    useLightboxStore.getState().openFile(toSessionFilePath(att.path), att.name);
                   } else {
-                    useFileStore.getState().selectFile(att.path);
+                    useFileStore.getState().selectFile(toSessionFilePath(att.path));
                   }
                 }}
                 onContextMenu={(e) => {
-                  if (e.ctrlKey || e.metaKey) {
+                  if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(att.path)) {
                     e.preventDefault();
                     bridge.revealInFinder(att.path);
                   }

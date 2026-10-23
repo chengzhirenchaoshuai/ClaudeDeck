@@ -466,8 +466,10 @@ pub async fn scan_remote_tree(host_id: &str, remote_path: &str, depth: u32) -> R
     let host = find_host(host_id)?;
     let script = SCAN_TREE_SCRIPT
         .replace("__DIR__", &ps_quote(&remote_path.replace('/', "\\")))
-        .replace("__DEPTH__", &depth.min(6).to_string())
-        .replace("__CAP__", "4000");
+        // 与本机一致按前端要求的深度（最多 8 层）；上限 4000 时中型项目就会被截断，
+        // 截断是深度优先的，排在后面的目录会整个变空、文件点不到，所以放宽到 20000
+        .replace("__DEPTH__", &depth.min(8).to_string())
+        .replace("__CAP__", "20000");
     let (stdout, stderr, code) =
         run_remote(&host, &powershell_command(&script), Duration::from_secs(60)).await?;
     if code != 0 {

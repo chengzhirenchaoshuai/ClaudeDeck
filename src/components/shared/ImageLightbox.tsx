@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { create } from 'zustand';
-import { bridge } from '../../lib/tauri-bridge';
+import { bridge, isRemotePath } from '../../lib/tauri-bridge';
 
 /* ================================================================
    Lightbox store — global state for the image lightbox overlay
@@ -87,8 +87,8 @@ export function ImageLightbox() {
         </svg>
       </button>
 
-      {/* Open externally button */}
-      {filePath && (
+      {/* Open externally button：远程图片在远端，本机程序打不开 */}
+      {filePath && !isRemotePath(filePath) && (
         <button
           onClick={(e) => {
             e.stopPropagation();

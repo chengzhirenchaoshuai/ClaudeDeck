@@ -29,6 +29,14 @@ export function toSessionFilePath(path: string): string {
   return path;
 }
 
+/**
+ * 会话里的文件能否交给本机程序打开、在资源管理器中定位。远程会话的文件在远端：
+ * 原样传 C:\x 会打开本机上同路径的另一个文件，传 ssh:// 会被 Windows 当成协议链接。
+ */
+export function isLocalSessionFile(path: string): boolean {
+  return !toSessionFilePath(path).startsWith('ssh://');
+}
+
 /** 保存当前标签的对话与 Agent 状态，切走后回来仍能恢复 */
 function saveCurrentTab() {
   const currentTabId = useSessionStore.getState().selectedSessionId;

@@ -9,7 +9,8 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useFileStore } from '../../stores/fileStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { rehypeKatexFix } from '../../lib/rehype-katex-fix';
-import { toSessionFilePath } from '../../lib/remote';
+import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
+import { KNOWN_FILE_EXTENSIONS, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { useT } from '../../lib/i18n';
 
 /* ================================================================
@@ -18,6 +19,8 @@ import { useT } from '../../lib/i18n';
 function isLocalPath(src: string): boolean {
   return (
     src.startsWith('file://') ||
+    // 远程项目里拼出来的 ssh:// 路径：同样经后端读取，不能直接当 <img> 地址
+    src.startsWith('ssh://') ||
     src.startsWith('/') ||
     /^[A-Za-z]:[/\\]/.test(src)
   );
@@ -29,16 +32,17 @@ function AsyncImage({ src, alt }: { src: string; alt?: string }) {
   const [error, setError] = useState(false);
   const showThumbnails = useSettingsStore((s) => s.showImageThumbnails);
 
-  useEffect(() => {
-    const filePath = src.startsWith('file://') ? src.slice(7) : src;
-    bridge.readFileBase64(filePath).then(setDataUrl).catch(() => setError(true));
-  }, [src]);
+  // 远程项目里的绝对路径（C:\x\a.png）转成 ssh:// 经远端读取
+  const filePath = toSessionFilePath(src.startsWith('file://') ? src.slice(7) : src);
 
-  const filePath = src.startsWith('file://') ? src.slice(7) : src;
+  useEffect(() => {
+    bridge.readFileBase64(filePath).then(setDataUrl).catch(() => setError(true));
+  }, [filePath]);
+
   const fileName = filePath.split(/[\\/]/).pop() || filePath;
 
   const handleClick = useCallback((e: React.MouseEvent) => {
-    if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+    if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(filePath)) {
       bridge.openWithDefaultApp(filePath);
     } else {
       useLightboxStore.getState().openFile(filePath, alt);
@@ -172,33 +176,15 @@ function extractText(node: ReactNode): string {
   return '';
 }
 
-/** Known code/config file extensions — shared between wrapBareFilePaths and inline code detection. */
-const KNOWN_FILE_EXTENSIONS = new Set([
-  'md', 'mdx', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'jsonl',
-  'toml', 'yaml', 'yml', 'py', 'pyi', 'rs', 'go', 'html', 'htm', 'css',
-  'scss', 'sass', 'less', 'vue', 'svelte', 'sh', 'bash', 'zsh', 'fish',
-  'env', 'conf', 'cfg', 'ini', 'xml', 'sql', 'graphql', 'gql', 'proto',
-  'lock', 'log', 'txt', 'csv', 'rb', 'php', 'java', 'kt', 'swift', 'c',
-  'cpp', 'h', 'hpp', 'cs', 'r', 'lua', 'zig', 'ex', 'exs', 'erl', 'ml',
-  'mli', 'tf', 'hcl', 'dockerfile', 'makefile', 'png', 'jpg', 'jpeg',
-  'gif', 'svg', 'webp', 'ico', 'wasm', 'map',
-]);
-
-/** Detect file paths in inline code — conservative regex to avoid false positives.
- *  Matches: path-prefixed files (/foo.ts, ./bar.md, src/baz.rs) AND
- *  bare filenames with known code/config extensions (CLAUDE.md, package.json). */
-const KNOWN_EXT_RE = /^[\w][\w.-]*\.(?:md|mdx|ts|tsx|js|jsx|mjs|cjs|json|jsonl|toml|yaml|yml|py|pyi|rs|go|html|htm|css|scss|sass|less|vue|svelte|sh|bash|zsh|fish|env|conf|cfg|ini|xml|sql|graphql|gql|proto|lock|log|txt|csv|rb|php|java|kt|swift|c|cpp|h|hpp|cs|r|lua|zig|ex|exs|erl|ml|mli|tf|hcl|dockerfile|makefile)$/i;
-const FILE_PATH_RE = /^(?:\/|\.\/|\.\.\/|[a-zA-Z]:[/\\]|src\/|lib\/|components\/|stores\/|hooks\/|utils\/|tests\/|__tests__\/)[\w.@/-]+\.\w{1,10}$/;
-
 /**
  * Pre-process markdown to wrap bare file paths in backticks so the existing
  * `code` component handler can make them clickable.
  *
  * Only processes text outside fenced code blocks and inline code.
- * Matches absolute paths (/..., C:\...), relative (./..., ../...), and
+ * Matches absolute paths (/..., C:\..., C:/...), relative (./..., ../...), and
  * common project-relative paths (src/..., lib/..., etc.).
  */
-const BARE_PATH_RE = /(^|[^`\w:@#/])((?:(?:\/|\.\.?\/)[\w.@/+-]+\.\w{1,10}|(?:src|lib|components|stores|hooks|utils|tests|__tests__|app|pages|public|assets|styles|config)\/[\w.@/+-]+\.\w{1,10}))(?![`\w])/g;
+const BARE_PATH_RE = /(^|[^`\w:@#/\\])((?:[a-zA-Z]:[\\/][\w.@+\\/-]+\.\w{1,10}|(?:\/|\.\.?\/)[\w.@/+-]+\.\w{1,10}|(?:src|lib|components|stores|hooks|utils|tests|__tests__|app|pages|public|assets|styles|config|scripts|docs)\/[\w.@/+-]+\.\w{1,10}))(?![`\w])/g;
 
 function wrapBareFilePaths(content: string): string {
   // Split by fenced code blocks (``` ... ```) — don't touch code blocks
@@ -605,23 +591,22 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
       if (className) return <code className={className}>{children}</code>;
 
       const text = extractText(children).trim();
-      const ext = text.split('.').pop()?.toLowerCase() ?? '';
-      if (((FILE_PATH_RE.test(text) || KNOWN_EXT_RE.test(text)) && KNOWN_FILE_EXTENSIONS.has(ext))) {
-        const resolved = toSessionFilePath(text.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(text)
-          ? text
-          : resolveBase ? `${resolveBase.replace(/\/$/, '')}/${text}` : text);
-        const fileName = text.split(/[\\/]/).pop() || text;
+      const filePath = parseInlineFilePath(text);
+      if (filePath) {
+        const resolved = resolveSessionPath(filePath.path, resolveBase);
+        const fileName = (filePath.path.split(/[\\/]/).pop() || filePath.path)
+          + (filePath.line ? `:${filePath.line}` : '');
         return (
           <button
             onClick={(e) => {
-              if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally) {
+              if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(resolved)) {
                 bridge.openWithDefaultApp(resolved);
               } else {
                 useFileStore.getState().selectFile(resolved);
               }
             }}
             onContextMenu={(e) => {
-              if (e.ctrlKey || e.metaKey) {
+              if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(resolved)) {
                 e.preventDefault();
                 bridge.revealInFinder(resolved);
               }
