@@ -1,86 +1,14 @@
-import { useRef, useCallback, useState, type ChangeEvent } from 'react';
+import { useRef, useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import {
   useSettingsStore,
-  ColorTheme,
-  BackgroundTheme,
   FontFamily,
 } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
+import { SKINS, skinForMode, type SkinDef, type SkinMode } from '../../lib/themes';
+import { compressBackground } from '../../lib/custom-bg';
 import { AiAvatar } from '../shared/AiAvatar';
 import { UserAvatar } from '../shared/UserAvatar';
 import { AvatarCropModal } from './AvatarCropModal';
-
-const COLOR_THEMES: { id: ColorTheme; labelKey: string; preview: string; previewDark: string }[] = [
-  {
-    id: 'black',
-    labelKey: 'settings.black',
-    preview: '#333333',
-    previewDark: '#D0D0D0',
-  },
-  {
-    id: 'blue',
-    labelKey: 'settings.blue',
-    preview: '#4E80F7',
-    previewDark: '#6B9AFF',
-  },
-  {
-    id: 'orange',
-    labelKey: 'settings.orange',
-    preview: '#C47252',
-    previewDark: '#D4856A',
-  },
-  {
-    id: 'green',
-    labelKey: 'settings.green',
-    preview: '#57A64B',
-    previewDark: '#6DBF62',
-  },
-];
-
-const BACKGROUND_THEMES: { id: BackgroundTheme; label: string; accent: string; preview: string }[] = [
-  {
-    id: 'garden',
-    label: '花园',
-    accent: '#D9857A',
-    preview: 'radial-gradient(circle at 15% 90%, #AFCB8C 0 18%, transparent 20%), linear-gradient(135deg, #FFF8EA, #F7D9C6)',
-  },
-  {
-    id: 'sakura',
-    label: '粉樱',
-    accent: '#C97D98',
-    preview: 'radial-gradient(circle at 85% 18%, #F2B7C9 0 20%, transparent 22%), linear-gradient(135deg, #FFF4F7, #F7E6CF)',
-  },
-  {
-    id: 'lake',
-    label: '湖蓝',
-    accent: '#6D9CB8',
-    preview: 'radial-gradient(circle at 15% 85%, #A9CFBF 0 18%, transparent 20%), linear-gradient(135deg, #F3FBF8, #DCEEF4)',
-  },
-  {
-    id: 'dusk',
-    label: '暮紫',
-    accent: '#9A83B8',
-    preview: 'radial-gradient(circle at 82% 18%, #D8B6C9 0 20%, transparent 22%), linear-gradient(135deg, #F7F1FB, #E9DFD1)',
-  },
-  {
-    id: 'ink',
-    label: '墨纸',
-    accent: '#7E8792',
-    preview: 'radial-gradient(circle at 18% 90%, #C4CABA 0 18%, transparent 20%), linear-gradient(135deg, #F8F5EC, #E6E2D5)',
-  },
-  {
-    id: 'vscode',
-    label: 'VS Code Dark',
-    accent: '#007ACC',
-    preview: 'linear-gradient(90deg, #252526 0 24%, #1E1E1E 24% 100%)',
-  },
-  {
-    id: 'minimal',
-    label: '纯白简约',
-    accent: '#111827',
-    preview: 'linear-gradient(90deg, #F7F7F8 0 24%, #FFFFFF 24% 100%)',
-  },
-];
 
 const FONT_FAMILY_OPTIONS: { id: FontFamily; label: string; sample: string }[] = [
   { id: 'microsoft', label: '微软雅黑 UI', sample: '中文 Aa 123' },
@@ -90,29 +18,40 @@ const FONT_FAMILY_OPTIONS: { id: FontFamily; label: string; sample: string }[] =
   { id: 'mono', label: '等宽字体', sample: '中文 Aa 123' },
 ];
 
-/* Mini app preview — simplified chat interface thumbnail */
-function ThemePreview({ color }: { color: string }) {
+/** 系统当前是否为深色，随系统设置变化 */
+function useSystemDark() {
+  const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setDark(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return dark;
+}
+
+/* 主题缩略图：用方案自己的颜色画一个简化的聊天界面 */
+function SkinPreview({ skin }: { skin: SkinDef }) {
+  const { bg, sidebar, accent, text, background } = skin.preview;
   return (
-    <div className="w-full aspect-[5/3] rounded-lg overflow-hidden border border-black/[0.06] bg-[#f5f5f5] dark:bg-[#1a1a1a] dark:border-white/[0.06] flex">
-      {/* Sidebar */}
-      <div className="w-[22%] border-r border-black/[0.06] dark:border-white/[0.06] p-2 flex flex-col gap-1.5">
-        <div className="w-full h-2 rounded-full bg-black/[0.07] dark:bg-white/[0.08]" />
-        <div className="w-[80%] h-2 rounded-full" style={{ background: color, opacity: 0.3 }} />
-        <div className="w-[60%] h-2 rounded-full bg-black/[0.05] dark:bg-white/[0.06]" />
+    <div className="w-full aspect-[5/3] rounded-lg overflow-hidden flex border"
+      style={{ background: background ?? bg, borderColor: `color-mix(in srgb, ${text} 14%, transparent)` }}>
+      {/* 侧栏 */}
+      <div className="w-[24%] p-1.5 flex flex-col gap-1"
+        style={{ background: sidebar, opacity: background ? 0.85 : 1 }}>
+        <div className="w-full h-1.5 rounded-full" style={{ background: text, opacity: 0.25 }} />
+        <div className="w-[80%] h-1.5 rounded-full" style={{ background: accent, opacity: 0.6 }} />
+        <div className="w-[60%] h-1.5 rounded-full" style={{ background: text, opacity: 0.15 }} />
       </div>
-      {/* Main content */}
-      <div className="flex-1 flex flex-col p-2.5 gap-2">
-        {/* Messages */}
-        <div className="flex-1 flex flex-col gap-1.5 justify-center">
-          <div className="w-[65%] h-2.5 rounded bg-black/[0.06] dark:bg-white/[0.07]" />
-          <div className="w-[45%] h-2.5 rounded bg-black/[0.06] dark:bg-white/[0.07]" />
-          <div className="w-[75%] h-2.5 rounded bg-black/[0.04] dark:bg-white/[0.05] self-end" />
+      {/* 消息区 */}
+      <div className="flex-1 flex flex-col p-2 gap-1.5">
+        <div className="flex-1 flex flex-col gap-1 justify-center">
+          <div className="w-[70%] h-1.5 rounded-full" style={{ background: text, opacity: 0.45 }} />
+          <div className="w-[50%] h-1.5 rounded-full" style={{ background: text, opacity: 0.3 }} />
+          <div className="w-[45%] h-2.5 rounded self-end" style={{ background: accent }} />
         </div>
-        {/* Input bar */}
-        <div className="flex items-center gap-1">
-          <div className="flex-1 h-3.5 rounded bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08]" />
-          <div className="w-3.5 h-3.5 rounded flex-shrink-0" style={{ background: color }} />
-        </div>
+        <div className="h-2.5 rounded border"
+          style={{ background: bg, borderColor: `color-mix(in srgb, ${text} 20%, transparent)` }} />
       </div>
     </div>
   );
@@ -122,15 +61,15 @@ function ThemePreview({ color }: { color: string }) {
 export function InterfaceTab() {
   const t = useT();
   const theme = useSettingsStore((s) => s.theme);
-  const colorTheme = useSettingsStore((s) => s.colorTheme);
-  const backgroundTheme = useSettingsStore((s) => s.backgroundTheme);
+  const lightSkin = useSettingsStore((s) => s.lightSkin);
+  const darkSkin = useSettingsStore((s) => s.darkSkin);
   const locale = useSettingsStore((s) => s.locale);
   const fontSize = useSettingsStore((s) => s.fontSize);
   const fontFamily = useSettingsStore((s) => s.fontFamily);
   const monoFontFollowsInterface = useSettingsStore((s) => s.monoFontFollowsInterface);
   const setTheme = useSettingsStore((s) => s.setTheme);
-  const setColorTheme = useSettingsStore((s) => s.setColorTheme);
-  const setBackgroundTheme = useSettingsStore((s) => s.setBackgroundTheme);
+  const setLightSkin = useSettingsStore((s) => s.setLightSkin);
+  const setDarkSkin = useSettingsStore((s) => s.setDarkSkin);
   const setLocale = useSettingsStore((s) => s.setLocale);
   const setFontSize = useSettingsStore((s) => s.setFontSize);
   const setFontFamily = useSettingsStore((s) => s.setFontFamily);
@@ -147,6 +86,16 @@ export function InterfaceTab() {
   const userFileInputRef = useRef<HTMLInputElement>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [cropTarget, setCropTarget] = useState<'ai' | 'user'>('ai');
+  const systemDark = useSystemDark();
+  const activeMode: SkinMode = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+  const activeSkinId = skinForMode(activeMode === 'dark' ? darkSkin : lightSkin, activeMode).id;
+
+  // 选中某个方案：记到对应深浅；外观固定为另一种深浅时一并切换，让点击立即生效
+  const pickSkin = useCallback((skin: SkinDef) => {
+    if (skin.mode === 'dark') setDarkSkin(skin.id);
+    else setLightSkin(skin.id);
+    if (theme !== 'system' && theme !== skin.mode) setTheme(skin.mode);
+  }, [theme, setDarkSkin, setLightSkin, setTheme]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, target: 'ai' | 'user') => {
     const file = e.target.files?.[0];
@@ -242,86 +191,73 @@ export function InterfaceTab() {
         />
       )}
 
-      {/* Theme Color — single row of 4 */}
+      {/* 外观 */}
       <div>
-        <h3 className="text-[13px] font-medium text-text-primary mb-3">{t('settings.colorTheme')}</h3>
-        <div className="grid grid-cols-4 gap-3">
-          {COLOR_THEMES.map((ct) => (
+        <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.appearance')}</h3>
+        <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
+          {(['light', 'dark', 'system'] as const).map((m) => (
             <button
-              key={ct.id}
-              onClick={() => setColorTheme(ct.id)}
-              title={t(ct.labelKey)}
-              className={`group relative rounded-xl p-2 transition-smooth text-left
-                ${colorTheme === ct.id
-                  ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-card bg-accent/[0.03]'
-                  : 'hover:scale-[1.02] border border-border-subtle hover:border-black/10 dark:hover:border-white/10'
+              key={m}
+              onClick={() => setTheme(m)}
+              className={`py-1.5 px-3 text-[13px] font-medium transition-smooth
+                border-r border-border-subtle last:border-r-0 whitespace-nowrap
+                ${theme === m
+                  ? 'bg-accent/10 text-accent'
+                  : 'text-text-muted hover:bg-bg-secondary'
                 }`}
             >
-              <ThemePreview color={ct.preview} />
+              {t(`settings.${m}`)}
             </button>
           ))}
         </div>
+        <p className="mt-1.5 text-[11px] text-text-tertiary">{t('settings.skinHint')}</p>
       </div>
 
-      {/* Background Skin */}
-      <div>
-        <h3 className="text-[13px] font-medium text-text-primary mb-3">背景风格</h3>
-        <div className="grid grid-cols-5 gap-3">
-          {BACKGROUND_THEMES.map((bg) => (
-            <button
-              key={bg.id}
-              onClick={() => setBackgroundTheme(bg.id)}
-              title={bg.label}
-              className={`group relative rounded-xl p-2 transition-smooth text-left
-                ${backgroundTheme === bg.id
-                  ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-card bg-accent/[0.03]'
-                  : 'hover:scale-[1.02] border border-border-subtle hover:border-black/10 dark:hover:border-white/10'
-                }`}
-            >
-              <div className="w-full aspect-[5/3] rounded-lg overflow-hidden border border-black/[0.06] relative"
-                style={{ background: bg.preview }}>
-                <div className="absolute inset-x-2 top-2 h-2 rounded-full bg-white/45" />
-                <div className="absolute left-2 bottom-2 w-10 h-5 rounded-md bg-white/45" />
-                <div className="absolute right-2 bottom-2 w-5 h-5 rounded-md"
-                  style={{ background: bg.accent }} />
-              </div>
-              <div className="mt-2 text-center text-[12px] font-medium text-text-muted">
-                {bg.label}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* 浅色 / 深色主题方案 */}
+      {(['light', 'dark'] as const).map((mode) => {
+        const selectedId = mode === 'dark' ? darkSkin : lightSkin;
+        return (
+          <div key={mode}>
+            <h3 className="text-[13px] font-medium text-text-primary mb-3">
+              {t(mode === 'dark' ? 'settings.darkSkin' : 'settings.lightSkin')}
+            </h3>
+            <div className="grid grid-cols-4 gap-3 max-w-[680px]">
+              {SKINS.filter((skin) => skin.mode === mode).map((skin) => (
+                <button
+                  key={skin.id}
+                  onClick={() => pickSkin(skin)}
+                  title={t(`skin.${skin.id}`)}
+                  className={`group relative rounded-xl p-2 transition-smooth text-left
+                    ${selectedId === skin.id
+                      ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-card bg-accent/[0.03]'
+                      : 'hover:scale-[1.02] border border-border-subtle hover:border-black/10 dark:hover:border-white/10'
+                    }`}
+                >
+                  <SkinPreview skin={skin} />
+                  <div className="mt-2 text-center text-[12px] font-medium text-text-muted truncate">
+                    {t(`skin.${skin.id}`)}
+                  </div>
+                  {activeSkinId === skin.id && (
+                    <span className="absolute top-1 right-1 px-1.5 py-px rounded-md text-[10px] font-medium
+                      bg-accent text-text-inverse">
+                      {t('settings.skinInUse')}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Custom Background Image */}
       <div>
-        <h3 className="text-[13px] font-medium text-text-primary mb-3">自定义聊天背景</h3>
+        <h3 className="text-[13px] font-medium text-text-primary mb-3">{t('settings.customBg')}</h3>
         <CustomBackgroundSection />
       </div>
 
       {/* Settings row */}
       <div className="flex items-start gap-8 flex-wrap">
-        {/* Appearance */}
-        <div>
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.appearance')}</h3>
-          <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
-            {(['light', 'dark', 'system'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setTheme(m)}
-                className={`py-1.5 px-3 text-[13px] font-medium transition-smooth
-                  border-r border-border-subtle last:border-r-0 whitespace-nowrap
-                  ${theme === m
-                    ? 'bg-accent/10 text-accent'
-                    : 'text-text-muted hover:bg-bg-secondary'
-                  }`}
-              >
-                {t(`settings.${m}`)}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Language */}
         <div>
           <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.language')}</h3>
@@ -429,18 +365,13 @@ export function InterfaceTab() {
   );
 }
 
-/* ─── Custom Background Section ─── */
+/* ─── 自定义背景 ─── */
 function CustomBackgroundSection() {
+  const t = useT();
   const customBgImage = useSettingsStore((s) => s.customBgImage);
-  const customBgSize = useSettingsStore((s) => s.customBgSize);
-  const customBgPositionX = useSettingsStore((s) => s.customBgPositionX);
-  const customBgPositionY = useSettingsStore((s) => s.customBgPositionY);
   const glassBlur = useSettingsStore((s) => s.glassBlur);
   const glassOpacity = useSettingsStore((s) => s.glassOpacity);
   const setCustomBgImage = useSettingsStore((s) => s.setCustomBgImage);
-  const setCustomBgSize = useSettingsStore((s) => s.setCustomBgSize);
-  const setCustomBgPositionX = useSettingsStore((s) => s.setCustomBgPositionX);
-  const setCustomBgPositionY = useSettingsStore((s) => s.setCustomBgPositionY);
   const setGlassBlur = useSettingsStore((s) => s.setGlassBlur);
   const setGlassOpacity = useSettingsStore((s) => s.setGlassOpacity);
   const clearCustomBg = useSettingsStore((s) => s.clearCustomBg);
@@ -449,104 +380,79 @@ function CustomBackgroundSection() {
   const handleBgUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setCustomBgImage(reader.result as string);
-    reader.readAsDataURL(file);
     e.target.value = '';
+    compressBackground(file).then(setCustomBgImage).catch((err) => {
+      console.error('[settings] 背景图处理失败：', err);
+    });
   }, [setCustomBgImage]);
 
   return (
-    <div className="space-y-3">
-      {/* Upload / Preview */}
-      <div className="flex items-start gap-4">
+    <div className="flex items-start gap-4">
+      {/* 缩略图：点击上传 / 更换，右上角 × 移除 */}
+      <div className="relative shrink-0">
         <button
           onClick={() => bgInputRef.current?.click()}
-          className={`relative rounded-xl border-2 border-dashed transition-smooth overflow-hidden flex flex-col items-center justify-center gap-1.5 hover:bg-bg-secondary
+          title={customBgImage ? t('settings.customBgReplace') : t('settings.customBgUpload')}
+          className={`group relative w-36 h-24 rounded-xl overflow-hidden transition-smooth
+            flex flex-col items-center justify-center gap-1.5
             ${customBgImage
-              ? 'border-accent/40 w-36 h-24'
-              : 'border-border-subtle hover:border-accent/30 w-36 h-24'
+              ? 'border border-border-subtle'
+              : 'border-2 border-dashed border-border-subtle hover:border-accent/40 hover:bg-bg-secondary'
             }`}
         >
           {customBgImage ? (
             <>
               <img src={customBgImage} alt="" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100
-                transition-smooth flex items-center justify-center rounded-xl">
-                <span className="text-white text-xs font-medium">更换</span>
-              </div>
+              <span className="absolute inset-0 flex items-center justify-center bg-black/30
+                text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-smooth">
+                {t('settings.customBgReplace')}
+              </span>
             </>
           ) : (
             <>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
                 className="text-text-tertiary">
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
-              <span className="text-xs text-text-muted">上传图片</span>
+              <span className="text-xs text-text-muted">{t('settings.customBgUpload')}</span>
             </>
           )}
         </button>
+        {customBgImage && (
+          <button
+            onClick={clearCustomBg}
+            title={t('settings.customBgRemove')}
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center
+              bg-bg-card border border-border-subtle text-text-muted shadow-sm
+              hover:text-error hover:border-error/40 transition-smooth"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        )}
         <input ref={bgInputRef} type="file" accept="image/*" className="hidden"
           onChange={handleBgUpload} />
-
-        <div className="flex-1">
-          {customBgImage ? (
-            <div className="space-y-2">
-              <span className="text-xs text-text-secondary">已设置自定义背景</span>
-              <button
-                onClick={clearCustomBg}
-                className="px-3 py-1.5 rounded-lg text-xs text-red-500 border border-red-200
-                  hover:bg-red-50 dark:hover:bg-red-900/10 transition-smooth"
-              >
-                移除背景，恢复默认
-              </button>
-            </div>
-          ) : (
-            <p className="text-xs text-text-tertiary leading-relaxed">
-              上传一张图片作为聊天背景（JPG/PNG/WebP）。图片存储在本地，不会上传。
-            </p>
-          )}
-        </div>
       </div>
 
-      {customBgImage && (
-        <>
-          {/* Size */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-tertiary w-16 shrink-0">背景尺寸</span>
-            <div className="inline-flex rounded-md border border-border-subtle overflow-hidden">
-              {(['cover', 'contain', 'fill'] as const).map((size) => (
-                <button
-                  key={size}
-                  onClick={() => setCustomBgSize(size)}
-                  className={`px-3 py-1 text-xs font-medium border-r border-border-subtle last:border-r-0 transition-smooth
-                    ${customBgSize === size
-                      ? 'bg-accent/10 text-accent'
-                      : 'text-text-muted hover:bg-bg-secondary'
-                    }`}
-                >
-                  {{ cover: '填充', contain: '适应', fill: '拉伸' }[size]}
-                </button>
-              ))}
-            </div>
+      <div className="flex-1 min-w-0 max-w-[320px] pt-1">
+        {customBgImage ? (
+          <div className="space-y-3">
+            <Slider label={t('settings.glassOpacity')} value={glassOpacity}
+              onChange={setGlassOpacity} min={30} max={100} unit="%"
+              hint={t('settings.glassOpacityHint')} />
+            <Slider label={t('settings.glassBlur')} value={glassBlur}
+              onChange={setGlassBlur} min={0} max={20} unit="px" />
           </div>
-
-          <Slider label="水平位置" value={customBgPositionX} onChange={setCustomBgPositionX}
-            left="左" right="右" />
-          <Slider label="垂直位置" value={customBgPositionY} onChange={setCustomBgPositionY}
-            left="上" right="下" />
-          <Slider label="毛玻璃模糊" value={glassBlur} onChange={setGlassBlur}
-            min={0} max={20} unit="px" />
-          <Slider label="面板透明度" value={glassOpacity} onChange={setGlassOpacity}
-            min={30} max={100} unit="%"
-            hint="值越高面板越不透明，文字越清晰" />
-        </>
-      )}
+        ) : (
+          <p className="text-xs text-text-tertiary leading-relaxed">{t('settings.customBgHint')}</p>
+        )}
+      </div>
     </div>
   );
 }
 
-/* ─── Tiny Slider ─── */
 function Slider({
   label, value, onChange, min = 0, max = 100, unit = '', left, right, hint,
 }: {

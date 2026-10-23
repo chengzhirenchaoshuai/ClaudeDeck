@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useState, lazy, Suspense } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { TitleBar } from './TitleBar';
 import { useFileStore } from '../../stores/fileStore';
 
 // 文件预览带 CodeMirror 及各语言包（体积最大的一块），按需加载
@@ -222,7 +223,13 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
   const showFloatingSecondary = secondaryPanelOpen && isFilePreviewMode;
 
   return (
-    <div className="flex h-full w-full overflow-hidden gradient-bg">
+    <div
+      className="flex flex-col h-full w-full overflow-hidden gradient-bg"
+      // 标题栏按侧栏宽度分段着色，见 App.css 的 .app-titlebar
+      style={{ '--sidebar-w': `${showSidebar ? sidebarWidth : 0}px` } as React.CSSProperties}
+    >
+      <TitleBar showTitle={!showSidebar} />
+      <div className="app-row flex flex-1 min-h-0 w-full overflow-hidden">
       {/* Sidebar — animates to w-0 when hidden or preview mode */}
       <div
         className={`flex-shrink-0 overflow-hidden ${panelTransition}`}
@@ -309,7 +316,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
             onClick={toggleSidebar}
           />
           <div
-            className="fixed top-0 left-0 h-full z-50 flex animate-in slide-in-from-left duration-200"
+            className="fixed top-[var(--titlebar-h)] bottom-0 left-0 z-50 flex animate-in slide-in-from-left duration-200"
             style={{ width: `${sidebarWidth}px` }}
           >
             <div className="flex-1 h-full overflow-y-auto bg-bg-sidebar
@@ -330,7 +337,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
           />
           {/* Floating panel — anchored to right edge */}
           <div
-            className="fixed top-0 right-0 h-full z-50 flex animate-in slide-in-from-right duration-200"
+            className="fixed top-[var(--titlebar-h)] bottom-0 right-0 z-50 flex animate-in slide-in-from-right duration-200"
             style={{ width: `${secondaryPanelWidth}px` }}
           >
             <div className="flex-1 h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar
@@ -340,6 +347,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

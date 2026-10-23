@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, lazy, Suspense } from 'react';
 import { AppShell } from './components/layout/AppShell';
 import { Sidebar } from './components/layout/Sidebar';
 import { ChatPanel } from './components/chat/ChatPanel';
@@ -30,6 +30,8 @@ import {
   getContextOutputTokens,
   hasMeaningfulContextUsage,
 } from './lib/context-usage';
+import { skinForMode } from './lib/themes';
+import { resolveProjectPath } from './components/conversations/session-list-model';
 import './App.css';
 
 // 设置面板、用量统计打开时才加载
@@ -84,21 +86,31 @@ const FONT_FAMILY_STACKS: Record<FontFamily, string> = {
   mono: '"Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, "Microsoft YaHei UI", monospace',
 };
 
+/**
+ * 设置、用量弹窗。单独订阅开关状态：若放在 App 里，每次打开/关闭都会让 App 重渲染，
+ * 连带侧栏、消息区（含当前会话全部消息）一起重渲染，长会话下打开设置会明显卡一下。
+ */
+function Overlays() {
+  const settingsOpen = useSettingsStore((s) => s.settingsOpen);
+  const usageOpen = useSettingsStore((s) => s.usageOpen);
+  return (
+    <Suspense fallback={null}>
+      {settingsOpen && <SettingsPanel />}
+      {usageOpen && <UsageModal />}
+    </Suspense>
+  );
+}
+
 function App() {
   const theme = useSettingsStore((s) => s.theme);
-  const colorTheme = useSettingsStore((s) => s.colorTheme);
-  const backgroundTheme = useSettingsStore((s) => s.backgroundTheme);
+  const lightSkin = useSettingsStore((s) => s.lightSkin);
+  const darkSkin = useSettingsStore((s) => s.darkSkin);
   const customBgImage = useSettingsStore((s) => s.customBgImage);
-  const customBgSize = useSettingsStore((s) => s.customBgSize);
-  const customBgPositionX = useSettingsStore((s) => s.customBgPositionX);
-  const customBgPositionY = useSettingsStore((s) => s.customBgPositionY);
   const glassBlur = useSettingsStore((s) => s.glassBlur);
   const glassOpacity = useSettingsStore((s) => s.glassOpacity);
   const fontSize = useSettingsStore((s) => s.fontSize);
   const fontFamily = useSettingsStore((s) => s.fontFamily);
   const monoFontFollowsInterface = useSettingsStore((s) => s.monoFontFollowsInterface);
-  const settingsOpen = useSettingsStore((s) => s.settingsOpen);
-  const usageOpen = useSettingsStore((s) => s.usageOpen);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
   const selectedSessionId = useSessionStore((s) => s.selectedSessionId);
   const loadTree = useFileStore((s) => s.loadTree);
@@ -360,67 +372,40 @@ function App() {
     return () => document.removeEventListener('contextmenu', handler);
   }, []);
 
-  // Apply dark/light mode class to document
-  useEffect(() => {
+  // 应用主题方案：按外观（浅色 / 深色 / 跟随系统）选出方案，
+  // 写入 data-skin，并按方案自身的深浅切换 .dark（供 Tailwind dark: 变体使用）。
+  // 用 layout effect 在首次绘制前生效，避免深色用户启动时闪一下浅色
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else if (theme === 'light') {
-      root.classList.remove('dark');
-    } else {
-      const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      const apply = () => {
-        if (mq.matches) root.classList.add('dark');
-        else root.classList.remove('dark');
-      };
-      apply();
-      mq.addEventListener('change', apply);
-      return () => mq.removeEventListener('change', apply);
-    }
-  }, [theme]);
-
-  // Apply color theme class to document
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove('theme-blue', 'theme-orange', 'theme-green');
-    if (colorTheme === 'blue') {
-      root.classList.add('theme-blue');
-    } else if (colorTheme === 'orange') {
-      root.classList.add('theme-orange');
-    } else if (colorTheme === 'green') {
-      root.classList.add('theme-green');
-    }
-    // 'black' is the default — no class needed
-  }, [colorTheme]);
-
-  // Apply watercolor background skin class to document
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove('bg-theme-garden', 'bg-theme-sakura', 'bg-theme-lake', 'bg-theme-dusk', 'bg-theme-ink', 'bg-theme-vscode', 'bg-theme-minimal');
-    root.classList.add(`bg-theme-${backgroundTheme}`);
-  }, [backgroundTheme]);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const mode = theme === 'system' ? (mq.matches ? 'dark' : 'light') : theme;
+      const skin = skinForMode(mode === 'dark' ? darkSkin : lightSkin, mode);
+      root.dataset.skin = skin.id;
+      root.toggleAttribute('data-flat', skin.flat);
+      root.classList.toggle('dark', skin.mode === 'dark');
+    };
+    apply();
+    if (theme !== 'system') return;
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme, lightSkin, darkSkin]);
 
   // Apply custom background image + glass morphism CSS variables
   useEffect(() => {
     const root = document.documentElement;
     if (customBgImage) {
       root.classList.add('custom-bg-active');
-      root.style.setProperty('--custom-bg-image', `url(${customBgImage})`);
-      root.style.setProperty('--custom-bg-size', customBgSize === 'fill' ? '100% 100%' : customBgSize);
-      root.style.setProperty('--custom-bg-pos-x', `${customBgPositionX}%`);
-      root.style.setProperty('--custom-bg-pos-y', `${customBgPositionY}%`);
+      root.style.setProperty('--custom-bg-image', `url("${customBgImage}")`);
       root.style.setProperty('--glass-blur', `${glassBlur}px`);
       root.style.setProperty('--glass-opacity', `${glassOpacity / 100}`);
     } else {
       root.classList.remove('custom-bg-active');
       root.style.removeProperty('--custom-bg-image');
-      root.style.removeProperty('--custom-bg-size');
-      root.style.removeProperty('--custom-bg-pos-x');
-      root.style.removeProperty('--custom-bg-pos-y');
       root.style.removeProperty('--glass-blur');
       root.style.removeProperty('--glass-opacity');
     }
-  }, [customBgImage, customBgSize, customBgPositionX, customBgPositionY, glassBlur, glassOpacity]);
+  }, [customBgImage, glassBlur, glassOpacity]);
 
   // Apply font size to document root
   useEffect(() => {
@@ -490,19 +475,8 @@ function App() {
           // Restore working directory
           const projectPath = prevSession.project || prevSession.projectDir;
           if (projectPath) {
-            // Resolve project path using same logic as ConversationList
-            let resolved = projectPath;
-            if (!projectPath.startsWith('/') && !/^[A-Za-z]:[/\\]/.test(projectPath)) {
-              if (projectPath.startsWith('~/')) {
-                resolved = projectPath; // will work with home dir expansion
-              } else if (/^[A-Za-z]-/.test(projectPath)) {
-                const drive = projectPath[0];
-                resolved = `${drive}:\\${projectPath.slice(2).replace(/-/g, '\\')}`;
-              } else {
-                resolved = projectPath.replace(/-/g, '/');
-              }
-            }
-            useSettingsStore.getState().setWorkingDirectory(resolved);
+            // 与会话列表共用解析逻辑：ssh:// 远程路径原样保留（原先手写的一份会把其中的 - 换成 /）
+            useSettingsStore.getState().setWorkingDirectory(resolveProjectPath(projectPath));
           }
         }
       }
@@ -602,10 +576,7 @@ function App() {
         secondary={<SecondaryPanel />}
       />
       <CommandPalette />
-      <Suspense fallback={null}>
-        {settingsOpen && <SettingsPanel />}
-        {usageOpen && <UsageModal />}
-      </Suspense>
+      <Overlays />
       <ImageLightbox />
       <Toast />
     </>

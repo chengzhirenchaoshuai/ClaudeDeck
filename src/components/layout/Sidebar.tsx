@@ -66,7 +66,7 @@ export function Sidebar() {
   // Window dragging handled via CSS -webkit-app-region: drag on the top strip
 
   return (
-    <div className="flex flex-col h-full pt-3 pb-4">
+    <div className="flex flex-col h-full pt-1 pb-4">
       {/* Logo area */}
       <div
         className="flex items-center justify-between mb-6 px-5 cursor-default">
@@ -78,7 +78,7 @@ export function Sidebar() {
               className="rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
               title="活动记录"
             >
-              <img src="/app-icon.png" alt="" className="w-8 h-8 rounded-lg shadow-sm" />
+              <img src="/app-icon.png" alt="" className="w-8 h-8" />
             </button>
             <span className="text-[18px] font-bold tracking-wide text-text-primary">
               Claude<span className="text-accent">/</span>Deck

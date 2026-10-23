@@ -83,11 +83,14 @@ def main() -> None:
         ICONS / "128x128.png": 128,
         ICONS / "128x128@2x.png": 256,
         ICONS / "icon.png": 256,
-        PUBLIC / "app-icon.png": 256,
     }
     for path, n in outputs.items():
         sized(n).save(path)
         print(f"{path.relative_to(ROOT)}  {n}px")
+
+    # 界面内（侧栏左上角、活动记录）用的图标：无底板的小号图形，直接放在主题背景上
+    small.resize((256, 256), Image.LANCZOS).save(PUBLIC / "app-icon.png")
+    print("assets/public/app-icon.png  256px（小号）")
 
     # 托盘：64px 小号图形；前端会在其上叠加未读角标（useTaskbarBadge.ts）
     tray = small.resize((64, 64), Image.LANCZOS)

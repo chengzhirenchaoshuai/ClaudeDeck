@@ -1,17 +1,16 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { ModelPrice } from '../lib/usage';
 import {
   DEEPSEEK_V4_FLASH,
   DEEPSEEK_V4_PRO,
   normalizeProviderModelName,
 } from '../lib/deepseek-models';
+import { DEFAULT_DARK_SKIN, DEFAULT_LIGHT_SKIN, migrateLegacySkin, type SkinId } from '../lib/themes';
 
 // --- Types ---
 
 export type Theme = 'light' | 'dark' | 'system';
-export type ColorTheme = 'black' | 'blue' | 'orange' | 'green';
-export type BackgroundTheme = 'garden' | 'sakura' | 'lake' | 'dusk' | 'ink' | 'vscode' | 'minimal';
 export type SecondaryPanelTab = 'files' | 'preview' | 'skills' | 'plugins';
 export type ModelId =
   | 'claude-fable-5-1'
@@ -101,8 +100,10 @@ function migrateModelSelection(model: unknown): ModelId | undefined {
 
 interface SettingsState {
   theme: Theme;
-  colorTheme: ColorTheme;
-  backgroundTheme: BackgroundTheme;
+  /** 浅色外观下使用的主题方案 */
+  lightSkin: SkinId;
+  /** 深色外观下使用的主题方案 */
+  darkSkin: SkinId;
   sidebarOpen: boolean;
   secondaryPanelOpen: boolean;
   secondaryPanelTab: SecondaryPanelTab;
@@ -163,6 +164,8 @@ interface SettingsState {
   enableMcp: boolean;
   /** 跟随 CLI 配置（默认开启）：不注入 MCP、思考、输出上限、代理等参数，行为与终端里的 claude 一致 */
   followCli: boolean;
+  /** 「CLI 默认」模式下 CLI 最近一次上报的实际模型；新会话在 CLI 上报前用它估算上下文窗口 */
+  lastCliModel: string;
   /** Whether Ctrl+Click on a file opens it with the system default app */
   ctrlClickOpenExternally: boolean;
   /** Whether to show image thumbnail previews in chat for images < 50MB */
@@ -173,21 +176,15 @@ interface SettingsState {
   // ── Custom background (user-uploaded image) ──
   /** Base64 data URL of user-uploaded custom background image, empty = disabled */
   customBgImage: string;
-  /** Background size mode */
-  customBgSize: 'cover' | 'contain' | 'fill';
-  /** Horizontal position offset (0=left, 100=right) */
-  customBgPositionX: number;
-  /** Vertical position offset (0=top, 100=bottom) */
-  customBgPositionY: number;
-  /** Glass blur strength in px */
+  /** 背景图上的面板毛玻璃模糊（px，0–20） */
   glassBlur: number;
-  /** Glass panel opacity (0=clear, 100=solid) */
+  /** 背景图上的面板不透明度（%，30–100，越大越不透明、文字越清楚） */
   glassOpacity: number;
 
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
-  setColorTheme: (colorTheme: ColorTheme) => void;
-  setBackgroundTheme: (backgroundTheme: BackgroundTheme) => void;
+  setLightSkin: (skin: SkinId) => void;
+  setDarkSkin: (skin: SkinId) => void;
   /** Whether the floating agent panel is open */
   agentPanelOpen: boolean;
 
@@ -224,6 +221,7 @@ interface SettingsState {
   toggleMinimizeOnClose: () => void;
   toggleEnableMcp: () => void;
   toggleFollowCli: () => void;
+  setLastCliModel: (model: string) => void;
   /** 打开/关闭用量面板；传入 tab 时同时切到该 Tab（仅在从关闭状态打开时生效） */
   toggleUsage: (tab?: 'usage' | 'activity') => void;
   /** 面板打开时手动切换 Tab */
@@ -234,9 +232,6 @@ interface SettingsState {
   addSkillDirectory: (path: string) => void;
   removeSkillDirectory: (path: string) => void;
   setCustomBgImage: (image: string) => void;
-  setCustomBgSize: (size: 'cover' | 'contain' | 'fill') => void;
-  setCustomBgPositionX: (x: number) => void;
-  setCustomBgPositionY: (y: number) => void;
   setGlassBlur: (blur: number) => void;
   setGlassOpacity: (opacity: number) => void;
   clearCustomBg: () => void;
@@ -253,12 +248,29 @@ function nextTheme(current: Theme): Theme {
 
 // --- Store ---
 
+/**
+ * localStorage 写满（通常是背景图、头像这类 data URL 太大）时 setItem 会同步抛错，
+ * zustand 的 persist 不捕获，异常会从每次 set() 冒出来，打断调用方后续逻辑（例如打开会话）。
+ * 这里吞掉写入错误，只记日志：设置照常生效，只是这次没能保存。
+ */
+const safeLocalStorage = {
+  getItem: (name: string) => localStorage.getItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch (e) {
+      console.error(`[settings] 保存失败（${(value.length / 1024 / 1024).toFixed(1)}MB）：`, e);
+    }
+  },
+  removeItem: (name: string) => localStorage.removeItem(name),
+};
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       theme: 'system',
-      colorTheme: 'black',
-      backgroundTheme: 'garden',
+      lightSkin: DEFAULT_LIGHT_SKIN,
+      darkSkin: DEFAULT_DARK_SKIN,
       sidebarOpen: true,
       secondaryPanelOpen: false,
       secondaryPanelTab: 'files',
@@ -294,13 +306,11 @@ export const useSettingsStore = create<SettingsState>()(
       minimizeOnClose: true,
       enableMcp: false,
       followCli: true,
+      lastCliModel: '',
       ctrlClickOpenExternally: false,
       showImageThumbnails: false,
       skillDirectories: [],
       customBgImage: '',
-      customBgSize: 'cover',
-      customBgPositionX: 50,
-      customBgPositionY: 50,
       glassBlur: 8,
       glassOpacity: 85,
 
@@ -309,9 +319,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       setTheme: (theme) => set(() => ({ theme })),
 
-      setColorTheme: (colorTheme) => set(() => ({ colorTheme })),
+      setLightSkin: (lightSkin) => set(() => ({ lightSkin })),
 
-      setBackgroundTheme: (backgroundTheme) => set(() => ({ backgroundTheme })),
+      setDarkSkin: (darkSkin) => set(() => ({ darkSkin })),
 
       toggleSidebar: () =>
         set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -410,12 +420,9 @@ export const useSettingsStore = create<SettingsState>()(
       setUserDisplayName: (name) =>
         set(() => ({ userDisplayName: name.slice(0, 20) })),
       setCustomBgImage: (image) => set(() => ({ customBgImage: image })),
-      setCustomBgSize: (size) => set(() => ({ customBgSize: size })),
-      setCustomBgPositionX: (x) => set(() => ({ customBgPositionX: Math.max(0, Math.min(100, x)) })),
-      setCustomBgPositionY: (y) => set(() => ({ customBgPositionY: Math.max(0, Math.min(100, y)) })),
       setGlassBlur: (blur) => set(() => ({ glassBlur: Math.max(0, Math.min(20, blur)) })),
-      setGlassOpacity: (opacity) => set(() => ({ glassOpacity: Math.max(0, Math.min(100, opacity)) })),
-      clearCustomBg: () => set(() => ({ customBgImage: '', customBgSize: 'cover', customBgPositionX: 50, customBgPositionY: 50, glassBlur: 8, glassOpacity: 85 })),
+      setGlassOpacity: (opacity) => set(() => ({ glassOpacity: Math.max(30, Math.min(100, opacity)) })),
+      clearCustomBg: () => set(() => ({ customBgImage: '', glassBlur: 8, glassOpacity: 85 })),
       toggleHiddenFiles: () =>
         set((state) => ({ showHiddenFiles: !state.showHiddenFiles })),
       toggleCtrlEnterToSend: () =>
@@ -427,6 +434,7 @@ export const useSettingsStore = create<SettingsState>()(
       toggleEnableMcp: () =>
         set((state) => ({ enableMcp: !state.enableMcp })),
 
+      setLastCliModel: (model) => set(() => ({ lastCliModel: model })),
       toggleFollowCli: () =>
         set((state) => ({ followCli: !state.followCli })),
 
@@ -458,7 +466,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'tokenicode-settings',
-      version: 17,
+      storage: createJSONStorage(() => safeLocalStorage),
+      version: 20,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -548,12 +557,25 @@ export const useSettingsStore = create<SettingsState>()(
           persisted.selectedModel = CLI_DEFAULT;
           persisted.thinkingLevel = CLI_DEFAULT;
         }
+        if (version < 18) {
+          // 主题色、背景风格合并为浅色 / 深色两套主题方案
+          migrateLegacySkin(persisted);
+        }
+        if (version < 19) {
+          // 背景图去掉尺寸与位置调节（固定铺满、居中）
+          delete persisted.customBgSize;
+          delete persisted.customBgPositionX;
+          delete persisted.customBgPositionY;
+        }
+        if (version < 20) {
+          persisted.lastCliModel = '';
+        }
         return persisted;
       },
       partialize: (state) => ({
         theme: state.theme,
-        colorTheme: state.colorTheme,
-        backgroundTheme: state.backgroundTheme,
+        lightSkin: state.lightSkin,
+        darkSkin: state.darkSkin,
         sidebarOpen: state.sidebarOpen,
         secondaryPanelWidth: state.secondaryPanelWidth,
         workingDirectory: state.workingDirectory,
@@ -579,14 +601,12 @@ export const useSettingsStore = create<SettingsState>()(
         minimizeOnClose: state.minimizeOnClose,
         enableMcp: state.enableMcp,
         followCli: state.followCli,
+        lastCliModel: state.lastCliModel,
         customModelPrices: state.customModelPrices,
         ctrlClickOpenExternally: state.ctrlClickOpenExternally,
         showImageThumbnails: state.showImageThumbnails,
         skillDirectories: state.skillDirectories,
         customBgImage: state.customBgImage,
-        customBgSize: state.customBgSize,
-        customBgPositionX: state.customBgPositionX,
-        customBgPositionY: state.customBgPositionY,
         glassBlur: state.glassBlur,
         glassOpacity: state.glassOpacity,
       }),

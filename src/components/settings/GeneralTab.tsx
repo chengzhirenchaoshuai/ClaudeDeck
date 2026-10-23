@@ -1,21 +1,85 @@
 import {
   CLI_DEFAULT,
   useSettingsStore,
-  MODEL_OPTIONS,
-  ContextWindowMode,
   getContextWindowForModel,
   getAutoCompactThreshold,
   MODEL_TIER_MAP as TIER_MAP,
 } from '../../stores/settingsStore';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useProviderStore } from '../../stores/providerStore';
 import { useT } from '../../lib/i18n';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 
-const CONTEXT_WINDOW_OPTIONS: { id: ContextWindowMode; label: string; hint: string }[] = [
-  { id: 'default', label: '按模型自动', hint: '自动识别所选模型的窗口（Sonnet 5 / Opus 5 / Fable / DeepSeek V4 为 1M，其余 200K）' },
-  { id: 'large1m', label: '声明 1M', hint: '强制按 1M 计算，用于实际支持 1M 但名称无法识别的模型' },
-];
+/** 自动压缩阈值的预设（K tokens）；不在其中的值归为“自定义” */
+const COMPACT_PRESETS = [160, 400, 800];
+
+/** 200000 → 200K，1000000 → 1M */
+function formatTokens(n: number): string {
+  return n >= 1_000_000 && n % 100_000 === 0 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}K`;
+}
+
+/** 分组：小标题 + 带边框的设置行列表 */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-1.5 text-[12px] font-medium text-text-tertiary">{title}</h3>
+      <div className="rounded-xl border border-border-subtle px-4 divide-y divide-border-subtle">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** 设置行：左边标题与一行说明，右边控件 */
+function Row({ title, hint, tip, children, below }: {
+  title: string;
+  hint?: ReactNode;
+  /** 完整说明，悬停标题旁的 ⓘ 显示 */
+  tip?: string;
+  children: ReactNode;
+  /** 行下方的附加内容（错误信息、自定义输入框等） */
+  below?: ReactNode;
+}) {
+  return (
+    <div className="py-3">
+      <div className="flex items-center justify-between gap-6">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[13px] text-text-primary">
+            {title}
+            {tip && (
+              <span title={tip} className="cursor-help text-text-tertiary">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M8 7.2v3.8M8 5v.01" strokeLinecap="round" />
+                </svg>
+              </span>
+            )}
+          </div>
+          {hint && <div className="mt-0.5 text-[11px] text-text-tertiary leading-relaxed">{hint}</div>}
+        </div>
+        <div className="shrink-0">{children}</div>
+      </div>
+      {below}
+    </div>
+  );
+}
+
+function Toggle({ on, onClick, disabled }: { on: boolean; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative block w-8 h-4 rounded-full transition-smooth border disabled:opacity-50
+        ${on ? 'bg-accent/80 border-accent/30' : 'bg-text-tertiary/30 border-transparent'}`}
+    >
+      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+        ${on ? 'right-0.5' : 'left-0.5'}`}
+      />
+    </button>
+  );
+}
 
 export function GeneralTab() {
   const t = useT();
@@ -46,7 +110,6 @@ export function GeneralTab() {
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const contextWindowMode = useSettingsStore((s) => s.contextWindowMode);
   const autoCompactThresholdTokens = useSettingsStore((s) => s.autoCompactThresholdTokens);
-  const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
   const setContextWindowMode = useSettingsStore((s) => s.setContextWindowMode);
   const setAutoCompactThresholdTokens = useSettingsStore((s) => s.setAutoCompactThresholdTokens);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
@@ -54,260 +117,116 @@ export function GeneralTab() {
   const minimizeOnClose = useSettingsStore((s) => s.minimizeOnClose);
   const toggleMinimizeOnClose = useSettingsStore((s) => s.toggleMinimizeOnClose);
   const ctrlClickOpenExternally = useSettingsStore((s) => s.ctrlClickOpenExternally);
-  const followCli = useSettingsStore((s) => s.followCli);
-  const toggleFollowCli = useSettingsStore((s) => s.toggleFollowCli);
   const toggleCtrlClickOpenExternally = useSettingsStore((s) => s.toggleCtrlClickOpenExternally);
+  const followCli = useSettingsStore((s) => s.followCli);
+  const lastCliModel = useSettingsStore((s) => s.lastCliModel);
+  const toggleFollowCli = useSettingsStore((s) => s.toggleFollowCli);
+
+  // 当前实际使用的模型（经服务商映射），用于显示窗口大小与阈值
   const selectedTier = TIER_MAP[selectedModel];
   const selectedMapping = selectedTier
     ? activeProvider?.modelMappings.find((m) => m.tier === selectedTier)
     : undefined;
-  const actualModel = selectedMapping?.providerModel || selectedModel;
+  const selected = selectedMapping?.providerModel || selectedModel;
+  // 「CLI 默认」不是真实模型名，用 CLI 上次上报的模型估算窗口
+  const actualModel = selected === CLI_DEFAULT ? lastCliModel : selected;
+  const actualModelLabel = selected === CLI_DEFAULT
+    ? (lastCliModel ? `${t('model.cliDefault')}（${displayProviderModelName(lastCliModel)}）` : t('model.cliDefault'))
+    : displayProviderModelName(actualModel);
   const contextWindow = getContextWindowForModel(actualModel, contextWindowMode);
-  const actualModelLabel = actualModel === CLI_DEFAULT ? t('model.cliDefault') : displayProviderModelName(actualModel);
   const compactThreshold = getAutoCompactThreshold(actualModel, contextWindowMode, autoCompactThresholdTokens);
-  const tierMappings = activeProvider?.modelMappings
-    .filter((m) => ['opus', 'sonnet', 'haiku'].includes(m.tier) && m.providerModel)
-    .map((m) => `${m.tier}=${displayProviderModelName(m.providerModel)}`)
-    .join(' / ');
+
+  // 阈值下拉框：自动 / 预设 / 自定义；选了“自定义”但还没改数值时也保持在自定义
+  const [forceCustom, setForceCustom] = useState(false);
+  const thresholdK = autoCompactThresholdTokens === null ? null : Math.round(autoCompactThresholdTokens / 1000);
+  const compactChoice = forceCustom
+    ? 'custom'
+    : thresholdK === null ? 'auto' : COMPACT_PRESETS.includes(thresholdK) ? String(thresholdK) : 'custom';
+  const onCompactChoice = (value: string) => {
+    if (value === 'auto') {
+      setForceCustom(false);
+      setAutoCompactThresholdTokens(null);
+    } else if (value === 'custom') {
+      setForceCustom(true);
+      setAutoCompactThresholdTokens(compactThreshold);
+    } else {
+      setForceCustom(false);
+      setAutoCompactThresholdTokens(Number(value) * 1000);
+    }
+  };
+
+  const compactInfo = t('settings.compactInfo')
+    .replace('{model}', actualModelLabel)
+    .replace('{window}', formatTokens(contextWindow))
+    .replace('{threshold}', formatTokens(compactThreshold));
 
   return (
-    <div className="space-y-6">
-      {/* Settings row */}
-      <div className="flex items-start gap-8 flex-wrap">
-        {/* 跟随 CLI 配置 */}
-        <div className="w-full">
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.followCli')}</h3>
-          <button
-            onClick={toggleFollowCli}
-            className="inline-flex items-center gap-2 text-[12px] text-text-secondary
-              hover:text-text-primary transition-smooth"
-          >
-            <span className={`relative w-8 h-4 rounded-full transition-smooth border
-              ${followCli ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
-            >
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
-                ${followCli ? 'right-0.5' : 'left-0.5'}`}
-              />
-            </span>
-            {t('settings.followCliToggle')}
-          </button>
-          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
-            {t('settings.followCliHint')}
-          </p>
-        </div>
-
-        {/* Default Model */}
-        <div>
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.defaultModel')}</h3>
-          <div className="flex flex-wrap gap-2">
-            {!activeProvider && (
-              <button
-                onClick={() => setSelectedModel(CLI_DEFAULT)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2
-                  rounded-lg text-[13px] font-medium transition-smooth
-                  ${selectedModel === CLI_DEFAULT
-                    ? 'bg-accent/10 text-accent border border-accent/30'
-                    : 'text-text-muted hover:bg-bg-secondary border border-border-subtle'
-                  }`}
-              >
-                {t('model.cliDefault')}
-              </button>
+    <div className="space-y-6 max-w-[640px]">
+      <Section title={t('settings.section.session')}>
+        <Row title={t('settings.followCliToggle')} hint={t('settings.followCliShort')} tip={t('settings.followCliHint')}>
+          <Toggle on={followCli} onClick={toggleFollowCli} />
+        </Row>
+        <Row title={t('settings.large1m')} hint={t('settings.large1mHint')}>
+          <Toggle
+            on={contextWindowMode === 'large1m'}
+            onClick={() => setContextWindowMode(contextWindowMode === 'large1m' ? 'default' : 'large1m')}
+          />
+        </Row>
+        {!followCli && (
+          <Row
+            title={t('settings.compactThreshold')}
+            hint={<>{t('settings.compactThresholdHint')}<br />{compactInfo}</>}
+            below={compactChoice === 'custom' && (
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={10}
+                  max={1000}
+                  step={10}
+                  value={Math.round(compactThreshold / 1000)}
+                  onChange={(e) => setAutoCompactThresholdTokens(Number(e.target.value) * 1000)}
+                  className="w-24 h-8 px-2 text-[13px] bg-bg-secondary border border-border-subtle
+                    rounded-lg text-text-primary outline-none focus:border-accent/60"
+                />
+                <span className="text-xs text-text-tertiary">K tokens</span>
+              </div>
             )}
-            {MODEL_OPTIONS.map((model) => (
-              <button
-                key={model.id}
-                onClick={() => setSelectedModel(model.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2
-                  rounded-lg text-[13px] font-medium transition-smooth
-                  ${selectedModel === model.id
-                    ? 'bg-accent/10 text-accent border border-accent/30'
-                    : 'text-text-muted hover:bg-bg-secondary border border-border-subtle'
-                  }`}
-              >
-                {selectedModel === model.id && (
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <path d="M3 8l4 4 6-7" />
-                  </svg>
-                )}
-                {(() => {
-                  if (!activeProvider) return model.short;
-                  const tier = TIER_MAP[model.id];
-                  const mapping = activeProvider.modelMappings.find((mm) => mm.tier === tier);
-                  return mapping?.providerModel ? displayProviderModelName(mapping.providerModel) : model.short;
-                })()}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2 text-xs text-text-tertiary leading-relaxed">
-            Actual model: <span className="font-mono text-text-muted">{actualModelLabel}</span>
-            {activeProvider && tierMappings && (
-              <span className="ml-2">Mappings: {tierMappings}</span>
-            )}
-          </div>
-        </div>
-
-        {/* Context Window */}
-        <div>
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">上下文窗口</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {CONTEXT_WINDOW_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                onClick={() => setContextWindowMode(option.id)}
-                className={`text-left px-3 py-2 rounded-lg border transition-smooth
-                  ${contextWindowMode === option.id
-                    ? 'bg-accent/10 text-accent border-accent/30'
-                    : 'text-text-muted hover:bg-bg-secondary border-border-subtle'
-                  }`}
-              >
-                <div className="text-[13px] font-medium">{option.label}</div>
-                <div className="mt-0.5 text-[11px] text-text-tertiary">{option.hint}</div>
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
-            当前模型（{actualModelLabel}）的上下文窗口：{contextWindow.toLocaleString()} tokens
-            （{contextWindowMode === 'large1m' ? '已声明 1M' : '按模型自动识别'}）；
-            自动 compact 阈值：{compactThreshold.toLocaleString()} tokens。
-            如果当前供应商路由实际支持 1M 而这里显示 200K，请选择“声明 1M”。
-          </p>
-        </div>
-
-        {/* Auto compact threshold */}
-        <div>
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">自动 compact 阈值</h3>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={10}
-              max={1000}
-              step={10}
-              value={Math.round(compactThreshold / 1000)}
-              onChange={(e) => setAutoCompactThresholdTokens(Number(e.target.value) * 1000)}
-              className="w-28 px-3 py-2 text-[13px] bg-bg-chat border border-border-subtle
-                rounded-lg text-text-primary focus:outline-none focus:border-accent"
-            />
-            <span className="text-xs text-text-tertiary">K tokens</span>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                onClick={() => setAutoCompactThresholdTokens(null)}
-                className={`px-2 py-1 rounded-md text-[11px] border transition-smooth
-                  ${autoCompactThresholdTokens === null
-                    ? 'bg-accent/10 text-accent border-accent/30'
-                    : 'text-text-muted hover:bg-bg-secondary border-border-subtle'
-                  }`}
-                title="按所选模型自动取上下文窗口的 80%"
-              >
-                自动
-              </button>
-              {[160, 400, 800, 950].map((value) => (
-                <button
-                  key={value}
-                  onClick={() => setAutoCompactThresholdTokens(value * 1000)}
-                  className={`px-2 py-1 rounded-md text-[11px] border transition-smooth
-                    ${autoCompactThresholdTokens !== null && Math.round(autoCompactThresholdTokens / 1000) === value
-                      ? 'bg-accent/10 text-accent border-accent/30'
-                      : 'text-text-muted hover:bg-bg-secondary border-border-subtle'
-                    }`}
-                >
-                  {value}K
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="mt-2 text-xs text-text-tertiary leading-relaxed">
-            {followCli && <>{t('settings.followCliCompactHint')}<br /></>}
-            这个值会直接决定自动发送 `/compact` 的时机；改完后对当前会话立即生效。
-            选择“自动”时，阈值随所选模型变化，取上下文窗口的 80%（200K 为 160K，1M 为 800K）。
-          </p>
-        </div>
-
-        {/* Chat Interaction */}
-        <div>
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.chatInteraction')}</h3>
-          <button
-            onClick={toggleCtrlEnterToSend}
-            className="inline-flex items-center gap-2 text-[12px] text-text-secondary
-              hover:text-text-primary transition-smooth"
           >
-            <span className={`relative w-8 h-4 rounded-full transition-smooth border
-              ${ctrlEnterToSend ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
+            <select
+              value={compactChoice}
+              onChange={(e) => onCompactChoice(e.target.value)}
+              className="h-8 px-2 rounded-lg bg-bg-secondary border border-border-subtle
+                text-[13px] text-text-primary outline-none focus:border-accent/60"
             >
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
-                ${ctrlEnterToSend ? 'right-0.5' : 'left-0.5'}`}
-              />
-            </span>
-            {t('settings.ctrlEnterToSend')}
-          </button>
-          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
-            {t('settings.ctrlEnterToSendHint')}
-          </p>
-        </div>
+              <option value="auto">{t('settings.compactAuto')}</option>
+              {COMPACT_PRESETS.map((k) => <option key={k} value={String(k)}>{k}K</option>)}
+              <option value="custom">{t('settings.compactCustom')}</option>
+            </select>
+          </Row>
+        )}
+      </Section>
 
-        {/* 窗口行为：开机启动、关闭时最小化到任务栏 */}
-        <div>
-          <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.window')}</h3>
-          <button
-            onClick={toggleAutostart}
-            disabled={autostart === null}
-            className="w-full inline-flex items-center gap-2 text-[12px] text-text-secondary
-              hover:text-text-primary transition-smooth disabled:opacity-50"
-          >
-            <span className={`relative w-8 h-4 rounded-full transition-smooth border
-              ${autostart ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
-            >
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
-                ${autostart ? 'right-0.5' : 'left-0.5'}`}
-              />
-            </span>
-            {t('settings.autostart')}
-          </button>
-          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
-            {t('settings.autostartHint')}
-          </p>
-          {autostartError && <p className="mt-1 text-[11px] text-red-500">{autostartError}</p>}
-          <button
-            onClick={toggleMinimizeOnClose}
-            className="mt-3 w-full inline-flex items-center gap-2 text-[12px] text-text-secondary
-              hover:text-text-primary transition-smooth"
-          >
-            <span className={`relative w-8 h-4 rounded-full transition-smooth border
-              ${minimizeOnClose ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
-            >
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
-                ${minimizeOnClose ? 'right-0.5' : 'left-0.5'}`}
-              />
-            </span>
-            {t('settings.minimizeOnClose')}
-          </button>
-          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
-            {t('settings.minimizeOnCloseHint')}
-          </p>
-        </div>
+      <Section title={t('settings.section.input')}>
+        <Row title={t('settings.ctrlEnterToSend')} hint={t('settings.ctrlEnterToSendHint')}>
+          <Toggle on={ctrlEnterToSend} onClick={toggleCtrlEnterToSend} />
+        </Row>
+        <Row title={t('settings.ctrlClickOpenExternally')} hint={t('settings.ctrlClickOpenExternallyHint')}>
+          <Toggle on={ctrlClickOpenExternally} onClick={toggleCtrlClickOpenExternally} />
+        </Row>
+      </Section>
 
-        {/* Ctrl+Click to open externally */}
-        <div>
-          <button
-            onClick={toggleCtrlClickOpenExternally}
-            className="inline-flex items-center gap-2 text-[12px] text-text-secondary
-              hover:text-text-primary transition-smooth"
-          >
-            <span className={`relative w-8 h-4 rounded-full transition-smooth border
-              ${ctrlClickOpenExternally ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
-            >
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
-                ${ctrlClickOpenExternally ? 'right-0.5' : 'left-0.5'}`}
-              />
-            </span>
-            {t('settings.ctrlClickOpenExternally')}
-          </button>
-          <p className="mt-1 text-[11px] text-text-tertiary leading-relaxed">
-            {t('settings.ctrlClickOpenExternallyHint')}
-          </p>
-        </div>
-
-      </div>
+      <Section title={t('settings.window')}>
+        <Row
+          title={t('settings.autostart')}
+          hint={t('settings.autostartHint')}
+          below={autostartError && <p className="mt-1 text-[11px] text-error">{autostartError}</p>}
+        >
+          <Toggle on={!!autostart} onClick={toggleAutostart} disabled={autostart === null} />
+        </Row>
+        <Row title={t('settings.minimizeOnClose')} hint={t('settings.minimizeOnCloseHint')}>
+          <Toggle on={minimizeOnClose} onClick={toggleMinimizeOnClose} />
+        </Row>
+      </Section>
     </div>
   );
 }

@@ -66,239 +66,6 @@
 @variant dark (&:where(.dark, .dark *));
 
 /* ================================================================
-   Black — dark mode
-   ================================================================ */
-.dark {
-  --color-bg-primary: #141414;
-  --color-bg-secondary: #1C1C1E;
-  --color-bg-tertiary: #2C2C2E;
-  --color-bg-chat: #0A0A0A;
-  --color-bg-sidebar: #1C1C1E;
-  --color-bg-input: #1C1C1E;
-  --color-bg-user-msg: #D0D0D0;
-  --color-bg-assistant-msg: #1A1A1C;
-  --color-bg-tool: #1E1E20;
-  --color-bg-thinking: #1A1A1C;
-  --color-bg-card: #1C1C1E;
-
-  --color-text-primary: #F0F0F0;
-  --color-text-secondary: #B0B0B0;
-  --color-text-tertiary: #8C8C8C;
-  --color-text-inverse: #101010;
-  --color-text-muted: #A3A3A3;
-
-  --color-border: #38383A;
-  --color-border-subtle: #2C2C2E;
-  --color-border-focus: #D0D0D0;
-
-  --color-accent: #D0D0D0;
-  --color-accent-light: #E0E0E0;
-  --color-accent-hover: #FFFFFF;
-  --color-accent-glow: rgba(255, 255, 255, 0.08);
-
-  --color-gradient-start: #D0D0D0;
-  --color-gradient-mid: #E0E0E0;
-  --color-gradient-end: #F0F0F0;
-
-  /* Syntax highlighting — dark mode */
-  --color-syntax-keyword:  #A78BFA;
-  --color-syntax-string:   #34D399;
-  --color-syntax-number:   #FBBF24;
-  --color-syntax-function: #60A5FA;
-  --color-syntax-comment:  #6B7280;
-  --color-syntax-type:     #22D3EE;
-  --color-syntax-builtin:  #818CF8;
-  --color-syntax-delete:   #F87171;
-  --color-syntax-meta:     #A8A29E;
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.06);
-
-  /* Icon slash color — same as brackets in default theme */
-  --color-icon-slash: black;
-}
-
-/* ================================================================
-   Blue theme — light mode
-   ================================================================ */
-.theme-blue {
-  --color-bg-user-msg: #4E80F7;
-  --color-bg-nav-active: rgba(78, 128, 247, 0.06);
-
-  --color-text-secondary: #4E80F7;
-  --color-border-focus: #4E80F7;
-
-  --color-accent: #4E80F7;
-  --color-accent-light: #6B9AFF;
-  --color-accent-hover: #3D6FE6;
-  --color-accent-glow: rgba(78, 128, 247, 0.10);
-
-  --color-gradient-start: #4E80F7;
-  --color-gradient-mid: #5C8EFF;
-  --color-gradient-end: #6B9AFF;
-
-  /* Syntax — blue accent: swap function to avoid blue-on-blue */
-  --color-syntax-keyword:  #9333EA;
-  --color-syntax-function: #0891B2;
-
-  --shadow-glow: 0 0 20px rgba(78, 128, 247, 0.10);
-
-  --color-icon-slash: var(--color-accent);
-}
-
-/* Blue — dark mode */
-.theme-blue.dark,
-.dark.theme-blue {
-  --color-bg-user-msg: #6B9AFF;
-
-  --color-text-secondary: #6B9AFF;
-  --color-border-focus: #6B9AFF;
-
-  --color-accent: #6B9AFF;
-  --color-accent-light: #8AB2FF;
-  --color-accent-hover: #4E80F7;
-  --color-accent-glow: rgba(107, 154, 255, 0.15);
-
-  --color-gradient-start: #4E80F7;
-  --color-gradient-mid: #5C8EFF;
-  --color-gradient-end: #6B9AFF;
-
-  /* Syntax — blue dark */
-  --color-syntax-keyword:  #C084FC;
-  --color-syntax-function: #22D3EE;
-
-  --shadow-glow: 0 0 20px rgba(107, 154, 255, 0.10);
-
-  --color-icon-slash: var(--color-accent);
-}
-
-/* ================================================================
-   Orange theme — light mode
-   ================================================================ */
-.theme-orange {
-  --color-bg-user-msg: #C47252;
-  --color-bg-nav-active: rgba(196, 114, 82, 0.06);
-
-  --color-text-secondary: #C47252;
-  --color-border-focus: #C47252;
-
-  --color-accent: #C47252;
-  --color-accent-light: #D4856A;
-  --color-accent-hover: #B06141;
-  --color-accent-glow: rgba(196, 114, 82, 0.10);
-  --color-warning: #E8A86D;
-
-  --color-gradient-start: #C47252;
-  --color-gradient-mid: #CC7E5E;
-  --color-gradient-end: #D4856A;
-
-  /* Syntax — orange accent: swap number to avoid amber-on-orange */
-  --color-syntax-number:   #2563EB;
-  --color-syntax-function: #0891B2;
-
-  --shadow-glow: 0 0 20px rgba(196, 114, 82, 0.10);
-
-  --color-icon-slash: var(--color-accent);
-}
-
-/* Orange — dark mode */
-.theme-orange.dark,
-.dark.theme-orange {
-  --color-bg-user-msg: #D4856A;
-
-  --color-text-secondary: #D4856A;
-  --color-border-focus: #D4856A;
-
-  --color-accent: #D4856A;
-  --color-accent-light: #E09882;
-  --color-accent-hover: #C47252;
-  --color-accent-glow: rgba(212, 133, 106, 0.15);
-
-  --color-gradient-start: #C47252;
-  --color-gradient-mid: #CC7E5E;
-  --color-gradient-end: #D4856A;
-
-  /* Syntax — orange dark */
-  --color-syntax-number:   #60A5FA;
-  --color-syntax-function: #22D3EE;
-
-  --shadow-glow: 0 0 20px rgba(212, 133, 106, 0.10);
-
-  --color-icon-slash: var(--color-accent);
-}
-
-/* ================================================================
-   Green theme — light mode
-   ================================================================ */
-.theme-green {
-  --color-bg-user-msg: #57A64B;
-  --color-bg-nav-active: rgba(87, 166, 75, 0.06);
-
-  --color-text-secondary: #4CA85A;
-  --color-border-focus: #57A64B;
-
-  --color-accent: #57A64B;
-  --color-accent-light: #6DBF62;
-  --color-accent-hover: #56AD63;
-  --color-accent-glow: rgba(87, 166, 75, 0.10);
-  --color-success: #57A64B;
-
-  --color-gradient-start: #57A64B;
-  --color-gradient-mid: #73C880;
-  --color-gradient-end: #6DBF62;
-
-  /* Syntax — green accent: swap string to avoid green-on-green */
-  --color-syntax-string:   #D97706;
-  --color-syntax-function: #0891B2;
-
-  --shadow-glow: 0 0 20px rgba(87, 166, 75, 0.10);
-
-  --color-icon-slash: var(--color-accent);
-}
-
-/* Green — dark mode */
-.theme-green.dark,
-.dark.theme-green {
-  --color-bg-user-msg: #6DBF62;
-
-  --color-text-secondary: #6DBF62;
-  --color-border-focus: #6DBF62;
-
-  --color-accent: #6DBF62;
-  --color-accent-light: #97DEA2;
-  --color-accent-hover: #57A64B;
-  --color-accent-glow: rgba(109, 191, 98, 0.15);
-
-  --color-gradient-start: #57A64B;
-  --color-gradient-mid: #73C880;
-  --color-gradient-end: #6DBF62;
-
-  /* Syntax — green dark */
-  --color-syntax-string:   #FBBF24;
-  --color-syntax-function: #22D3EE;
-
-  --shadow-glow: 0 0 20px rgba(109, 191, 98, 0.10);
-
-  --color-icon-slash: var(--color-accent);
-}
-
-/* ================================================================
-   Solid backgrounds — all themes
-   ================================================================ */
-
-/* Light mode */
-.gradient-bg {
-  background: #F5F5F7;
-}
-
-/* Dark mode — all themes */
-.dark .gradient-bg {
-  background: #1C1C1E;
-}
-
-/* ================================================================
    User message bubble — subtle shadow
    ================================================================ */
 .bg-bg-user-msg {
@@ -344,9 +111,38 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* ---------------- 圆角窗口 ----------------
+   窗口是透明的（tauri.conf.json transparent: true），四角由这里裁成圆角。
+   背景不能放在 body 上：html 没有背景时 body 的背景会扩散到整个画布，四角就裁不掉了，
+   所以背景放在 #root；裁剪放在 body，连同挂到 body 上的弹窗（createPortal）一起裁。
+   最大化时取消圆角（TitleBar 设置 data-maximized）。 */
+:root {
+  --window-radius: 12px;
+}
+
+:root:not([data-flat]) {
+  --window-radius: 18px;
+}
+
+:root[data-maximized] {
+  --window-radius: 0px;
+}
+
+html,
+body {
+  background: transparent;
+}
+
+body {
+  clip-path: inset(0 round var(--window-radius));
+}
+
+#root {
+  background: var(--skin-body-background);
+}
+
 body {
   font-family: var(--tokenicode-font-family, "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif);
-  background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -638,419 +434,438 @@ input, textarea, [contenteditable="true"],
 }
 
 /* ================================================================
-   Storybook watercolor skin
-   Inspired by a warm hand-drawn desk: paper, peach ink, soft leaves.
+   主题方案（与 src/lib/themes.ts 对应）
+   :root 上挂基础方案「樱花」，其余方案用 :root[data-skin="<id>"] 覆盖。
+   .dark 由方案自身深浅决定，供 Tailwind dark: 变体与原生控件使用。
    ================================================================ */
-:root,
-.dark,
-.theme-black,
-.theme-blue,
-.theme-orange,
-.theme-green,
-.theme-black.dark,
-.theme-blue.dark,
-.theme-orange.dark,
-.theme-green.dark {
-  --color-bg-primary: #FFF7E8;
-  --color-bg-secondary: #FFF0DF;
-  --color-bg-tertiary: #F8DEC9;
-  --color-bg-chat: #FFF8E9;
-  --color-bg-sidebar: #FFF1DF;
-  --color-bg-input: rgba(255, 250, 238, 0.92);
-  --color-bg-user-msg: #F5A9A6;
-  --color-bg-assistant-msg: rgba(255, 248, 233, 0.78);
-  --color-bg-tool: #F7EDD4;
-  --color-bg-thinking: #FFF2DE;
-  --color-bg-card: #FFF8E9;
-  --color-bg-nav-active: rgba(235, 139, 126, 0.18);
-
-  --color-text-primary: #5F4036;
-  --color-text-secondary: #7C5748;
-  --color-text-tertiary: #B28B76;
-  --color-text-inverse: #FFFDF4;
-  --color-text-muted: #8C6A5B;
-
-  --color-border: #E9B2A3;
-  --color-border-subtle: rgba(221, 157, 139, 0.58);
-  --color-border-focus: #E58F87;
-
-  --color-accent: #D9857A;
-  --color-accent-light: #F2B1A8;
-  --color-accent-hover: #C86B63;
-  --color-accent-glow: rgba(216, 133, 122, 0.18);
-  --color-success: #7EA45F;
-  --color-error: #D56A67;
-  --color-warning: #DA8A2D;
-
-  --color-gradient-start: #F4AAA6;
-  --color-gradient-mid: #FFE3C7;
-  --color-gradient-end: #B5C886;
-
-  --skin-body-background:
-    radial-gradient(circle at 12% 90%, rgba(174, 204, 142, 0.26), transparent 22%),
-    radial-gradient(circle at 92% 96%, rgba(145, 199, 207, 0.22), transparent 24%),
-    linear-gradient(135deg, #FFF8E8 0%, #FFF3DE 48%, #FFF8EA 100%);
-  --skin-app-background:
-    radial-gradient(circle at 10% 100%, rgba(165, 199, 132, 0.34), transparent 21%),
-    radial-gradient(circle at 95% 98%, rgba(155, 209, 212, 0.28), transparent 22%),
-    linear-gradient(180deg, #FFF8EA 0%, #FFF2DE 100%);
-  --skin-border-strong: rgba(218, 142, 126, 0.72);
-  --skin-border-soft: rgba(218, 142, 126, 0.50);
-  --skin-dashed-border: rgba(204, 121, 106, 0.40);
-  --skin-decor: "✿  ˚  ❀";
-  --skin-decor-color: rgba(214, 131, 113, 0.50);
-  --skin-grid-line-a: rgba(255, 255, 255, 0.22);
-  --skin-grid-line-b: rgba(255, 255, 255, 0.18);
-  --skin-accent-gradient: linear-gradient(180deg, #F3B4AD 0%, #E68F84 100%);
-  --skin-accent-border: rgba(199, 105, 96, 0.42);
-  --skin-hover-bg: rgba(244, 202, 183, 0.34);
-  --skin-table-head: rgba(188, 202, 133, 0.20);
-  --skin-resize-bg: rgba(237, 185, 166, 0.22);
-  --skin-resize-line: rgba(215, 133, 118, 0.46);
-  --skin-scrollbar: rgba(215, 134, 122, 0.36);
-  --skin-accent-text: #D47A72;
-  --skin-warning-text: #D98B30;
-  --skin-success-text: #769E5B;
-
-  --shadow-sm: 0 2px 0 rgba(184, 115, 98, 0.08),
-    0 5px 16px rgba(166, 108, 82, 0.08);
-  --shadow-md: 0 3px 0 rgba(184, 115, 98, 0.10),
-    0 12px 26px rgba(166, 108, 82, 0.10);
-  --shadow-lg: 0 4px 0 rgba(184, 115, 98, 0.12),
-    0 20px 42px rgba(166, 108, 82, 0.14);
-  --shadow-glow: 0 0 24px rgba(239, 154, 145, 0.24);
-
-  --color-icon-slash: #FFF9E9;
+:root {
+  color-scheme: light;
 }
 
-.bg-theme-sakura {
-  --color-bg-primary: #FFF6F8;
-  --color-bg-secondary: #FCEAF0;
-  --color-bg-tertiary: #F3D4DD;
-  --color-bg-chat: #FFF8FA;
-  --color-bg-sidebar: #FFF0F4;
-  --color-bg-input: rgba(255, 250, 251, 0.94);
-  --color-bg-user-msg: #DFA0B3;
-  --color-bg-assistant-msg: rgba(255, 248, 250, 0.78);
-  --color-bg-tool: #F5E7DD;
+.dark {
+  color-scheme: dark;
+}
+
+/* 樱花（基础方案）—— 水彩手绘风：樱花粉底、玫粉强调色、花瓣点缀 */
+:root {
+  --color-bg-primary: #FFF5F8;
+  --color-bg-secondary: #FFE9F0;
+  --color-bg-tertiary: #FAD3E0;
+  --color-bg-chat: #FFF7FA;
+  --color-bg-sidebar: #FFEEF4;
+  --color-bg-input: rgba(255, 250, 252, 0.94);
+  --color-bg-user-msg: #F28DB0;
+  --color-bg-assistant-msg: rgba(255, 247, 250, 0.80);
+  --color-bg-tool: #FCEAF1;
   --color-bg-thinking: #FFF0F5;
-  --color-bg-card: #FFF8FA;
-  --color-bg-nav-active: rgba(201, 125, 152, 0.16);
-  --color-text-primary: #5B3D48;
-  --color-text-secondary: #7C5361;
-  --color-text-tertiary: #B98A9A;
-  --color-text-muted: #8A6570;
-  --color-border: #E9B2C3;
-  --color-border-subtle: rgba(214, 151, 171, 0.56);
-  --color-border-focus: #D88AA4;
-  --color-accent: #C97D98;
-  --color-accent-light: #F0B8C9;
-  --color-accent-hover: #B96785;
-  --color-accent-glow: rgba(201, 125, 152, 0.18);
-  --color-success: #7B9D78;
-  --color-warning: #C58A4A;
-  --skin-body-background:
-    radial-gradient(circle at 86% 14%, rgba(241, 176, 199, 0.32), transparent 22%),
-    radial-gradient(circle at 12% 92%, rgba(188, 207, 161, 0.22), transparent 24%),
-    linear-gradient(135deg, #FFF7FA 0%, #FBEAF1 48%, #FFF5ED 100%);
-  --skin-app-background:
-    radial-gradient(circle at 92% 10%, rgba(238, 174, 198, 0.34), transparent 23%),
-    radial-gradient(circle at 8% 98%, rgba(187, 205, 157, 0.24), transparent 22%),
-    linear-gradient(180deg, #FFF8FA 0%, #FBEAF1 100%);
-  --skin-border-strong: rgba(207, 127, 154, 0.68);
-  --skin-border-soft: rgba(207, 127, 154, 0.44);
-  --skin-dashed-border: rgba(192, 105, 135, 0.34);
-  --skin-decor: "✿  ♡  ❀";
-  --skin-decor-color: rgba(201, 125, 152, 0.44);
-  --skin-accent-gradient: linear-gradient(180deg, #F0BBCB 0%, #D98EA7 100%);
-  --skin-accent-border: rgba(189, 102, 132, 0.40);
-  --skin-hover-bg: rgba(236, 190, 204, 0.34);
-  --skin-table-head: rgba(228, 184, 196, 0.22);
-  --skin-resize-bg: rgba(230, 181, 196, 0.22);
-  --skin-resize-line: rgba(201, 125, 152, 0.45);
-  --skin-scrollbar: rgba(201, 125, 152, 0.34);
-  --skin-accent-text: #C97D98;
-  --skin-warning-text: #C58A4A;
-  --skin-success-text: #789B76;
-}
+  --color-bg-card: #FFF7FA;
+  --color-bg-nav-active: rgba(232, 96, 140, 0.16);
 
-.bg-theme-lake {
-  --color-bg-primary: #F4FBF8;
-  --color-bg-secondary: #E8F5F1;
-  --color-bg-tertiary: #D3E8E6;
-  --color-bg-chat: #F8FCFA;
-  --color-bg-sidebar: #ECF8F4;
-  --color-bg-input: rgba(249, 253, 250, 0.94);
-  --color-bg-user-msg: #79AFC3;
-  --color-bg-assistant-msg: rgba(248, 252, 250, 0.80);
-  --color-bg-tool: #DDEBE3;
-  --color-bg-thinking: #EEF8F5;
-  --color-bg-card: #F8FCFA;
-  --color-bg-nav-active: rgba(109, 156, 184, 0.16);
-  --color-text-primary: #35515A;
-  --color-text-secondary: #486A72;
-  --color-text-tertiary: #78959D;
-  --color-text-muted: #5E7B82;
-  --color-border: #9FC7C8;
-  --color-border-subtle: rgba(127, 178, 184, 0.50);
-  --color-border-focus: #6D9CB8;
-  --color-accent: #6D9CB8;
-  --color-accent-light: #A5CCD8;
-  --color-accent-hover: #5789A5;
-  --color-accent-glow: rgba(109, 156, 184, 0.18);
-  --color-success: #6B9E7C;
-  --color-warning: #B98743;
-  --skin-body-background:
-    radial-gradient(circle at 12% 88%, rgba(166, 205, 189, 0.34), transparent 24%),
-    radial-gradient(circle at 88% 16%, rgba(141, 191, 210, 0.28), transparent 24%),
-    linear-gradient(135deg, #F8FCFA 0%, #E4F2F0 52%, #F5F8EC 100%);
-  --skin-app-background:
-    radial-gradient(circle at 10% 100%, rgba(157, 202, 183, 0.34), transparent 22%),
-    radial-gradient(circle at 94% 10%, rgba(138, 190, 209, 0.26), transparent 23%),
-    linear-gradient(180deg, #F8FCFA 0%, #E8F5F1 100%);
-  --skin-border-strong: rgba(109, 156, 184, 0.64);
-  --skin-border-soft: rgba(109, 156, 184, 0.42);
-  --skin-dashed-border: rgba(83, 137, 156, 0.34);
-  --skin-decor: "✦  ~  ✧";
-  --skin-decor-color: rgba(109, 156, 184, 0.45);
-  --skin-accent-gradient: linear-gradient(180deg, #A5CDD9 0%, #72A8BD 100%);
-  --skin-accent-border: rgba(78, 134, 153, 0.40);
-  --skin-hover-bg: rgba(185, 217, 214, 0.34);
-  --skin-table-head: rgba(166, 202, 186, 0.22);
-  --skin-resize-bg: rgba(178, 211, 213, 0.22);
-  --skin-resize-line: rgba(109, 156, 184, 0.45);
-  --skin-scrollbar: rgba(109, 156, 184, 0.34);
-  --skin-accent-text: #5E93AE;
-  --skin-warning-text: #B98743;
-  --skin-success-text: #6B9E7C;
-}
-
-.bg-theme-dusk {
-  --color-bg-primary: #F8F3FA;
-  --color-bg-secondary: #EFE7F4;
-  --color-bg-tertiary: #DDD0E8;
-  --color-bg-chat: #FBF7FC;
-  --color-bg-sidebar: #F3EBF7;
-  --color-bg-input: rgba(252, 248, 253, 0.94);
-  --color-bg-user-msg: #A894C4;
-  --color-bg-assistant-msg: rgba(251, 247, 252, 0.80);
-  --color-bg-tool: #E8E1D8;
-  --color-bg-thinking: #F4EAF8;
-  --color-bg-card: #FBF7FC;
-  --color-bg-nav-active: rgba(154, 131, 184, 0.16);
-  --color-text-primary: #4F435F;
-  --color-text-secondary: #675779;
-  --color-text-tertiary: #9483A8;
-  --color-text-muted: #756783;
-  --color-border: #C9B5DA;
-  --color-border-subtle: rgba(177, 152, 199, 0.50);
-  --color-border-focus: #9A83B8;
-  --color-accent: #9A83B8;
-  --color-accent-light: #CFBCE2;
-  --color-accent-hover: #836CA4;
-  --color-accent-glow: rgba(154, 131, 184, 0.18);
-  --color-success: #7C9B80;
-  --color-warning: #C48A53;
-  --skin-body-background:
-    radial-gradient(circle at 84% 16%, rgba(211, 180, 201, 0.30), transparent 24%),
-    radial-gradient(circle at 12% 90%, rgba(197, 203, 156, 0.22), transparent 24%),
-    linear-gradient(135deg, #FAF5FC 0%, #EDE4F3 50%, #F5EDDF 100%);
-  --skin-app-background:
-    radial-gradient(circle at 92% 12%, rgba(210, 181, 202, 0.32), transparent 23%),
-    radial-gradient(circle at 8% 98%, rgba(196, 202, 156, 0.22), transparent 22%),
-    linear-gradient(180deg, #FBF7FC 0%, #EFE7F4 100%);
-  --skin-border-strong: rgba(154, 131, 184, 0.64);
-  --skin-border-soft: rgba(154, 131, 184, 0.42);
-  --skin-dashed-border: rgba(130, 105, 160, 0.34);
-  --skin-decor: "☾  ✧  ✦";
-  --skin-decor-color: rgba(154, 131, 184, 0.45);
-  --skin-accent-gradient: linear-gradient(180deg, #CFBDE2 0%, #A891C6 100%);
-  --skin-accent-border: rgba(132, 105, 163, 0.40);
-  --skin-hover-bg: rgba(211, 192, 222, 0.34);
-  --skin-table-head: rgba(201, 186, 213, 0.24);
-  --skin-resize-bg: rgba(210, 190, 222, 0.22);
-  --skin-resize-line: rgba(154, 131, 184, 0.45);
-  --skin-scrollbar: rgba(154, 131, 184, 0.34);
-  --skin-accent-text: #8B73AA;
-  --skin-warning-text: #C48A53;
-  --skin-success-text: #7C9B80;
-}
-
-.bg-theme-ink {
-  --color-bg-primary: #F7F4EC;
-  --color-bg-secondary: #ECE8DD;
-  --color-bg-tertiary: #DDD8CB;
-  --color-bg-chat: #FBF8F0;
-  --color-bg-sidebar: #F0EBDD;
-  --color-bg-input: rgba(252, 249, 240, 0.94);
-  --color-bg-user-msg: #8B949A;
-  --color-bg-assistant-msg: rgba(251, 248, 240, 0.80);
-  --color-bg-tool: #E5E0D2;
-  --color-bg-thinking: #F0EBDD;
-  --color-bg-card: #FBF8F0;
-  --color-bg-nav-active: rgba(126, 135, 146, 0.16);
-  --color-text-primary: #3F4548;
-  --color-text-secondary: #565E62;
-  --color-text-tertiary: #858D8E;
-  --color-text-muted: #687174;
-  --color-border: #B9B3A5;
-  --color-border-subtle: rgba(159, 154, 143, 0.50);
-  --color-border-focus: #7E8792;
-  --color-accent: #7E8792;
-  --color-accent-light: #B7BFC5;
-  --color-accent-hover: #66717A;
-  --color-accent-glow: rgba(126, 135, 146, 0.18);
-  --color-success: #758B68;
-  --color-warning: #AA7F48;
-  --skin-body-background:
-    radial-gradient(circle at 14% 88%, rgba(190, 196, 176, 0.26), transparent 24%),
-    radial-gradient(circle at 90% 14%, rgba(171, 178, 184, 0.20), transparent 24%),
-    linear-gradient(135deg, #F9F6ED 0%, #ECE8DD 52%, #F5F2E9 100%);
-  --skin-app-background:
-    radial-gradient(circle at 10% 100%, rgba(188, 195, 174, 0.28), transparent 22%),
-    radial-gradient(circle at 95% 12%, rgba(170, 178, 184, 0.22), transparent 23%),
-    linear-gradient(180deg, #FBF8F0 0%, #ECE8DD 100%);
-  --skin-border-strong: rgba(126, 135, 146, 0.58);
-  --skin-border-soft: rgba(126, 135, 146, 0.38);
-  --skin-dashed-border: rgba(98, 108, 116, 0.30);
-  --skin-decor: "◇  ·  ✧";
-  --skin-decor-color: rgba(126, 135, 146, 0.42);
-  --skin-accent-gradient: linear-gradient(180deg, #B7BFC5 0%, #84909A 100%);
-  --skin-accent-border: rgba(101, 111, 120, 0.38);
-  --skin-hover-bg: rgba(205, 201, 189, 0.34);
-  --skin-table-head: rgba(190, 188, 176, 0.24);
-  --skin-resize-bg: rgba(195, 192, 181, 0.22);
-  --skin-resize-line: rgba(126, 135, 146, 0.42);
-  --skin-scrollbar: rgba(126, 135, 146, 0.34);
-  --skin-accent-text: #717C86;
-  --skin-warning-text: #AA7F48;
-  --skin-success-text: #758B68;
-}
-
-.bg-theme-vscode {
-  --color-bg-primary: #1E1E1E;
-  --color-bg-secondary: #252526;
-  --color-bg-tertiary: #2D2D30;
-  --color-bg-chat: #1E1E1E;
-  --color-bg-sidebar: #252526;
-  --color-bg-input: #1E1E1E;
-  --color-bg-user-msg: #0E639C;
-  --color-bg-assistant-msg: #1E1E1E;
-  --color-bg-tool: #252526;
-  --color-bg-thinking: #252526;
-  --color-bg-card: #1E1E1E;
-  --color-bg-nav-active: rgba(0, 122, 204, 0.18);
-  --color-text-primary: #D4D4D4;
-  --color-text-secondary: #CCCCCC;
-  --color-text-tertiary: #858585;
+  --color-text-primary: #55283A;
+  --color-text-secondary: #7A4458;
+  --color-text-tertiary: #B98398;
   --color-text-inverse: #FFFFFF;
-  --color-text-muted: #A6A6A6;
-  --color-border: #3C3C3C;
-  --color-border-subtle: #2D2D30;
-  --color-border-focus: #007ACC;
-  --color-accent: #007ACC;
-  --color-accent-light: #3794FF;
-  --color-accent-hover: #1177BB;
-  --color-accent-glow: rgba(0, 122, 204, 0.22);
-  --color-success: #89D185;
-  --color-error: #F48771;
-  --color-warning: #CCA700;
-  --color-gradient-start: #007ACC;
-  --color-gradient-mid: #168BD1;
-  --color-gradient-end: #3794FF;
-  --skin-body-background: #1E1E1E;
-  --skin-app-background: #1E1E1E;
-  --skin-border-strong: #2D2D30;
-  --skin-border-soft: #3C3C3C;
-  --skin-dashed-border: transparent;
-  --skin-decor: "";
-  --skin-decor-color: transparent;
-  --skin-grid-line-a: transparent;
-  --skin-grid-line-b: transparent;
-  --skin-accent-gradient: linear-gradient(180deg, #0E639C 0%, #007ACC 100%);
-  --skin-accent-border: rgba(55, 148, 255, 0.36);
-  --skin-hover-bg: #2A2D2E;
-  --skin-table-head: #252526;
-  --skin-resize-bg: #252526;
-  --skin-resize-line: #3C3C3C;
-  --skin-scrollbar: #424242;
-  --skin-accent-text: #3794FF;
-  --skin-warning-text: #CCA700;
-  --skin-success-text: #89D185;
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-glow: none;
+  --color-text-muted: #8E5A6E;
+
+  --color-border: #F2B3C8;
+  --color-border-subtle: rgba(232, 150, 178, 0.55);
+  --color-border-focus: #E8608C;
+
+  --color-accent: #EE7AA2;
+  --color-accent-light: #F7A8C2;
+  --color-accent-hover: #E0628E;
+  --color-accent-glow: rgba(238, 122, 162, 0.20);
+  --color-success: #5FA56B;
+  --color-error: #D9485F;
+  --color-warning: #E08A2E;
+
+  --color-gradient-start: #F7A8C2;
+  --color-gradient-mid: #FFE4EC;
+  --color-gradient-end: #E0507F;
+
+  --skin-body-background:
+    radial-gradient(circle at 88% 10%, rgba(247, 150, 185, 0.34), transparent 24%),
+    radial-gradient(circle at 10% 92%, rgba(255, 196, 214, 0.40), transparent 26%),
+    linear-gradient(135deg, #FFF7FA 0%, #FFEAF1 50%, #FFF6F9 100%);
+  --skin-app-background:
+    radial-gradient(circle at 94% 6%, rgba(245, 140, 178, 0.36), transparent 24%),
+    radial-gradient(circle at 6% 100%, rgba(255, 190, 210, 0.42), transparent 24%),
+    linear-gradient(180deg, #FFF8FA 0%, #FFECF2 100%);
+  --skin-border-strong: rgba(232, 110, 150, 0.70);
+  --skin-border-soft: rgba(232, 128, 162, 0.46);
+  --skin-dashed-border: rgba(224, 80, 127, 0.36);
+  --skin-decor: "✿  ˚  ❀";
+  --skin-decor-color: rgba(232, 96, 140, 0.50);
+  --skin-grid-line-a: rgba(255, 255, 255, 0.30);
+  --skin-grid-line-b: rgba(255, 255, 255, 0.24);
+  --skin-accent-gradient: linear-gradient(180deg, #F8A8C3 0%, #EE7FA6 100%);
+  --skin-accent-border: rgba(224, 98, 142, 0.36);
+  --skin-hover-bg: rgba(247, 168, 194, 0.30);
+  --skin-table-head: rgba(247, 168, 194, 0.20);
+  --skin-resize-bg: rgba(247, 168, 194, 0.22);
+  --skin-resize-line: rgba(224, 80, 127, 0.45);
+  --skin-scrollbar: rgba(224, 80, 127, 0.34);
+  --skin-accent-text: #D9467A;
+  --skin-warning-text: #D9822A;
+  --skin-success-text: #56995F;
+
+  --shadow-sm: 0 2px 0 rgba(224, 80, 127, 0.07),
+    0 5px 16px rgba(190, 70, 110, 0.08);
+  --shadow-md: 0 3px 0 rgba(224, 80, 127, 0.09),
+    0 12px 26px rgba(190, 70, 110, 0.10);
+  --shadow-lg: 0 4px 0 rgba(224, 80, 127, 0.11),
+    0 20px 42px rgba(190, 70, 110, 0.14);
+  --shadow-glow: 0 0 24px rgba(240, 120, 160, 0.26);
+
   --color-icon-slash: #FFFFFF;
 }
 
-.bg-theme-minimal {
-  --color-bg-primary: #FFFFFF;
-  --color-bg-secondary: #F7F7F8;
-  --color-bg-tertiary: #EFEFF1;
-  --color-bg-chat: #FFFFFF;
-  --color-bg-sidebar: #F7F7F8;
+/* ---------------- 浅色方案 ---------------- */
+
+/* 薄荷 —— 清新绿：薄荷底色、翠绿强调色，极光为薄荷绿与天青 */
+:root[data-skin="mint"] {
+  --color-bg-primary: #F5FBF7;
+  --color-bg-secondary: #EAF6EF;
+  --color-bg-tertiary: #D6EDDF;
+  --color-bg-chat: #FAFEFB;
+  --color-bg-sidebar: #EEF8F2;
   --color-bg-input: #FFFFFF;
-  --color-bg-user-msg: #111827;
-  --color-bg-assistant-msg: #FFFFFF;
-  --color-bg-tool: #F7F7F8;
-  --color-bg-thinking: #F7F7F8;
+  --color-bg-user-msg: #17915A;
+  --color-bg-assistant-msg: #FAFEFB;
+  --color-bg-tool: #EEF8F2;
+  --color-bg-thinking: #EEF8F2;
   --color-bg-card: #FFFFFF;
-  --color-bg-nav-active: rgba(17, 24, 39, 0.06);
-  --color-text-primary: #111827;
-  --color-text-secondary: #374151;
-  --color-text-tertiary: #9CA3AF;
+  --color-bg-nav-active: color-mix(in srgb, #17915A 12%, transparent);
+  --color-text-primary: #1C3A2C;
+  --color-text-secondary: #3B5B4B;
+  --color-text-tertiary: #7F9C8D;
   --color-text-inverse: #FFFFFF;
-  --color-text-muted: #6B7280;
-  --color-border: #E5E7EB;
-  --color-border-subtle: #ECEEF2;
-  --color-border-focus: #111827;
-  --color-accent: #111827;
-  --color-accent-light: #374151;
-  --color-accent-hover: #030712;
-  --color-accent-glow: rgba(17, 24, 39, 0.08);
-  --color-success: #059669;
-  --color-error: #DC2626;
-  --color-warning: #D97706;
-  --color-gradient-start: #111827;
-  --color-gradient-mid: #1F2937;
-  --color-gradient-end: #374151;
-  --skin-body-background: #FFFFFF;
-  --skin-app-background: #FFFFFF;
-  --skin-border-strong: #E5E7EB;
-  --skin-border-soft: #ECEEF2;
+  --color-text-muted: #5B7A6A;
+  --color-border: #CBE4D5;
+  --color-border-subtle: #DCEEE3;
+  --color-border-focus: #17915A;
+  --color-accent: #17915A;
+  --color-accent-light: #6FCF97;
+  --color-accent-hover: #0F7747;
+  --color-accent-glow: rgba(23, 145, 90, 0.16);
+  --color-success: #1F9254;
+  --color-error: #D93F4C;
+  --color-warning: #B7791F;
+  --color-gradient-start: #7DDCB0;
+  --color-gradient-mid: #34C38F;
+  --color-gradient-end: #5CC8E0;
+  --color-syntax-keyword: #7C4DDB;
+  --color-syntax-string: #1F8A4C;
+  --color-syntax-number: #C2700A;
+  --color-syntax-function: #0B7FB8;
+  --color-syntax-comment: #8AA698;
+  --color-syntax-type: #0E8A8A;
+  --color-syntax-builtin: #5B6AD0;
+  --color-syntax-delete: #D93F4C;
+  --color-syntax-meta: #6B7F75;
+  --skin-body-background: #F5FBF7;
+  --skin-app-background: #F5FBF7;
+  --skin-border-strong: #CBE4D5;
+  --skin-border-soft: #DCEEE3;
   --skin-dashed-border: transparent;
   --skin-decor: "";
   --skin-decor-color: transparent;
   --skin-grid-line-a: transparent;
   --skin-grid-line-b: transparent;
-  --skin-accent-gradient: linear-gradient(180deg, #1F2937 0%, #111827 100%);
-  --skin-accent-border: rgba(17, 24, 39, 0.18);
-  --skin-hover-bg: #F3F4F6;
-  --skin-table-head: #F9FAFB;
-  --skin-resize-bg: #F3F4F6;
-  --skin-resize-line: #E5E7EB;
-  --skin-scrollbar: #D1D5DB;
-  --skin-accent-text: #111827;
-  --skin-warning-text: #D97706;
-  --skin-success-text: #059669;
-  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
-  --shadow-md: 0 8px 24px rgba(17, 24, 39, 0.06);
-  --shadow-lg: 0 16px 42px rgba(17, 24, 39, 0.08);
+  --skin-accent-gradient: linear-gradient(135deg, #1FA567 0%, #0E9488 100%);
+  --skin-accent-border: rgba(15, 119, 71, 0.30);
+  --skin-hover-bg: #E2F3E9;
+  --skin-table-head: #EEF8F2;
+  --skin-resize-bg: #EEF8F2;
+  --skin-resize-line: #CBE4D5;
+  --skin-scrollbar: #B9D8C6;
+  --skin-accent-text: #138550;
+  --skin-warning-text: #B7791F;
+  --skin-success-text: #1F9254;
+  --shadow-sm: 0 1px 2px rgba(28, 58, 44, 0.06);
+  --shadow-md: 0 6px 18px rgba(28, 58, 44, 0.08);
+  --shadow-lg: 0 14px 36px rgba(28, 58, 44, 0.12);
   --shadow-glow: none;
   --color-icon-slash: #FFFFFF;
 }
 
-body {
-  font-family: var(--tokenicode-font-family, "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif);
-  background: var(--skin-body-background);
+/* 暖橙 —— 橘子色：奶油底色、橙色强调色，极光为杏橙与暖黄 */
+:root[data-skin="orange"] {
+  --color-bg-primary: #FFF9F3;
+  --color-bg-secondary: #FFF1E4;
+  --color-bg-tertiary: #FCE0C8;
+  --color-bg-chat: #FFFCF8;
+  --color-bg-sidebar: #FFF4E9;
+  --color-bg-input: #FFFFFF;
+  --color-bg-user-msg: #E8700F;
+  --color-bg-assistant-msg: #FFFCF8;
+  --color-bg-tool: #FFF4E9;
+  --color-bg-thinking: #FFF4E9;
+  --color-bg-card: #FFFFFF;
+  --color-bg-nav-active: color-mix(in srgb, #E8700F 12%, transparent);
+  --color-text-primary: #3D2614;
+  --color-text-secondary: #5E4130;
+  --color-text-tertiary: #A68670;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #7D5F4B;
+  --color-border: #E8C29F;
+  --color-border-subtle: #EFD2B6;
+  --color-border-focus: #E8700F;
+  --color-accent: #E8700F;
+  --color-accent-light: #FFB070;
+  --color-accent-hover: #C85A06;
+  --color-accent-glow: rgba(232, 112, 15, 0.16);
+  --color-success: #3E9B4F;
+  --color-error: #D9363E;
+  --color-warning: #C98A00;
+  --color-gradient-start: #FFB36B;
+  --color-gradient-mid: #FF8A3D;
+  --color-gradient-end: #FFD36B;
+  --color-syntax-keyword: #B4366B;
+  --color-syntax-string: #3E8E41;
+  --color-syntax-number: #B45309;
+  --color-syntax-function: #2563C9;
+  --color-syntax-comment: #A08A78;
+  --color-syntax-type: #0E7C86;
+  --color-syntax-builtin: #7C4DDB;
+  --color-syntax-delete: #D9363E;
+  --color-syntax-meta: #8A6E5A;
+  --skin-body-background: #FFF9F3;
+  --skin-app-background: #FFF9F3;
+  --skin-border-strong: #E8C29F;
+  --skin-border-soft: #ECCBAB;
+  --skin-dashed-border: transparent;
+  --skin-decor: "";
+  --skin-decor-color: transparent;
+  --skin-grid-line-a: transparent;
+  --skin-grid-line-b: transparent;
+  --skin-accent-gradient: linear-gradient(135deg, #EE7A1A 0%, #D9530B 100%);
+  --skin-accent-border: rgba(200, 90, 6, 0.30);
+  --skin-hover-bg: #FDEBDB;
+  --skin-table-head: #FFF4E9;
+  --skin-resize-bg: #FFF4E9;
+  --skin-resize-line: #E8C29F;
+  --skin-scrollbar: #E0B48C;
+  --skin-accent-text: #C2560A;
+  --skin-warning-text: #B07800;
+  --skin-success-text: #3E9B4F;
+  --shadow-sm: 0 1px 2px rgba(61, 38, 20, 0.06);
+  --shadow-md: 0 6px 18px rgba(61, 38, 20, 0.08);
+  --shadow-lg: 0 14px 36px rgba(61, 38, 20, 0.12);
+  --shadow-glow: none;
+  --color-icon-slash: #FFFFFF;
 }
+
+/* 天蓝 —— 晴空：浅蓝底色、天蓝强调色，极光为天蓝与浅青 */
+:root[data-skin="sky"] {
+  --color-bg-primary: #F4FAFE;
+  --color-bg-secondary: #E8F4FC;
+  --color-bg-tertiary: #D2E9F8;
+  --color-bg-chat: #F9FCFF;
+  --color-bg-sidebar: #EDF6FD;
+  --color-bg-input: #FFFFFF;
+  --color-bg-user-msg: #1E8FD6;
+  --color-bg-assistant-msg: #F9FCFF;
+  --color-bg-tool: #EDF6FD;
+  --color-bg-thinking: #EDF6FD;
+  --color-bg-card: #FFFFFF;
+  --color-bg-nav-active: color-mix(in srgb, #1E8FD6 12%, transparent);
+  --color-text-primary: #15324A;
+  --color-text-secondary: #35536B;
+  --color-text-tertiary: #7D98AD;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #56728A;
+  --color-border: #BCD9EE;
+  --color-border-subtle: #CCE2F3;
+  --color-border-focus: #1E8FD6;
+  --color-accent: #1E8FD6;
+  --color-accent-light: #7CC4F2;
+  --color-accent-hover: #136FAE;
+  --color-accent-glow: rgba(30, 143, 214, 0.16);
+  --color-success: #2E9E5B;
+  --color-error: #D9363E;
+  --color-warning: #C98A00;
+  --color-gradient-start: #7FD0FF;
+  --color-gradient-mid: #38A8F0;
+  --color-gradient-end: #9EE6F0;
+  --color-syntax-keyword: #7C4DDB;
+  --color-syntax-string: #2E8A4C;
+  --color-syntax-number: #C2700A;
+  --color-syntax-function: #136FAE;
+  --color-syntax-comment: #8AA0B2;
+  --color-syntax-type: #0E8A8A;
+  --color-syntax-builtin: #C2368A;
+  --color-syntax-delete: #D9363E;
+  --color-syntax-meta: #6B7F90;
+  --skin-body-background: #F4FAFE;
+  --skin-app-background: #F4FAFE;
+  --skin-border-strong: #BCD9EE;
+  --skin-border-soft: #C7DFF1;
+  --skin-dashed-border: transparent;
+  --skin-decor: "";
+  --skin-decor-color: transparent;
+  --skin-grid-line-a: transparent;
+  --skin-grid-line-b: transparent;
+  --skin-accent-gradient: linear-gradient(135deg, #2BA0E8 0%, #1576C9 100%);
+  --skin-accent-border: rgba(19, 111, 174, 0.30);
+  --skin-hover-bg: #DFF0FB;
+  --skin-table-head: #EDF6FD;
+  --skin-resize-bg: #EDF6FD;
+  --skin-resize-line: #BCD9EE;
+  --skin-scrollbar: #A8CBE4;
+  --skin-accent-text: #1572B8;
+  --skin-warning-text: #B07800;
+  --skin-success-text: #2E9E5B;
+  --shadow-sm: 0 1px 2px rgba(21, 50, 74, 0.06);
+  --shadow-md: 0 6px 18px rgba(21, 50, 74, 0.08);
+  --shadow-lg: 0 14px 36px rgba(21, 50, 74, 0.12);
+  --shadow-glow: none;
+  --color-icon-slash: #FFFFFF;
+}
+
+/* ---------------- 深色方案 ----------------
+   深色方案的 AI 头像底色是浅色（dark:bg-white），--color-icon-slash 取方案背景色 */
+
+/* Tokyo Night —— folke/tokyonight 的 night 色板 */
+:root[data-skin="tokyo-night"] {
+  --color-bg-primary: #1A1B26;
+  --color-bg-secondary: #16161E;
+  --color-bg-tertiary: #292E42;
+  --color-bg-chat: #1A1B26;
+  --color-bg-sidebar: #16161E;
+  --color-bg-input: #16161E;
+  --color-bg-user-msg: #7AA2F7;
+  --color-bg-assistant-msg: #1A1B26;
+  --color-bg-tool: #16161E;
+  --color-bg-thinking: #16161E;
+  --color-bg-card: #16161E;
+  --color-bg-nav-active: color-mix(in srgb, #7AA2F7 16%, transparent);
+  --color-text-primary: #C0CAF5;
+  --color-text-secondary: #A9B1D6;
+  --color-text-tertiary: #565F89;
+  --color-text-inverse: #1A1B26;
+  --color-text-muted: #737AA2;
+  --color-border: #3B4261;
+  --color-border-subtle: #292E42;
+  --color-border-focus: #7AA2F7;
+  --color-accent: #7AA2F7;
+  --color-accent-light: #7DCFFF;
+  --color-accent-hover: color-mix(in srgb, #7AA2F7 82%, #000000);
+  --color-accent-glow: rgba(122, 162, 247, 0.16);
+  --color-success: #9ECE6A;
+  --color-error: #F7768E;
+  --color-warning: #E0AF68;
+  --color-gradient-start: #BB9AF7;
+  --color-gradient-mid: #7AA2F7;
+  --color-gradient-end: #2AC3DE;
+  --color-syntax-keyword:  #BB9AF7;
+  --color-syntax-string:   #9ECE6A;
+  --color-syntax-number:   #FF9E64;
+  --color-syntax-function: #7AA2F7;
+  --color-syntax-comment:  #737AA2;
+  --color-syntax-type:     #2AC3DE;
+  --color-syntax-builtin:  #7DCFFF;
+  --color-syntax-delete:   #F7768E;
+  --color-syntax-meta:     #89DDFF;
+  --skin-body-background: #1A1B26;
+  --skin-app-background: #1A1B26;
+  --skin-border-strong: #3B4261;
+  --skin-border-soft: #3B4261;
+  --skin-dashed-border: transparent;
+  --skin-decor: "";
+  --skin-decor-color: transparent;
+  --skin-grid-line-a: transparent;
+  --skin-grid-line-b: transparent;
+  --skin-accent-gradient: linear-gradient(135deg, #7AA2F7 0%, #BB9AF7 100%);
+  --skin-accent-border: rgba(122, 162, 247, 0.40);
+  --skin-hover-bg: #292E42;
+  --skin-table-head: #16161E;
+  --skin-resize-bg: #16161E;
+  --skin-resize-line: #3B4261;
+  --skin-scrollbar: #414868;
+  --skin-accent-text: #7AA2F7;
+  --skin-warning-text: #E0AF68;
+  --skin-success-text: #9ECE6A;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --shadow-glow: none;
+  --color-icon-slash: #1A1B26;
+}
+
+/* Dracula —— Dracula 官方色板 */
+:root[data-skin="dracula"] {
+  --color-bg-primary: #282A36;
+  --color-bg-secondary: #21222C;
+  --color-bg-tertiary: #44475A;
+  --color-bg-chat: #282A36;
+  --color-bg-sidebar: #21222C;
+  --color-bg-input: #21222C;
+  --color-bg-user-msg: #BD93F9;
+  --color-bg-assistant-msg: #282A36;
+  --color-bg-tool: #21222C;
+  --color-bg-thinking: #21222C;
+  --color-bg-card: #21222C;
+  --color-bg-nav-active: color-mix(in srgb, #BD93F9 18%, transparent);
+  --color-text-primary: #F8F8F2;
+  --color-text-secondary: color-mix(in srgb, #F8F8F2 85%, #282A36);
+  --color-text-tertiary: #6272A4;
+  --color-text-inverse: #282A36;
+  --color-text-muted: color-mix(in srgb, #F8F8F2 65%, #282A36);
+  --color-border: #44475A;
+  --color-border-subtle: #191A21;
+  --color-border-focus: #BD93F9;
+  --color-accent: #BD93F9;
+  --color-accent-light: #FF79C6;
+  --color-accent-hover: color-mix(in srgb, #BD93F9 82%, #000000);
+  --color-accent-glow: rgba(189, 147, 249, 0.16);
+  --color-success: #50FA7B;
+  --color-error: #FF5555;
+  --color-warning: #FFB86C;
+  --color-gradient-start: #FF79C6;
+  --color-gradient-mid: #BD93F9;
+  --color-gradient-end: #8BE9FD;
+  --color-syntax-keyword:  #FF79C6;
+  --color-syntax-string:   #F1FA8C;
+  --color-syntax-number:   #BD93F9;
+  --color-syntax-function: #50FA7B;
+  --color-syntax-comment:  #6272A4;
+  --color-syntax-type:     #8BE9FD;
+  --color-syntax-builtin:  #8BE9FD;
+  --color-syntax-delete:   #FF5555;
+  --color-syntax-meta:     #FFB86C;
+  --skin-body-background: #282A36;
+  --skin-app-background: #282A36;
+  --skin-border-strong: #44475A;
+  --skin-border-soft: #44475A;
+  --skin-dashed-border: transparent;
+  --skin-decor: "";
+  --skin-decor-color: transparent;
+  --skin-grid-line-a: transparent;
+  --skin-grid-line-b: transparent;
+  --skin-accent-gradient: linear-gradient(135deg, #BD93F9 0%, #FF79C6 100%);
+  --skin-accent-border: rgba(189, 147, 249, 0.40);
+  --skin-hover-bg: #44475A;
+  --skin-table-head: #21222C;
+  --skin-resize-bg: #21222C;
+  --skin-resize-line: #44475A;
+  --skin-scrollbar: #44475A;
+  --skin-accent-text: #BD93F9;
+  --skin-warning-text: #FFB86C;
+  --skin-success-text: #50FA7B;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --shadow-glow: none;
+  --color-icon-slash: #282A36;
+}
+
 
 .gradient-bg {
   position: relative;
   background: var(--skin-app-background);
   border: 2px solid var(--skin-border-strong);
-  border-radius: 22px;
+  border-radius: var(--window-radius);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
 }
 
@@ -1061,7 +876,7 @@ body {
   inset: 4px;
   z-index: 60;
   border: 1px dashed var(--skin-dashed-border);
-  border-radius: 18px;
+  border-radius: max(0px, calc(var(--window-radius) - 4px));
 }
 
 .gradient-bg::after {
@@ -1075,6 +890,89 @@ body {
   font-size: 24px;
   letter-spacing: 12px;
   transform: rotate(-18deg);
+}
+
+/* ---------------- 自绘标题栏（TitleBar.tsx） ----------------
+   主窗口关闭了系统标题栏。水彩方案透明，透出应用背景；简洁方案把侧栏、消息区的底色
+   向上延伸（--sidebar-w 由 AppShell 设置），看起来像面板一直铺到窗口顶部；
+   设置了壁纸时与面板一样用毛玻璃。 */
+:root {
+  --titlebar-h: 34px;
+}
+
+.app-titlebar {
+  position: relative;
+  /* 高于设置等弹窗（z-[9999]），弹窗打开时也能最小化、关闭 */
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-h);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+:root[data-flat] .app-titlebar {
+  background-color: var(--color-bg-chat);
+  background-image:
+    var(--skin-grain),
+    linear-gradient(90deg,
+      var(--color-bg-sidebar) var(--sidebar-w, 0px),
+      var(--color-border-subtle) var(--sidebar-w, 0px),
+      var(--color-border-subtle) calc(var(--sidebar-w, 0px) + 1px),
+      transparent calc(var(--sidebar-w, 0px) + 1px));
+  background-size: 160px 160px, 100% 100%;
+}
+
+.custom-bg-active .app-titlebar {
+  background: color-mix(
+    in srgb,
+    var(--color-bg-sidebar) calc(var(--glass-opacity, 0.85) * 100%),
+    transparent
+  ) !important;
+  backdrop-filter: blur(var(--glass-blur, 8px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 8px));
+}
+
+.app-titlebar-title {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-tertiary);
+}
+
+.app-titlebar-buttons {
+  display: flex;
+  height: 100%;
+}
+
+.app-titlebar-buttons button {
+  width: 46px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  text-shadow: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.app-titlebar-buttons button:hover {
+  background: color-mix(in srgb, var(--color-text-primary) 9%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* 关闭按钮悬停用 Windows 标准红 */
+.app-titlebar-buttons .app-titlebar-close:hover {
+  background: #E81123;
+  color: #FFFFFF;
 }
 
 .bg-bg-sidebar,
@@ -1109,50 +1007,112 @@ button {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.42);
 }
 
-.bg-theme-vscode button {
+/* 水彩方案的强调色较浅，白字加一层同色系阴影保证可读 */
+:root:not([data-flat]) .bg-accent,
+:root:not([data-flat]) .bg-bg-user-msg {
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--color-accent-hover) 60%, transparent);
+}
+
+/* 简洁风格方案（themes.ts 中 flat: true）：去掉水彩边框、点缀符号、网格底纹和按钮文字阴影 */
+:root[data-flat] button {
   text-shadow: none;
 }
 
-.bg-theme-vscode .gradient-bg {
+:root[data-flat] .gradient-bg {
   border: 1px solid var(--color-border-subtle);
-  border-radius: 0;
+  border-radius: var(--window-radius);
   box-shadow: none;
 }
 
-.bg-theme-vscode .gradient-bg::before,
-.bg-theme-vscode .gradient-bg::after {
+:root[data-flat] .gradient-bg::before,
+:root[data-flat] .gradient-bg::after {
   display: none;
 }
 
-.bg-theme-vscode .bg-bg-sidebar,
-.bg-theme-vscode .bg-bg-chat,
-.bg-theme-vscode .bg-bg-primary,
-.bg-theme-vscode .bg-bg-card,
-.bg-theme-vscode .bg-bg-input {
+:root[data-flat] .bg-bg-sidebar,
+:root[data-flat] .bg-bg-chat,
+:root[data-flat] .bg-bg-primary,
+:root[data-flat] .bg-bg-card,
+:root[data-flat] .bg-bg-input {
   background-image: none;
 }
 
-.bg-theme-minimal button {
-  text-shadow: none;
+/* ---------------- 质感层 ----------------
+   颗粒：所有方案的主面板铺一层极淡的噪点（浅色方案用深色颗粒，深色方案用浅色颗粒）。
+   极光：简洁风格方案的消息区右上、左下各晕开一团方案色（--color-gradient-start / end），
+   侧栏顶部带一点强调色；强调色按钮用斜向渐变 + 顶部高光 + 同色投影。 */
+:root {
+  --skin-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --skin-aurora: 14%;
 }
 
-.bg-theme-minimal .gradient-bg {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 0;
-  box-shadow: none;
+:root.dark {
+  --skin-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --skin-aurora: 24%;
 }
 
-.bg-theme-minimal .gradient-bg::before,
-.bg-theme-minimal .gradient-bg::after {
-  display: none;
+/* 樱花：在原有网格底纹上叠一层纸张颗粒 */
+:root:not([data-flat]) .app-row > .bg-bg-chat,
+:root:not([data-flat]) .app-row > div > .bg-bg-sidebar {
+  background-image:
+    var(--skin-grain),
+    linear-gradient(var(--skin-grid-line-a) 1px, transparent 1px),
+    linear-gradient(90deg, var(--skin-grid-line-b) 1px, transparent 1px);
+  background-size: 160px 160px, 18px 18px, 18px 18px;
 }
 
-.bg-theme-minimal .bg-bg-sidebar,
-.bg-theme-minimal .bg-bg-chat,
-.bg-theme-minimal .bg-bg-primary,
-.bg-theme-minimal .bg-bg-card,
-.bg-theme-minimal .bg-bg-input {
-  background-image: none;
+:root[data-flat] .app-row > .bg-bg-chat {
+  background-image:
+    var(--skin-grain),
+    radial-gradient(70% 55% at 100% 0%,
+      color-mix(in srgb, var(--color-gradient-start) var(--skin-aurora), transparent), transparent 70%),
+    radial-gradient(60% 50% at 0% 100%,
+      color-mix(in srgb, var(--color-gradient-end) var(--skin-aurora), transparent), transparent 70%);
+  background-size: 160px 160px, 100% 100%, 100% 100%;
+}
+
+:root[data-flat] .app-row > div > .bg-bg-sidebar {
+  background-image:
+    var(--skin-grain),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--color-gradient-mid) calc(var(--skin-aurora) * 0.7), transparent) 0%,
+      transparent 45%);
+  background-size: 160px 160px, 100% 100%;
+}
+
+/* 消息区顶栏半透明，让极光透上来 */
+:root[data-flat] .app-row > .bg-bg-chat .bg-bg-chat {
+  background-color: color-mix(in srgb, var(--color-bg-chat) 70%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+:root[data-flat] .bg-accent,
+:root[data-flat] .bg-bg-user-msg {
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 16px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+/* 标题用强调色渐变填充 */
+:root[data-flat] h1.text-accent,
+:root[data-flat] h2.text-accent {
+  background: var(--skin-accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+:root[data-flat] .bg-bg-card,
+:root[data-flat] .bg-bg-input {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 4%, transparent);
+}
+
+:root[data-flat] .bg-bg-input:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 4%, transparent);
 }
 
 .rounded-lg,
@@ -1171,7 +1131,7 @@ button {
 .bg-accent,
 .bg-bg-user-msg {
   background: var(--skin-accent-gradient) !important;
-  color: #FFF9ED;
+  color: var(--color-text-inverse);
   border: 1px solid var(--skin-accent-border);
 }
 
@@ -1210,11 +1170,11 @@ thead {
   background: var(--skin-table-head);
 }
 
-.gradient-bg > div[class*="cursor-col-resize"] {
+.app-row > div[class*="cursor-col-resize"] {
   background: var(--skin-resize-bg);
 }
 
-.gradient-bg > div[class*="cursor-col-resize"] > div {
+.app-row > div[class*="cursor-col-resize"] > div {
   width: 1px !important;
   background: var(--skin-resize-line) !important;
 }
@@ -1297,11 +1257,10 @@ thead {
    ================================================================ */
 
 /* Root background when custom image is active */
-.custom-bg-active body {
+.custom-bg-active #root {
   background: var(--custom-bg-image) !important;
-  background-size: var(--custom-bg-size, cover) !important;
-  background-position:
-    var(--custom-bg-pos-x, 50%) var(--custom-bg-pos-y, 50%) !important;
+  background-size: cover !important;
+  background-position: center !important;
   background-repeat: no-repeat !important;
   background-attachment: fixed !important;
 }
@@ -1344,6 +1303,17 @@ thead {
 .custom-bg-active textarea {
   backdrop-filter: blur(calc(var(--glass-blur, 8px) * 1.2));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur, 8px) * 1.2));
+}
+
+/* 面板之间的拖动条：同样用毛玻璃，否则会露出一条没有模糊的壁纸缝 */
+.custom-bg-active .app-row > div[class*="cursor-col-resize"] {
+  backdrop-filter: blur(var(--glass-blur, 8px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 8px));
+  background-color: color-mix(
+    in srgb,
+    var(--color-bg-sidebar) calc(var(--glass-opacity, 0.85) * 100%),
+    transparent
+  ) !important;
 }
 
 /* Keep user message bubbles solid */

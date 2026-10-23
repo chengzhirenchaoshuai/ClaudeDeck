@@ -132,7 +132,7 @@ export function ActivityTab() {
           {userAvatarUrl ? (
             <img src={userAvatarUrl} alt="" className="w-full h-full object-cover" />
           ) : (
-            <img src="/app-icon.png" alt="" className="w-full h-full object-cover" />
+            <img src="/app-icon.png" alt="" className="w-full h-full object-contain p-2" />
           )}
         </div>
         <h2 className="mt-3 text-xl font-semibold text-text-primary">{displayName}</h2>
