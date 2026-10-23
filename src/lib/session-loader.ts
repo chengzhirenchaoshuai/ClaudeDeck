@@ -1,6 +1,7 @@
 import type { ChatMessage } from '../stores/chatStore';
 import { generateMessageId } from '../stores/chatStore';
 import type { AgentPhase } from '../stores/agentStore';
+import { compactFileFromAttachment, createCompactNotice, withCompactFile, type CompactNoticeData } from './compact-notice';
 
 export interface AgentData {
   id: string;
@@ -55,8 +56,44 @@ export function parseSessionMessages(rawMessages: any[]): LoadedSession {
   // Collect tool_use_id → index mapping for binding tool results
   const toolUseIdToIndex = new Map<string, number>();
   const seenSourceRecords = new Set<string>();
+  // 最近一条压缩提示在 messages 里的位置；压缩边界之后紧跟的摘要与文件记录补到它上面，
+  // 遇到下一条真正的对话内容后不再补（之后的 attachment 是用户 @ 引用等，与压缩无关）
+  let compactIdx = -1;
+  const patchCompact = (update: (d: CompactNoticeData) => CompactNoticeData) => {
+    const m = messages[compactIdx];
+    messages[compactIdx] = { ...m, commandData: { ...update((m.commandData ?? {}) as CompactNoticeData) } };
+  };
 
   for (const msg of rawMessages) {
+    // 压缩边界（磁盘上是驼峰的 compactMetadata）
+    if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
+      const meta = msg.compactMetadata ?? {};
+      messages.push(createCompactNotice(
+        typeof msg.uuid === 'string' && msg.uuid ? `compact-${msg.uuid}` : generateMessageId(),
+        msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+        {
+          trigger: meta.trigger === 'manual' ? 'manual' : meta.trigger === 'auto' ? 'auto' : undefined,
+          preTokens: typeof meta.preTokens === 'number' ? meta.preTokens : undefined,
+          postTokens: typeof meta.postTokens === 'number' ? meta.postTokens : undefined,
+        },
+      ));
+      compactIdx = messages.length - 1;
+      continue;
+    }
+    if (msg.isCompactSummary) {
+      const content = msg.message?.content;
+      const summary = typeof content === 'string'
+        ? content
+        : Array.isArray(content) ? content.map((b: any) => (b?.type === 'text' ? b.text : '')).join('') : '';
+      if (compactIdx >= 0 && summary) patchCompact((d) => ({ ...d, summary }));
+      continue;
+    }
+    if (msg.type === 'attachment') {
+      const file = compactIdx >= 0 ? compactFileFromAttachment(msg.attachment) : null;
+      if (file) patchCompact((d) => withCompactFile(d, file));
+      continue;
+    }
+
     // Skip system-injected meta messages
     if (msg.isMeta) continue;
 
@@ -119,6 +156,7 @@ export function parseSessionMessages(rawMessages: any[]): LoadedSession {
         }
       }
       if (content.trim()) {
+        compactIdx = -1;
         messages.push({
           id: msg.uuid || generateMessageId(),
           role: 'user',
@@ -129,6 +167,7 @@ export function parseSessionMessages(rawMessages: any[]): LoadedSession {
         });
       }
     } else if (msg.type === 'assistant') {
+      compactIdx = -1;
       const blocks = msg.message?.content;
       if (Array.isArray(blocks)) {
         for (const block of blocks) {

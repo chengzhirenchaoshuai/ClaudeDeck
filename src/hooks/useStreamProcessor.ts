@@ -16,6 +16,7 @@ import { handleUserMessage } from './stream/handlers/user';
 import { handleToolResult } from './stream/handlers/tool-result';
 import { handleResultMessage } from './stream/handlers/result';
 import { handleProcessExit } from './stream/handlers/process-exit';
+import { compactFileFromAttachment, updateLatestCompactNotice, withCompactFile } from '../lib/compact-notice';
 
 export type { StreamProcessorConfig } from './stream/context';
 
@@ -206,6 +207,12 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         handleProcessExit(ctx, msg);
         break;
       default:
+        // 压缩后 CLI 重新放进上下文的文件（磁盘 JSONL 里是 attachment 记录；实时流是否输出待核实）
+        if ((msg as { type?: string }).type === 'attachment') {
+          const file = compactFileFromAttachment((msg as { attachment?: unknown }).attachment);
+          if (file) updateLatestCompactNotice(tabId, (d) => withCompactFile(d, file));
+          break;
+        }
         // Fallback: handle content_block_delta at top level (without stream_event wrapper)
         if (msg.type === 'content_block_delta') {
           const text = msg.delta?.text || '';

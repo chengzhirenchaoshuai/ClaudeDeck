@@ -9,11 +9,13 @@ import { AiAvatar } from '../shared/AiAvatar';
 import { safeContent, type MessageProps } from './messageShared';
 import { ToolUseMsg, ToolResultMsg } from './ToolMessages';
 import { CommandFeedbackMsg } from './CommandFeedbackMsg';
+import { CompactNoticeMsg } from './CompactNoticeMsg';
 import { UserMsg } from './UserMessage';
 
 export const MessageBubble = memo(function MessageBubble({ message, isFirstInGroup = true }: MessageProps) {
   if (message.role === 'user') return <UserMsg message={message} />;
   if (message.role === 'system' && message.commandType === 'processing') return <CommandProcessingCard message={message} />;
+  if (message.role === 'system' && message.commandType === 'compact') return <CompactNoticeMsg message={message} />;
   if (message.role === 'system' && message.commandType) return <CommandFeedbackMsg message={message} />;
   // Unresolved question/plan_review cards are rendered as floating overlays
   // above the InputBar. Only show them inline once resolved.

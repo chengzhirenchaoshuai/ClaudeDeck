@@ -139,6 +139,8 @@ export interface UserMessage extends StreamMessageBase {
   isSynthetic?: boolean;
   /** --replay-user-messages：CLI 开始处理 stdin 送来的用户消息时的回显 */
   isReplay?: boolean;
+  /** 压缩摘要（磁盘 JSONL 里确认有此字段；实时流是否带上待核实） */
+  isCompactSummary?: boolean;
 }
 
 export interface ResultMessage extends StreamMessageBase {

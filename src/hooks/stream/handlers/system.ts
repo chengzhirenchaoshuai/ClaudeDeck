@@ -1,9 +1,11 @@
 // system 消息：init 模型、错误、思考 token、压缩边界、后台任务数。
 import { useChatStore, generateMessageId } from '../../../stores/chatStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { CLI_DEFAULT, useSettingsStore } from '../../../stores/settingsStore';
 import { formatErrorForUser } from '../errors';
 import { persistTokenState } from '../token-state';
 import { type SystemMessage } from '../../../lib/stream-message';
+import { createCompactNotice } from '../../../lib/compact-notice';
 import { type StreamContext } from '../context';
 
 export function handleSystemMessage(ctx: StreamContext, msg: SystemMessage): void {
@@ -11,6 +13,10 @@ export function handleSystemMessage(ctx: StreamContext, msg: SystemMessage): voi
 
   if (msg.subtype === 'init') {
     setSessionMeta({ model: msg.model });
+    // 以「CLI 默认」启动的会话：记下 CLI 实际选用的模型，供下次新会话在 CLI 上报前估算上下文窗口
+    const meta = useChatStore.getState().getTab(tabId)?.sessionMeta;
+    const spawned = meta?.spawnedModel ?? useSettingsStore.getState().selectedModel;
+    if (msg.model && spawned === CLI_DEFAULT) useSettingsStore.getState().setLastCliModel(msg.model);
   } else if (msg.subtype === 'error') {
     // FI-3: Surface system-level errors instead of silently dropping them
     const rawError = msg.message || msg.error || 'System error';
@@ -50,6 +56,15 @@ export function handleSystemMessage(ctx: StreamContext, msg: SystemMessage): voi
     // 实时流里是蛇形命名 compact_metadata.post_tokens（驼峰的 compactMetadata 只出现在磁盘 JSONL 里）
     const postTokens = msg.compact_metadata?.post_tokens;
     const preTokens = msg.compact_metadata?.pre_tokens;
+    // 不是从应用的处理卡片发起的压缩（CLI 自动触发，或 CLI 自己处理的 /compact）：
+    // 在对话里插一条压缩提示，否则用户看不出上下文已经被压缩过
+    if (!useChatStore.getState().getTab(tabId)?.sessionMeta?.pendingCommandMsgId) {
+      addMessage(createCompactNotice(generateMessageId(), Date.now(), {
+        trigger: msg.compact_metadata?.trigger,
+        preTokens,
+        postTokens,
+      }));
+    }
     if (typeof postTokens === 'number') {
       setSessionMeta({
         inputTokens: postTokens,

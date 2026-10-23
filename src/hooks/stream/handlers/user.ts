@@ -2,9 +2,20 @@
 import { useChatStore } from '../../../stores/chatStore';
 import { toolResultText, type UserMessage } from '../../../lib/stream-message';
 import { type StreamContext } from '../context';
+import { updateLatestCompactNotice } from '../../../lib/compact-notice';
 
 export function handleUserMessage(ctx: StreamContext, msg: UserMessage): void {
   const { tabId } = ctx;
+
+  // 压缩摘要不是用户输入：补到压缩提示里，也不能当成回溯用的 checkpoint
+  if (msg.isCompactSummary) {
+    const content = msg.message?.content;
+    const summary = typeof content === 'string'
+      ? content
+      : Array.isArray(content) ? content.map((b) => (b.type === 'text' ? b.text : '')).join('') : '';
+    if (summary) updateLatestCompactNotice(tabId, (d) => ({ ...d, summary }));
+    return;
+  }
 
   // 运行中发出的消息被 CLI 处理了：此时才把气泡插进聊天记录，位置就是它进入对话的地方。
   // 要先于下面记录 checkpoint UUID，让 UUID 落到这条气泡上

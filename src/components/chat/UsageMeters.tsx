@@ -21,6 +21,8 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const contextWindowMode = useSettingsStore((s) => s.contextWindowMode);
   const autoCompactThresholdTokens = useSettingsStore((s) => s.autoCompactThresholdTokens);
+  // 跟随 CLI 时自动压缩由 CLI 自己决定（阈值可在 CLI 里另行配置），应用算出的阈值不代表真实时机
+  const followCli = useSettingsStore((s) => s.followCli);
   const [isCompacting, setIsCompacting] = useState(false);
   const ctx = resolveSessionContextWindow(sessionMeta, selectedModel, contextWindowMode);
   const contextWindow = ctx.window;
@@ -89,7 +91,7 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
   return (
     <div className="hidden md:flex flex-shrink-0 items-center gap-2 px-2 py-1 rounded-lg
       bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary whitespace-nowrap"
-      title={t('chat.contextTooltip')
+      title={t(followCli ? 'chat.contextTooltipCli' : 'chat.contextTooltip')
         .replace('{model}', displayProviderModelName(ctx.model))
         .replace('{used}', used.toLocaleString())
         .replace('{window}', contextWindow.toLocaleString())
