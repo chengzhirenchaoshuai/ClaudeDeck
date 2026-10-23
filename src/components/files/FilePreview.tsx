@@ -257,6 +257,18 @@ export function FilePreview() {
     setSkillTranslationError(null);
   }, [selectedFile]);
 
+  // 复制文件内容：只对文本文件开放（图片/PDF/音视频的 fileContent 是 data URL），编辑中复制当前编辑内容
+  const [copied, setCopied] = useState(false);
+  const isTextFile = !isImage && !isPdf && !isVideo && !isAudio && !isBinary;
+  const textToCopy = isEditing ? (editContent ?? fileContent) : fileContent;
+  const handleCopyContent = useCallback(() => {
+    if (textToCopy === null) return;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  }, [textToCopy]);
+
   /* Mode tabs for the header */
   const modeTabs = useMemo(() => {
     if (isMarkdown) {
@@ -363,6 +375,29 @@ export function FilePreview() {
               title="翻译 SKILL.md 预览"
             >
               {isTranslatingSkill ? '...' : '译'}
+            </button>
+          )}
+
+          {/* 复制文件内容 */}
+          {isTextFile && !isLoadingContent && textToCopy !== null && (
+            <button
+              onClick={handleCopyContent}
+              className={`p-2 rounded-lg hover:bg-bg-tertiary transition-smooth cursor-pointer
+                ${copied ? 'text-success' : 'text-text-tertiary'}`}
+              title={copied ? t('msg.copied') : t('files.copyContent')}
+            >
+              {copied ? (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 8.5l3.5 3.5L13 4.5" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <rect x="5" y="5" width="9" height="9" rx="1.5" />
+                  <path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5" />
+                </svg>
+              )}
             </button>
           )}
 
@@ -562,6 +597,7 @@ export function FilePreview() {
             theme={tokenicodeTheme}
             editable={false}
             readOnly={true}
+            className="selectable h-full"
             height="100%"
             style={{ height: '100%', fontSize: '13px' }}
             basicSetup={{
