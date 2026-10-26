@@ -3,6 +3,13 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
+## [1.4.1] - 2026-10-26
+
+### 新增
+- 应用内更新：启动后自动检查新版本，顶栏出现更新按钮；安装版可直接下载并安装，装完自动重新打开，免安装版引导到发布页手动下载
+- 设置页底栏恢复「检查更新」按钮
+- 安装更新前，如有任务正在运行会先确认，并有序结束所有会话
+
 ## [1.4.0] - 2026-10-23
 
 ### 新增

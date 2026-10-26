@@ -18,6 +18,33 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.1',
+    date: '2026-10-26',
+    highlights: {
+      zh: ['支持应用内更新'],
+      en: ['In-app updates'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '启动后自动检查新版本，顶栏出现更新按钮；安装版可直接下载并安装，装完自动重新打开',
+            '免安装版发现新版本时引导到发布页手动下载',
+            '设置页底栏恢复「检查更新」按钮',
+            '安装更新前，如有任务正在运行会先确认，并有序结束所有会话',
+          ],
+          en: [
+            'Checks for new versions on startup and shows an update button in the top bar; the installed build downloads, installs and relaunches in place',
+            'The portable build opens the releases page to download the new version manually',
+            'The "Check for Updates" button is back in the settings footer',
+            'Before installing, running tasks are confirmed and all sessions are shut down cleanly',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.4.0',
     date: '2026-10-23',
     highlights: {
