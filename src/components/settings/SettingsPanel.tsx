@@ -173,7 +173,7 @@ function SettingsFooter() {
   const version = useUpdateStore((s) => s.version);
   const progress = useUpdateStore((s) => s.progress);
   const errorMsg = useUpdateStore((s) => s.error);
-  const installed = useUpdateStore((s) => s.installed);
+  const canSelfUpdate = useUpdateStore((s) => s.canSelfUpdate);
 
   useEffect(() => {
     import('@tauri-apps/api/app').then(({ getVersion }) =>
@@ -237,7 +237,7 @@ function SettingsFooter() {
           )}
 
           {phase === 'available' && (
-            installed ? (
+            canSelfUpdate ? (
               <button onClick={() => store().download()} className={btnPrimary}>
                 {t('update.install')} v{version}
               </button>

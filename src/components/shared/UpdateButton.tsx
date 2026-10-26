@@ -3,13 +3,13 @@ import { useT } from '../../lib/i18n';
 
 /**
  * 顶栏的应用更新按钮，只在有新版本后显示。
- * 安装版：点击下载 → 下载完成后点击安装并重启；免安装版：点击打开发布页手动下载。
+ * 可应用内更新时：点击下载 → 下载完成后点击安装并重启；否则点击打开发布页手动下载。
  */
 export function UpdateButton() {
   const phase = useUpdateStore((s) => s.phase);
   const version = useUpdateStore((s) => s.version);
   const progress = useUpdateStore((s) => s.progress);
-  const installed = useUpdateStore((s) => s.installed);
+  const canSelfUpdate = useUpdateStore((s) => s.canSelfUpdate);
   const t = useT();
 
   if (phase !== 'available' && phase !== 'downloading' && phase !== 'ready' && phase !== 'installing') {
@@ -19,7 +19,7 @@ export function UpdateButton() {
   const handleClick = () => {
     const store = useUpdateStore.getState();
     if (phase === 'available') {
-      if (installed) store.download();
+      if (canSelfUpdate) store.download();
       else store.openReleasePage();
     } else if (phase === 'ready') {
       store.install(t);
@@ -31,7 +31,7 @@ export function UpdateButton() {
     phase === 'ready' ? t('update.readyRestart')
     : phase === 'downloading' ? `${t('update.downloading')} ${progress}%`
     : phase === 'installing' ? t('update.installing')
-    : installed ? `${t('update.available')} v${version}`
+    : canSelfUpdate ? `${t('update.available')} v${version}`
     : `${t('update.available')} v${version}，${t('update.portableHint')}`;
 
   return (

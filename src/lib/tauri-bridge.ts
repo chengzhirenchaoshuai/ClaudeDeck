@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
 // --- Types ---
@@ -635,9 +635,23 @@ export const bridge = {
   checkCliUpdate: () =>
     invoke<{ current: string | null; latest: string | null; update_available: boolean }>('check_cli_update'),
 
-  /** 应用更新环境：是否为 MSI 安装版（可应用内安装），以及可用的 HTTP 代理 */
+  /** 应用更新环境：更新方式（MSI 安装版 / 免安装版 / 开发版），以及可用的 HTTP 代理 */
   getUpdateEnv: () =>
-    invoke<{ installed: boolean; proxy: string | null }>('get_update_env'),
+    invoke<{ mode: 'msi' | 'portable' | 'dev'; proxy: string | null }>('get_update_env'),
+
+  /** 免安装版：下载新 exe 并校验签名，保存在当前 exe 旁边 */
+  downloadPortableUpdate: (
+    url: string,
+    signature: string,
+    onProgress: (p: { downloaded: number; total: number }) => void,
+  ) => {
+    const channel = new Channel<{ downloaded: number; total: number }>();
+    channel.onmessage = onProgress;
+    return invoke<void>('download_portable_update', { url, signature, onProgress: channel });
+  },
+
+  /** 免安装版：用已下载的新 exe 替换当前程序，启动新版本后退出 */
+  applyPortableUpdate: () => invoke<void>('apply_portable_update'),
 
   checkNodeEnv: () =>
     invoke<NodeEnvStatus>('check_node_env'),

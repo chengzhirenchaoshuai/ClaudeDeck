@@ -52,11 +52,12 @@ gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." 
   release/latest.json
 ```
 
-**应用内更新**：程序启动 5 秒后（之后每 6 小时）读取 `releases/latest/download/latest.json`，有新版时顶栏出现更新按钮。MSI 安装版可在应用内下载并安装（安装时程序退出，装完自动重新打开）；免安装版只能打开发布页手动下载。开发模式不自动检查。
+**应用内更新**：程序启动 5 秒后（之后每 6 小时）读取 `releases/latest/download/latest.json`，有新版时顶栏出现更新按钮。MSI 安装版由更新插件下载安装包并静默安装（程序退出，装完自动重新打开）；免安装版下载新 exe 并校验签名后替换自身，再启动新版本。开发版不自动检查，也不做应用内更新。
 
 - 签名私钥默认读取 `~/.tauri/claudedeck.key`，密码读取同目录的 `claudedeck.key.password`；也可用环境变量 `TAURI_SIGNING_PRIVATE_KEY_PATH` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 指定（空密码的私钥签名会失败）；公钥写在 `tauri.conf.json` 的 `plugins.updater.pubkey`。**私钥或密码丢失后，已发布的版本将无法再收到更新**，务必把这两个文件另行备份。
 - `latest.json` 的更新说明取自 `CHANGELOG.md` 中当前版本的条目；Release 必须标记为 Latest，否则检查不到。
-- 是否为安装版：读注册表 `HKCU\Software\chengzhiren66\ClaudeDeck\InstallDir`，与当前 exe 所在目录比较（`commands/updater.rs`）。
+- 是否为安装版：读注册表 `HKCU\Software\chengzhiren66\ClaudeDeck\InstallDir`，与当前 exe 所在目录比较（`commands/updater.rs`）；否则 release 构建按免安装版处理。
+- 免安装版更新：`latest.json` 里自定义的 `windows-x86_64-portable` 条目给出 exe 地址与签名（与 MSI 同一把密钥）；新 exe 先存为 `<exe>.new`，安装时把当前 exe 改名为 `<exe>.old`、新文件放回原位，带 `--wait-pid=<旧 PID>` 启动新进程，新进程等旧进程退出后删除 `.old`。程序所在目录必须可写。
 
 ### 架构说明
 

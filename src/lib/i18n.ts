@@ -868,7 +868,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'update.installRestart': '安装并重启',
     'update.installing': '正在安装...',
     'update.openRelease': '下载新版',
-    'update.portableHint': '当前为免安装版，需到发布页手动下载',
+    'update.portableHint': '当前版本无法应用内更新，需到发布页手动下载',
     'update.confirmRunning': '有 {n} 个任务正在运行（{detail}）。安装更新会关闭 ClaudeDeck 并中断这些任务，确定继续吗？',
 
     // Network / firewall hints
@@ -1786,7 +1786,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'update.installRestart': 'Install & Restart',
     'update.installing': 'Installing...',
     'update.openRelease': 'Download',
-    'update.portableHint': 'Portable build: download the new version from the releases page',
+    'update.portableHint': 'In-app update is unavailable for this build; download it from the releases page',
     'update.confirmRunning': '{n} task(s) are running ({detail}). Installing the update will close ClaudeDeck and interrupt them. Continue?',
 
     // Network / firewall hints

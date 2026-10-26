@@ -449,6 +449,9 @@ async fn get_claude_config_paths() -> Result<Value, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 免安装版自更新拉起的新进程：等旧进程退出后再继续，否则会被单实例插件拦下
+    commands::updater::finish_portable_update();
+
     tauri::Builder::default()
         // 关闭窗口会隐藏到托盘，此时再次启动应用应唤起已有窗口，而不是再开一个实例
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -597,6 +600,8 @@ pub fn run() {
             commands::cli_setup::update_claude_cli,
             commands::cli_setup::check_cli_update,
             commands::updater::get_update_env,
+            commands::updater::download_portable_update,
+            commands::updater::apply_portable_update,
             commands::toolchain::check_node_env,
             commands::toolchain::install_node_env,
             commands::local_models::check_local_model_service,

@@ -542,6 +542,7 @@ dependencies = [
  "dirs 6.0.0",
  "flate2",
  "futures-util",
+ "minisign-verify",
  "notify",
  "rand 0.8.5",
  "reqwest 0.12.28",

@@ -30,6 +30,7 @@ base64 = "0.22"
 serde_yaml = "0.9"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+minisign-verify = "0.2"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
 rand = "0.8"
