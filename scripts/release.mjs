@@ -1,17 +1,19 @@
 // 打包发布版：注入更新签名私钥后执行 tauri build，再收集产物到 release/
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const env = { ...process.env };
 
+// 本机存放项目密钥的位置
+const DEFAULT_KEY_PATH = String.raw`F:\AI\mywork\ProjectKey\ClaudeDeck\claudedeck.key`;
+
 // tauri build 只认 TAURI_SIGNING_PRIVATE_KEY（私钥内容），不认 _PATH；
-// 未提供时从 TAURI_SIGNING_PRIVATE_KEY_PATH 或默认的 ~/.tauri/claudedeck.key 读取，
+// 未提供时从 TAURI_SIGNING_PRIVATE_KEY_PATH 或默认的 F:\AI\mywork\ProjectKey\ClaudeDeck\claudedeck.key 读取，
 // 密码默认取同目录的 <私钥文件名>.password（空密码的私钥签名会报密码错误，所以必须设密码）
 if (!env.TAURI_SIGNING_PRIVATE_KEY) {
-  const keyPath = env.TAURI_SIGNING_PRIVATE_KEY_PATH || join(homedir(), ".tauri", "claudedeck.key");
+  const keyPath = env.TAURI_SIGNING_PRIVATE_KEY_PATH || DEFAULT_KEY_PATH;
   if (!existsSync(keyPath)) {
     console.error(`未找到更新签名私钥：${keyPath}\n可设置 TAURI_SIGNING_PRIVATE_KEY_PATH 指定其他位置`);
     process.exit(1);
