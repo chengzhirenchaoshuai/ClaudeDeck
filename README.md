@@ -57,7 +57,7 @@ gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." 
 - 签名私钥默认读取 `~/.tauri/claudedeck.key`，密码读取同目录的 `claudedeck.key.password`；也可用环境变量 `TAURI_SIGNING_PRIVATE_KEY_PATH` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 指定（空密码的私钥签名会失败）；公钥写在 `tauri.conf.json` 的 `plugins.updater.pubkey`。**私钥或密码丢失后，已发布的版本将无法再收到更新**，务必把这两个文件另行备份。
 - `latest.json` 的更新说明取自 `CHANGELOG.md` 中当前版本的条目；Release 必须标记为 Latest，否则检查不到。
 - 是否为安装版：读注册表 `HKCU\Software\chengzhiren66\ClaudeDeck\InstallDir`，与当前 exe 所在目录比较（`commands/updater.rs`）；否则 release 构建按免安装版处理。
-- 免安装版更新：`latest.json` 里自定义的 `windows-x86_64-portable` 条目给出 exe 地址与签名（与 MSI 同一把密钥）；新 exe 先存为 `<exe>.new`，安装时把当前 exe 改名为 `<exe>.old`、新文件放回原位，带 `--wait-pid=<旧 PID>` 启动新进程，新进程等旧进程退出后删除 `.old`。程序所在目录必须可写。
+- 免安装版更新：`latest.json` 里自定义的 `windows-x86_64-portable` 条目给出 exe 地址与签名（与 MSI 同一把密钥）。新 exe 先存为同目录的 `ClaudeDeck.exe.new`；安装时把当前 exe（文件名任意）改名为 `ClaudeDeck.exe.old`、新版本统一放成 `ClaudeDeck.exe`，带 `--wait-pid=<旧 PID>` 启动后旧进程退出；新进程等旧进程退出后删除 `.old`，开着开机自启时按新路径重新登记。每次启动都会清理残留的 `.old`/`.new`。程序所在目录必须可写；原文件名不是 `ClaudeDeck.exe` 时，指向旧文件名的快捷方式需要重建。
 
 ### 架构说明
 

@@ -502,6 +502,9 @@ pub fn run() {
             // 监听 CLI 会话目录，让会话列表随 CLI 变化自动同步
             start_sessions_watcher(app.handle().clone());
 
+            // 免安装版更新后路径可能变了，按新路径重新登记开机自启
+            commands::updater::refresh_autostart_after_update(app.handle());
+
             // 系统托盘
             setup_tray(app)?;
 
