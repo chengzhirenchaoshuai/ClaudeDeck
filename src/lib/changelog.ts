@@ -18,6 +18,31 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.2',
+    date: '2026-10-26',
+    highlights: {
+      zh: ['免安装版也支持应用内更新'],
+      en: ['In-app updates for the portable build'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '免安装版下载新版本并校验签名后替换自身，自动重新打开',
+            '免安装版更新后统一命名为 ClaudeDeck.exe，旧版本文件和下载残留自动清理',
+            '更新后程序路径变化时，开机自启自动改用新路径',
+          ],
+          en: [
+            'The portable build downloads, verifies and replaces itself, then relaunches',
+            'After updating, the portable build is always named ClaudeDeck.exe; old files and leftovers are cleaned up',
+            'Autostart follows the new path when the update changes it',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.4.1',
     date: '2026-10-26',
     highlights: {

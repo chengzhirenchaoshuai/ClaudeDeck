@@ -3,6 +3,13 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
+## [1.4.2] - 2026-10-26
+
+### 新增
+- 免安装版支持应用内更新：下载新版本并校验签名后替换自身，自动重新打开
+- 免安装版更新后统一命名为 `ClaudeDeck.exe`，不论原来叫什么名字；旧版本文件和下载残留自动清理
+- 免安装版更新后程序路径变化时，开机自启自动改用新路径
+
 ## [1.4.1] - 2026-10-26
 
 ### 新增
