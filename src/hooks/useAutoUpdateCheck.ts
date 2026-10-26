@@ -1,49 +1,17 @@
 import { useEffect } from 'react';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useUpdateStore } from '../stores/updateStore';
 
-const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+// 启动后稍等再查，避开启动时的网络与 CLI 检测；程序常驻托盘，之后每 6 小时再查一次
+const STARTUP_DELAY_MS = 5000;
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-// Module-level state — not serializable, kept outside Zustand.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _updateHandle: any = null;
-
-/** Get the cached update handle (from the latest successful check). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getUpdateHandle(): any {
-  return _updateHandle;
-}
-
-/** Perform a single update check, returning the update handle if available. */
-async function doCheck(): Promise<void> {
-  try {
-    const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
-    if (update) {
-      _updateHandle = update;
-      useSettingsStore.getState().setUpdateAvailable(true, update.version);
-      // Don't auto-download — wait for user to click the UpdateButton
-    } else {
-      _updateHandle = null;
-      useSettingsStore.getState().setUpdateAvailable(false);
-    }
-  } catch {
-    // Silent failure — network offline, rate-limited, etc.
-  }
-}
-
-/**
- * Checks for updates on startup (5s delay) and then every 10 minutes.
- * When an update is found, the UpdateButton shows the new version.
- * User must click to start download, then click again to restart.
- */
+/** 静默检查应用更新，有新版时顶栏显示更新按钮。开发模式下不检查 */
 export function useAutoUpdateCheck(): void {
   useEffect(() => {
-    // Initial check after 5s
-    const startupTimer = setTimeout(doCheck, 5000);
-
-    // Periodic check every 10 minutes
-    const intervalTimer = setInterval(doCheck, CHECK_INTERVAL_MS);
-
+    if (import.meta.env.DEV) return;
+    const run = () => useUpdateStore.getState().check(false);
+    const startupTimer = setTimeout(run, STARTUP_DELAY_MS);
+    const intervalTimer = setInterval(run, CHECK_INTERVAL_MS);
     return () => {
       clearTimeout(startupTimer);
       clearInterval(intervalTimer);

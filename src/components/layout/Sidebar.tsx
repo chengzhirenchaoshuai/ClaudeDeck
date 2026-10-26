@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUpdateStore } from '../../stores/updateStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { ConversationList } from '../conversations/ConversationList';
@@ -18,7 +19,8 @@ export function Sidebar() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggleSettings);
   const toggleUsage = useSettingsStore((s) => s.toggleUsage);
-  const updateAvailable = useSettingsStore((s) => s.updateAvailable);
+  // 发现应用新版本、尚未开始下载时，设置按钮上显示绿点
+  const updateAvailable = useUpdateStore((s) => s.phase === 'available');
   const cliUpdateAvailable = useSettingsStore((s) => s.cliUpdateAvailable);
   const t = useT();
 

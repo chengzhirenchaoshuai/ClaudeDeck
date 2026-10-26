@@ -13,5 +13,6 @@ pub mod git;
 pub mod usage;
 pub mod providers;
 pub mod preview;
+pub mod updater;
 
 pub use claude_process::*;

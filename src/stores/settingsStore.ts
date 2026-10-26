@@ -138,16 +138,10 @@ interface SettingsState {
   /** User-adjustable auto compact threshold in tokens. */
   /** 自动 compact 阈值（tokens）；null 表示按所选模型自动取上下文窗口的 80% */
   autoCompactThresholdTokens: number | null;
-  /** Whether a newer version is available (set by auto-check on startup) */
-  updateAvailable: boolean;
   /** Whether a newer CLI version is available */
   cliUpdateAvailable: boolean;
   /** Latest CLI version string (for display) */
   cliLatestVersion: string;
-  /** Version string of the available update */
-  updateVersion: string;
-  /** Whether the update has been downloaded and is ready for restart (transient, not persisted) */
-  updateDownloaded: boolean;
   /** Custom AI avatar image (data URL or empty string for default </> icon) */
   aiAvatarUrl: string;
   /** Custom user avatar image (data URL or empty string for default initials) */
@@ -211,8 +205,6 @@ interface SettingsState {
   setThinkingLevel: (level: ThinkingLevel) => void;
   setContextWindowMode: (mode: ContextWindowMode) => void;
   setAutoCompactThresholdTokens: (tokens: number | null) => void;
-  setUpdateAvailable: (available: boolean, version?: string) => void;
-  setUpdateDownloaded: (downloaded: boolean) => void;
   setAiAvatarUrl: (url: string) => void;
   setUserAvatarUrl: (url: string) => void;
   setUserDisplayName: (name: string) => void;
@@ -293,11 +285,8 @@ export const useSettingsStore = create<SettingsState>()(
       thinkingLevel: CLI_DEFAULT as ThinkingLevel,
       contextWindowMode: 'default',
       autoCompactThresholdTokens: null,
-      updateAvailable: false,
-      updateVersion: '',
       cliUpdateAvailable: false,
       cliLatestVersion: '',
-      updateDownloaded: false,
       aiAvatarUrl: '',
       userAvatarUrl: '',
       userDisplayName: '',
@@ -346,8 +335,6 @@ export const useSettingsStore = create<SettingsState>()(
       toggleSettings: () =>
         set((state) => ({
           settingsOpen: !state.settingsOpen,
-          // Clear update badge when opening settings
-          ...(!state.settingsOpen && state.updateAvailable ? { updateAvailable: false } : {}),
         })),
 
       setWorkingDirectory: (dir) =>
@@ -400,16 +387,6 @@ export const useSettingsStore = create<SettingsState>()(
           autoCompactThresholdTokens:
             autoCompactThresholdTokens === null ? null : clampAutoCompactThreshold(autoCompactThresholdTokens),
         })),
-
-      setUpdateAvailable: (available, version) =>
-        set(() => ({
-          updateAvailable: available,
-          ...(version !== undefined ? { updateVersion: version } : {}),
-          ...(!available ? { updateVersion: '', updateDownloaded: false } : {}),
-        })),
-
-      setUpdateDownloaded: (downloaded) =>
-        set(() => ({ updateDownloaded: downloaded })),
 
       setAiAvatarUrl: (url) =>
         set(() => ({ aiAvatarUrl: url })),
@@ -467,7 +444,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 20,
+      version: 21,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -570,6 +547,11 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 20) {
           persisted.lastCliModel = '';
         }
+        if (version < 21) {
+          // 应用更新状态移到不持久化的 updateStore
+          delete persisted.updateAvailable;
+          delete persisted.updateVersion;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -591,8 +573,6 @@ export const useSettingsStore = create<SettingsState>()(
         thinkingLevel: state.thinkingLevel,
         contextWindowMode: state.contextWindowMode,
         autoCompactThresholdTokens: state.autoCompactThresholdTokens,
-        updateAvailable: state.updateAvailable,
-        updateVersion: state.updateVersion,
         aiAvatarUrl: state.aiAvatarUrl,
         userAvatarUrl: state.userAvatarUrl,
         userDisplayName: state.userDisplayName,

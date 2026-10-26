@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUpdateStore } from '../../stores/updateStore';
 import { useT } from '../../lib/i18n';
 import { APP_NAME } from '../../lib/edition';
 import { ChangelogModal } from '../shared/ChangelogModal';
@@ -164,19 +165,15 @@ export function SettingsPanel() {
    Footer with version + update controls
    ================================================================ */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type UpdateHandle = any;
-type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'latest' | 'error';
-
 function SettingsFooter() {
   const t = useT();
   const [appVersion, setAppVersion] = useState('');
-  const [status, setStatus] = useState<UpdateStatus>('idle');
-  const [updateInfo, setUpdateInfo] = useState<UpdateHandle>(null);
-  const [progress, setProgress] = useState(0);
-  const [errorMsg, setErrorMsg] = useState('');
   const [showChangelog, setShowChangelog] = useState(false);
-  const storeUpdateVersion = useSettingsStore((s) => s.updateVersion);
+  const phase = useUpdateStore((s) => s.phase);
+  const version = useUpdateStore((s) => s.version);
+  const progress = useUpdateStore((s) => s.progress);
+  const errorMsg = useUpdateStore((s) => s.error);
+  const installed = useUpdateStore((s) => s.installed);
 
   useEffect(() => {
     import('@tauri-apps/api/app').then(({ getVersion }) =>
@@ -184,73 +181,19 @@ function SettingsFooter() {
     );
   }, []);
 
-  // Bridge auto-check result: if store has an update version, pre-fill
-  useEffect(() => {
-    if (storeUpdateVersion && status === 'idle') {
-      import('@tauri-apps/plugin-updater').then(({ check }) =>
-        check().then((update) => {
-          if (update) {
-            setUpdateInfo(update);
-            setStatus('available');
-          }
-        }).catch(() => {})
-      );
-    }
-  }, [storeUpdateVersion]);
-
-  const handleCheck = useCallback(async () => {
-    setStatus('checking');
-    setErrorMsg('');
-    try {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      const update = await check();
-      if (update) {
-        setUpdateInfo(update);
-        setStatus('available');
-      } else {
-        setStatus('latest');
-        setTimeout(() => setStatus('idle'), 3000);
-      }
-    } catch (e) {
-      setErrorMsg(String(e));
-      setStatus('error');
-    }
-  }, []);
-
-  const handleDownload = useCallback(async () => {
-    if (!updateInfo) return;
-    setStatus('downloading');
-    setProgress(0);
-    try {
-      let totalLen = 0;
-      let downloaded = 0;
-      await updateInfo.downloadAndInstall((event: { event: string; data: { contentLength?: number; chunkLength: number } }) => {
-        if (event.event === 'Started' && event.data.contentLength) {
-          totalLen = event.data.contentLength;
-        } else if (event.event === 'Progress') {
-          downloaded += event.data.chunkLength;
-          if (totalLen > 0) setProgress(Math.round((downloaded / totalLen) * 100));
-        } else if (event.event === 'Finished') {
-          setProgress(100);
-        }
-      });
-      setStatus('ready');
-    } catch (e) {
-      setErrorMsg(String(e));
-      setStatus('error');
-    }
-  }, [updateInfo]);
-
-  const handleRestart = useCallback(async () => {
-    const { relaunch } = await import('@tauri-apps/plugin-process');
-    await relaunch();
-  }, []);
+  const store = useUpdateStore.getState;
+  const btnPrimary = `px-2.5 py-1 text-xs font-medium rounded-md
+    bg-accent text-text-inverse hover:bg-accent-hover transition-smooth`;
+  const spinner = (
+    <span className="w-3 h-3 border-[1.5px] border-accent/30
+      border-t-accent rounded-full animate-spin" />
+  );
 
   return (
     <>
       <div className="flex items-center justify-between px-6 h-10
         border-t border-border-subtle bg-bg-secondary/30 flex-shrink-0">
-        {/* Left: version */}
+        {/* 左侧：版本号 */}
         <span className="text-xs text-text-tertiary flex items-center gap-1.5">
           <svg width="11" height="11" viewBox="0 0 171 171" fill="none" className="flex-shrink-0 opacity-60">
             <path d="M66.79 58.73L40.33 85.19L66.79 111.66L57.53 120.92L21.8 85.19L57.53 49.47Z" fill="currentColor" />
@@ -260,9 +203,8 @@ function SettingsFooter() {
           {APP_NAME} {appVersion ? `v${appVersion}` : '...'}
         </span>
 
-        {/* Right: action buttons */}
+        {/* 右侧：更新日志与应用更新 */}
         <div className="flex items-center gap-2">
-          {/* Changelog */}
           <button
             onClick={() => setShowChangelog(true)}
             className="px-2.5 py-1 text-xs font-medium rounded-md
@@ -271,51 +213,63 @@ function SettingsFooter() {
             {t('settings.footer.changelog')}
           </button>
 
-          {/* 应用内更新已关闭（更新地址为空），不再提供“检查更新”入口 */}
+          {(phase === 'idle' || phase === 'latest') && (
+            phase === 'latest' ? (
+              <span className="text-xs text-green-500 font-medium">
+                {t('settings.footer.upToDate')}
+              </span>
+            ) : (
+              <button
+                onClick={() => store().check(true)}
+                className="px-2.5 py-1 text-xs font-medium rounded-md
+                  text-text-muted hover:bg-bg-secondary hover:text-text-primary transition-smooth"
+              >
+                {t('settings.footer.checkUpdate')}
+              </button>
+            )
+          )}
 
-          {status === 'checking' && (
+          {phase === 'checking' && (
             <span className="flex items-center gap-1.5 text-xs text-text-muted">
-              <span className="w-3 h-3 border-[1.5px] border-accent/30
-                border-t-accent rounded-full animate-spin" />
+              {spinner}
               {t('update.checking')}
             </span>
           )}
 
-          {status === 'latest' && (
-            <span className="text-xs text-green-500 font-medium">
-              {t('settings.footer.upToDate')}
-            </span>
+          {phase === 'available' && (
+            installed ? (
+              <button onClick={() => store().download()} className={btnPrimary}>
+                {t('update.install')} v{version}
+              </button>
+            ) : (
+              <button onClick={() => store().openReleasePage()} className={btnPrimary}
+                title={t('update.portableHint')}>
+                {t('update.openRelease')} v{version}
+              </button>
+            )
           )}
 
-          {status === 'available' && updateInfo && (
-            <button
-              onClick={handleDownload}
-              className="px-2.5 py-1 text-xs font-medium rounded-md
-                bg-accent text-text-inverse hover:bg-accent-hover transition-smooth"
-            >
-              {t('update.install')} v{updateInfo.version}
-            </button>
-          )}
-
-          {status === 'downloading' && (
+          {phase === 'downloading' && (
             <span className="flex items-center gap-1.5 text-xs text-text-muted">
-              <span className="w-3 h-3 border-[1.5px] border-accent/30
-                border-t-accent rounded-full animate-spin" />
+              {spinner}
               {t('update.downloading')} {progress}%
             </span>
           )}
 
-          {status === 'ready' && (
-            <button
-              onClick={handleRestart}
-              className="px-2.5 py-1 text-xs font-medium rounded-md
-                bg-accent text-text-inverse hover:bg-accent-hover transition-smooth"
-            >
-              {t('update.restart')}
+          {phase === 'ready' && (
+            <button onClick={() => store().install(t)} className={btnPrimary}>
+              {t('update.installRestart')}
             </button>
           )}
 
-          {status === 'error' && (
+          {phase === 'installing' && (
+            <span className="flex items-center gap-1.5 text-xs text-text-muted">
+              {spinner}
+              {t('update.installing')}
+            </span>
+          )}
+
+          {phase === 'error' && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-red-500" title={errorMsg}>
                 {t('update.error')}
@@ -331,7 +285,7 @@ function SettingsFooter() {
                 </span>
               )}
               <button
-                onClick={handleCheck}
+                onClick={() => store().check(true)}
                 className="px-2 py-0.5 text-xs text-text-muted hover:text-text-primary transition-smooth"
               >
                 {t('cli.retry')}
@@ -341,7 +295,7 @@ function SettingsFooter() {
         </div>
       </div>
 
-      {/* Changelog modal */}
+      {/* 更新日志弹窗 */}
       {showChangelog && appVersion && (
         <ChangelogModal
           version={appVersion}

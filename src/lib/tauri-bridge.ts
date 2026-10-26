@@ -635,6 +635,10 @@ export const bridge = {
   checkCliUpdate: () =>
     invoke<{ current: string | null; latest: string | null; update_available: boolean }>('check_cli_update'),
 
+  /** 应用更新环境：是否为 MSI 安装版（可应用内安装），以及可用的 HTTP 代理 */
+  getUpdateEnv: () =>
+    invoke<{ installed: boolean; proxy: string | null }>('get_update_env'),
+
   checkNodeEnv: () =>
     invoke<NodeEnvStatus>('check_node_env'),
 

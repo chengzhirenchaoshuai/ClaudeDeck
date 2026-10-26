@@ -596,6 +596,7 @@ pub fn run() {
             commands::cli_setup::install_claude_cli,
             commands::cli_setup::update_claude_cli,
             commands::cli_setup::check_cli_update,
+            commands::updater::get_update_env,
             commands::toolchain::check_node_env,
             commands::toolchain::install_node_env,
             commands::local_models::check_local_model_service,

@@ -865,6 +865,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'update.error': '检查更新失败',
     'update.version': '新版本',
     'update.install': '下载并安装',
+    'update.installRestart': '安装并重启',
+    'update.installing': '正在安装...',
+    'update.openRelease': '下载新版',
+    'update.portableHint': '当前为免安装版，需到发布页手动下载',
+    'update.confirmRunning': '有 {n} 个任务正在运行（{detail}）。安装更新会关闭 ClaudeDeck 并中断这些任务，确定继续吗？',
 
     // Network / firewall hints
     'network.firewallHint': '网络连接失败，可能需要 VPN 或代理才能访问',
@@ -1778,6 +1783,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'update.error': 'Update check failed',
     'update.version': 'New version',
     'update.install': 'Download & Install',
+    'update.installRestart': 'Install & Restart',
+    'update.installing': 'Installing...',
+    'update.openRelease': 'Download',
+    'update.portableHint': 'Portable build: download the new version from the releases page',
+    'update.confirmRunning': '{n} task(s) are running ({detail}). Installing the update will close ClaudeDeck and interrupt them. Continue?',
 
     // Network / firewall hints
     'network.firewallHint': 'Network error — you may need a VPN or proxy to connect',

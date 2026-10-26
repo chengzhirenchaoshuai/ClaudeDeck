@@ -23,6 +23,7 @@ import { requestQuit } from './lib/app-quit';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
+import { useAutoUpdateCheck } from './hooks/useAutoUpdateCheck';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
 import { useTerminalSessions } from './hooks/useTerminalSessions';
 import {
@@ -122,8 +123,8 @@ function App() {
 
   const t = useT();
 
-  // Auto-check for app updates on startup (disabled to diagnose startup error)
-  // useAutoUpdateCheck();
+  // 启动后静默检查应用更新
+  useAutoUpdateCheck();
 
   // CLI update detection: check on startup + poll every 30 minutes
   useEffect(() => {
