@@ -330,6 +330,8 @@ export function ConversationList() {
     try {
       if (sessionPath) {
         await bridge.deleteSession(sessionId, sessionPath);
+        // 远程会话列表是缓存，fetchSessions 只重读本机，需手动从缓存中去掉
+        useSessionStore.getState().removeRemoteSession(sessionId);
       } else {
         useSessionStore.getState().removeDraft(sessionId);
       }

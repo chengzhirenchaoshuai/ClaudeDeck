@@ -141,6 +141,8 @@ interface SessionState {
   clearContentSearch: () => void;
   /** 读取所有已配置远程主机的会话（经 ssh，较慢，需手动或在启动时调用） */
   fetchRemoteSessions: () => Promise<void>;
+  /** 从远程会话缓存和列表中移除一个会话（远程删除成功后调用，fetchSessions 不会重读远程） */
+  removeRemoteSession: (sessionId: string) => void;
   markUnread: (sessionId: string) => void;
   markRead: (sessionId: string) => void;
   toggleUnread: (sessionId: string) => void;
@@ -208,6 +210,13 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     } catch {
       set({ isLoading: false });
     }
+  },
+
+  removeRemoteSession: (sessionId) => {
+    set((state) => ({
+      remoteSessions: state.remoteSessions.filter((s) => s.id !== sessionId),
+      sessions: state.sessions.filter((s) => !(s.host && s.id === sessionId)),
+    }));
   },
 
   fetchRemoteSessions: async () => {
