@@ -28,6 +28,8 @@ import { usePlanPanelStore, PlanPanel } from './PlanPanel';
 const RENDER_WINDOW = 60;
 /** 滚到顶部附近时每次往前补渲染的项数 */
 const RENDER_PAGE = 60;
+/** 打开会话后持续贴底的最长时间（毫秒），等待消息高度稳定 */
+const PIN_DURATION = 2000;
 
 export function ChatPanel() {
   const t = useT();
@@ -224,6 +226,7 @@ export function ChatPanel() {
   // 右侧导航跳转后，暂停流式输出时的自动贴底，避免视图被拉回底部
   const handleTimelineJumped = useCallback(() => {
     userScrollingUpRef.current = true;
+    pinBottomRef.current = false;
   }, []);
 
   // Track whether user is near the bottom of the scroll container, throttled via rAF
@@ -262,6 +265,34 @@ export function ChatPanel() {
     el.addEventListener('wheel', onWheel, { passive: true });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
+
+  // 会话刚加载时持续贴底：消息用了 content-visibility，屏幕外的项先按估算高度占位，
+  // 渲染出真实高度后总高度会变，一次性滚到底会停在中间。内容区尺寸变化时重新贴底，
+  // 用户主动滚动/点击或超过 PIN_DURATION 后停止。
+  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
+  const pinBottomRef = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!contentEl || !el || !pinBottomRef.current) return;
+    const stopPin = () => { pinBottomRef.current = false; };
+    const onWheel = (e: WheelEvent) => { if (e.deltaY < 0) stopPin(); };
+    const ro = new ResizeObserver(() => {
+      if (pinBottomRef.current && !prependRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(contentEl);
+    el.scrollTop = el.scrollHeight;
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('pointerdown', stopPin);
+    el.addEventListener('keydown', stopPin);
+    const timer = setTimeout(stopPin, PIN_DURATION);
+    return () => {
+      ro.disconnect();
+      clearTimeout(timer);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('pointerdown', stopPin);
+      el.removeEventListener('keydown', stopPin);
+    };
+  }, [contentEl]);
 
   // Auto-scroll to bottom only when already near bottom and user isn't scrolling up
   useEffect(() => {
@@ -400,7 +431,7 @@ export function ChatPanel() {
         ) : messages.length === 0 && !isStreaming ? (
           <EmptyReadyState />
         ) : (
-          <div className="max-w-5xl mx-auto">
+          <div ref={setContentEl} className="max-w-5xl mx-auto">
             {renderStart > 0 && (
               // 兜底入口：内容不足一屏、无法靠滚动触发时也能手动加载
               <div className="flex justify-center mb-4">
