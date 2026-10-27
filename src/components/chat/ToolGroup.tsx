@@ -48,7 +48,7 @@ export function ToolGroup({ messages }: Props) {
       {/* Summary header — always visible */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 py-1 text-left group cursor-pointer"
+        className="flex items-center gap-1.5 py-1 text-left group cursor-pointer w-full min-w-0"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
           stroke="currentColor" strokeWidth="1.5"
@@ -62,10 +62,10 @@ export function ToolGroup({ messages }: Props) {
           <rect x="2" y="2" width="7" height="7" rx="1.5" />
           <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" opacity="0.5" />
         </svg>
-        <span className="text-xs font-medium text-text-muted">
+        <span className="text-xs font-medium text-text-muted flex-shrink-0 whitespace-nowrap">
           {t('msg.toolGroup').replace('{n}', String(count))}
         </span>
-        <span className="text-[11px] text-text-tertiary truncate max-w-[300px]">
+        <span className="text-[11px] text-text-tertiary truncate min-w-0">
           ({summary})
         </span>
         {/* All-complete indicator */}

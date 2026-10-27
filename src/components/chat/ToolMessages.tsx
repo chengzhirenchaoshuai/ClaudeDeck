@@ -157,16 +157,17 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
   const renderPreview = () => {
     if (toolName === 'Bash' && input?.command) {
       return (
-        <span className="text-[11px] text-text-tertiary truncate
-          font-mono max-w-[350px] bg-bg-secondary/60 px-1.5 py-0.5 rounded">
-          {input.command.length > 80 ? input.command.slice(0, 80) + '…' : input.command}
+        <span className="text-[11px] text-text-tertiary truncate min-w-0
+          font-mono bg-bg-secondary/60 px-1.5 py-0.5 rounded"
+          title={input.command}>
+          {input.command}
         </span>
       );
     }
 
     if ((toolName === 'Edit' || toolName === 'Write' || toolName === 'Read') && input?.file_path) {
       return (
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1.5 min-w-0">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -184,7 +185,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
               }
             }}
             className={`text-accent/70 hover:text-accent font-mono
-              truncate max-w-[280px] hover:underline cursor-pointer transition-smooth
+              truncate min-w-0 hover:underline cursor-pointer transition-smooth
               ${isFileEdit ? 'text-[12px]' : 'text-[11px]'}`}
             title={input.file_path}
           >
@@ -192,14 +193,14 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
           </button>
           {/* Diff stats for Edit */}
           {editDiff && (
-            <span className="inline-flex items-center gap-1 ml-0.5">
+            <span className="inline-flex items-center gap-1 ml-0.5 flex-shrink-0">
               <span className="text-[11px] font-mono text-success">+{editDiff.added}</span>
               <span className="text-[11px] font-mono text-error">-{editDiff.removed}</span>
             </span>
           )}
           {/* Line count for Write */}
           {writeLines !== null && (
-            <span className="text-[11px] font-mono text-success ml-0.5">
+            <span className="text-[11px] font-mono text-success ml-0.5 flex-shrink-0 whitespace-nowrap">
               +{writeLines} lines
             </span>
           )}
@@ -209,8 +210,8 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
 
     if ((toolName === 'Glob' || toolName === 'Grep') && input?.pattern) {
       return (
-        <span className="text-[11px] text-text-tertiary truncate
-          font-mono max-w-[300px]">
+        <span className="text-[11px] text-text-tertiary truncate min-w-0
+          font-mono" title={input.pattern}>
           {input.pattern}
         </span>
       );
@@ -218,7 +219,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
 
     if ((toolName === 'Task' || toolName === 'Agent') && input?.description) {
       return (
-        <span className="text-[11px] text-text-tertiary truncate max-w-[300px] italic">
+        <span className="text-[11px] text-text-tertiary truncate min-w-0 italic">
           {input.description}
         </span>
       );
@@ -226,7 +227,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
 
     if (toolName === 'TeamCreate' && (input?.team_name || input?.name)) {
       return (
-        <span className="text-[11px] text-text-tertiary truncate max-w-[300px] italic">
+        <span className="text-[11px] text-text-tertiary truncate min-w-0 italic">
           Team: {input.team_name || input.name}
         </span>
       );
@@ -234,7 +235,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
 
     if (toolName === 'TaskCreate' && (input?.subject || input?.description)) {
       return (
-        <span className="text-[11px] text-text-tertiary truncate max-w-[300px] italic">
+        <span className="text-[11px] text-text-tertiary truncate min-w-0 italic">
           {input.subject || input.description}
         </span>
       );
@@ -242,7 +243,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
 
     if (toolName === 'SendMessage' && input?.recipient) {
       return (
-        <span className="text-[11px] text-text-tertiary truncate max-w-[300px] italic">
+        <span className="text-[11px] text-text-tertiary truncate min-w-0 italic">
           &rarr; {input.recipient}
         </span>
       );
@@ -251,7 +252,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
     if ((toolName === 'WebFetch' || toolName === 'WebSearch') && (input?.url || input?.query)) {
       const display = input.url || input.query;
       return (
-        <span className="text-[11px] text-accent/70 truncate max-w-[300px] font-mono">
+        <span className="text-[11px] text-accent/70 truncate min-w-0 font-mono">
           {display}
         </span>
       );
@@ -410,7 +411,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
       sections.push(
         <pre key="result" className="text-[11px] text-text-tertiary
           overflow-x-auto font-mono leading-relaxed
-          max-h-48 overflow-y-auto whitespace-pre-wrap">
+          max-h-96 overflow-y-auto whitespace-pre-wrap">
           {resultContent}
         </pre>
       );
@@ -427,7 +428,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
     <div className={depth > 0 ? 'ml-16 pl-3 border-l-2 border-accent/15' : 'ml-11'}>
       <button
         onClick={() => canExpand && setExpanded(!expanded)}
-        className={`flex items-center gap-1.5 py-1 text-left group
+        className={`flex items-center gap-1.5 py-1 text-left group w-full min-w-0
           ${canExpand ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {canExpand ? (
@@ -441,7 +442,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
           <span className="w-[10px] flex-shrink-0" />
         )}
         <ToolIcon name={toolName} />
-        <span className={`font-medium text-text-muted ${isFileEdit ? 'text-[13px]' : 'text-xs'}`}>{label}</span>
+        <span className={`font-medium text-text-muted flex-shrink-0 whitespace-nowrap ${isFileEdit ? 'text-[13px]' : 'text-xs'}`}>{label}</span>
         {renderPreview()}
         {/* Show a small result indicator when collapsed with result */}
         {!expanded && hasResult && (
@@ -471,14 +472,14 @@ export function ToolResultMsg({ message }: MessageProps) {
 
   // Show a short one-line preview on the same line as the "Result" label
   const preview = content.length > 0
-    ? content.split('\n')[0].slice(0, 60) + (content.length > 60 ? '…' : '')
+    ? content.split('\n')[0]
     : '';
 
   return (
     <div className={depth > 0 ? 'ml-16 pl-3 border-l-2 border-accent/15' : 'ml-11'}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 py-0.5 cursor-pointer group"
+        className="flex items-center gap-1.5 py-0.5 cursor-pointer group w-full min-w-0 text-left"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
           stroke="currentColor" strokeWidth="1.5"
@@ -490,9 +491,9 @@ export function ToolResultMsg({ message }: MessageProps) {
           stroke="currentColor" strokeWidth="1.5" className="text-success flex-shrink-0">
           <path d="M2.5 6l2.5 2.5 4.5-4.5" />
         </svg>
-        <span className="text-[11px] text-text-tertiary">{t('msg.result')}</span>
+        <span className="text-[11px] text-text-tertiary flex-shrink-0">{t('msg.result')}</span>
         {!expanded && preview && (
-          <span className="text-[11px] text-text-tertiary/60 font-mono truncate max-w-[300px]">
+          <span className="text-[11px] text-text-tertiary/60 font-mono truncate min-w-0">
             {preview}
           </span>
         )}
@@ -500,7 +501,7 @@ export function ToolResultMsg({ message }: MessageProps) {
       {expanded && content && (
         <pre className="ml-5 mt-0.5 text-[11px] text-text-tertiary
           overflow-x-auto font-mono leading-relaxed
-          max-h-48 overflow-y-auto whitespace-pre-wrap">
+          max-h-96 overflow-y-auto whitespace-pre-wrap">
           {content}
         </pre>
       )}
