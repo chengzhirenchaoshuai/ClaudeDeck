@@ -768,6 +768,7 @@ export function ConversationList() {
               archivedSessions={archivedSessions}
               customPreviews={customPreviews}
               multiSelect={multiSelect}
+              showAll={multiSelect || !!searchQuery.trim()}
               selectedIds={selectedIds}
               onToggleCollapse={toggleCollapse}
               onContextMenu={handleContextMenu}

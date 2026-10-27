@@ -1,7 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { SessionItem } from './SessionItem';
 import { useT } from '../../lib/i18n';
+
+/** 项目展开后默认显示的会话数 */
+const COLLAPSED_LIMIT = 5;
 
 interface SessionGroupProps {
   projectKey: string;
@@ -14,6 +17,8 @@ interface SessionGroupProps {
   archivedSessions: Set<string>;
   customPreviews: Record<string, string>;
   multiSelect: boolean;
+  /** 不折叠，显示全部会话（多选、搜索时用，避免选中或匹配到看不见的会话） */
+  showAll?: boolean;
   selectedIds: Set<string>;
   onToggleCollapse: (project: string) => void;
   onContextMenu: (e: React.MouseEvent, session: SessionListItem) => void;
@@ -42,6 +47,7 @@ export function SessionGroup({
   archivedSessions,
   customPreviews,
   multiSelect,
+  showAll,
   selectedIds,
   onToggleCollapse,
   onContextMenu,
@@ -68,6 +74,24 @@ export function SessionGroup({
     }
     return { pinnedItems: pinned, unpinnedItems: unpinned };
   }, [sessions, pinnedSessions]);
+
+  const [showMore, setShowMore] = useState(false);
+  const expandAll = showAll || showMore;
+
+  // 默认只显示前 COLLAPSED_LIMIT 个（置顶的始终显示并计入名额）；
+  // 超出部分里正在选中、运行中或被定位高亮的会话也保留，避免当前会话“消失”
+  const visibleUnpinned = useMemo(() => {
+    if (expandAll) return unpinnedItems;
+    const quota = Math.max(0, COLLAPSED_LIMIT - pinnedItems.length);
+    return unpinnedItems.filter((s, i) =>
+      i < quota
+      || s.id === selectedId
+      || s.id === highlightedSessionId
+      || runningSessions.has(s.id));
+  }, [expandAll, unpinnedItems, pinnedItems.length, selectedId, highlightedSessionId, runningSessions]);
+  const hiddenCount = unpinnedItems.length - visibleUnpinned.length;
+  const canCollapse = !showAll && showMore
+    && pinnedItems.length + unpinnedItems.length > COLLAPSED_LIMIT;
 
   const getDisplayName = (session: SessionListItem) =>
     customPreviews[session.id] || session.preview || '';
@@ -154,7 +178,7 @@ export function SessionGroup({
             </>
           )}
 
-          {unpinnedItems.map((session) => (
+          {visibleUnpinned.map((session) => (
             <SessionItem
               key={session.id}
               session={session}
@@ -176,6 +200,25 @@ export function SessionGroup({
               isHighlighted={highlightedSessionId === session.id}
             />
           ))}
+
+          {/* 展开 / 收起其余会话 */}
+          {(hiddenCount > 0 || canCollapse) && (
+            <button
+              onClick={() => setShowMore(!showMore)}
+              className="w-full flex items-center gap-1.5 pl-7 pr-3 py-1 rounded-lg
+                text-[11px] text-text-tertiary hover:text-accent hover:bg-bg-secondary
+                transition-smooth text-left"
+            >
+              <svg width="8" height="8" viewBox="0 0 10 10" fill="none"
+                stroke="currentColor" strokeWidth="1.5"
+                className={`flex-shrink-0 transition-transform ${showMore ? '-rotate-90' : 'rotate-90'}`}>
+                <path d="M3 1l4 4-4 4" />
+              </svg>
+              {hiddenCount > 0
+                ? t('conv.showMore').replace('{n}', String(hiddenCount))
+                : t('conv.showLess')}
+            </button>
+          )}
         </div>
       )}
     </div>
