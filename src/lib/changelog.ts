@@ -18,6 +18,45 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.3',
+    date: '2026-10-27',
+    highlights: {
+      zh: ['顶部栏显示 Git 分支与 gh 登录状态；会话列表更清爽'],
+      en: ['Git branch and gh login status in the top bar; a tidier session list'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            'Git 小标签：当前分支、未提交改动数，点击查看提交署名、GitHub 账号与远程地址，gh 登录有问题时给出提醒',
+            '项目展开后默认只显示 5 个会话，其余可展开',
+            '隐藏工作目录在系统临时目录下的一次性会话',
+          ],
+          en: [
+            'Git chip: current branch and uncommitted changes; click for commit identity, GitHub account and remote URL, with a hint when gh login needs attention',
+            'Projects show 5 sessions by default, expandable to the rest',
+            'One-off sessions whose working directory is in the system temp folder are hidden',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['工具调用预览不再截断，展开后的输出区域加高', '标题栏透明，面板背景延伸到窗口顶部'],
+          en: ['Tool call previews are no longer truncated, and expanded output is taller', 'Transparent title bar with panel backgrounds reaching the top of the window'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['打开会话后没有滚动到末尾', '删除远程会话后仍显示在列表里'],
+          en: ['Opening a session did not scroll to the end', 'Deleted remote sessions stayed in the list'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.4.2',
     date: '2026-10-26',
     highlights: {
