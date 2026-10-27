@@ -20,6 +20,7 @@ import { parseTurns } from '../../lib/turns';
 import { WelcomeScreen, LoadingSessionState, EmptyReadyState } from './WelcomeScreen';
 import { ConversationTimeline } from './ConversationTimeline';
 import { UsageStatusBar } from './UsageMeters';
+import { GitChip } from './GitChip';
 import { getModelDisplayName } from './chatFormat';
 import { ActivityIndicator } from './ActivityIndicator';
 import { usePlanPanelStore, PlanPanel } from './PlanPanel';
@@ -401,6 +402,7 @@ export function ChatPanel() {
 
         {/* Spacer + right-side actions */}
         <div className="ml-auto flex items-center" />
+        <GitChip />
         <UsageStatusBar />
         <UsageChip />
         <UpdateButton />

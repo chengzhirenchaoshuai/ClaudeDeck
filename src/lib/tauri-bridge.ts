@@ -1,5 +1,6 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import type { GitInfo } from './git-info';
 
 // --- Types ---
 
@@ -560,6 +561,10 @@ export const bridge = {
   // Git commands (safe, allowlisted operations only)
   runGitCommand: (cwd: string, args: string[]) =>
     invoke<string>('run_git_command', { cwd, args }),
+
+  // 项目 Git 信息与 gh 登录状态（ssh:// 项目在远端采集）
+  getGitInfo: (cwd: string) =>
+    invoke<GitInfo>('get_git_info', { cwd }),
 
   // Rewind files via SDK control protocol (fast, in-process) with CLI spawn fallback
   rewindFiles: (stdinId: string, userMessageId: string, sessionId: string, cwd: string) =>

@@ -1141,6 +1141,89 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
 /// 回溯时恢复文件的兜底路径（会话进程已不在、无法走控制协议时）：在远端项目目录下执行
 /// `claude --resume <会话> --rewind-files <用户消息 ID>`，与本机 rewind_files 一致。
 /// 参数格式（UUID）由调用方校验。
+/// 在远端采集 Git / gh 信息的脚本，输出字段与 git.rs 中的 `GitProbe` 一一对应（判断逻辑在本端统一做）。
+/// 每条外部命令都经 Run 带超时执行：gh auth status 要联网校验令牌，网络不通时不能拖住整个脚本。
+/// `gh auth token` 的标准输出就是令牌本身，只取退出码和 stderr，绝不回传。
+const GIT_PROBE_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+Set-Location -LiteralPath __DIR__ -ErrorAction Stop
+function Run($exe, $argLine, $ms, [switch]$NoStdout) {
+  $psi = New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  $psi.Arguments = $argLine
+  $psi.WorkingDirectory = (Get-Location).ProviderPath
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.StandardOutputEncoding = New-Object Text.UTF8Encoding($false)
+  $psi.StandardErrorEncoding = New-Object Text.UTF8Encoding($false)
+  try { $p = [Diagnostics.Process]::Start($psi) } catch { return $null }
+  # 两个管道同时异步读取，避免一方写满缓冲区后双方互相等待
+  $o = $p.StandardOutput.ReadToEndAsync()
+  $e = $p.StandardError.ReadToEndAsync()
+  if (-not $p.WaitForExit($ms)) { try { $p.Kill() } catch {}; return @{ code = $null; out = ''; err = '' } }
+  $p.WaitForExit()
+  $out = if ($NoStdout) { '' } else { [string]$o.Result.Trim() }
+  return @{ code = $p.ExitCode; out = $out; err = [string]$e.Result.Trim() }
+}
+$git = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+$gh = (Get-Command gh -CommandType Application | Select-Object -First 1).Source
+function GitOut($a) { $x = Run $git "--no-optional-locks $a" 5000; if ($x -and $x.code -eq 0) { [string]$x.out } else { '' } }
+function GitOk($a) { $x = Run $git "--no-optional-locks $a" 5000; [bool]($x -and $x.code -eq 0) }
+$r = [ordered]@{
+  isRepo = $false; branch = ''; originHead = ''; hasOriginMain = $false; hasOriginMaster = $false
+  userName = ''; userEmail = ''; remoteUrl = ''; changedFiles = 0
+  ghInstalled = $false; ghTokenCode = $null; ghTokenStderr = ''; ghStatusCode = $null; ghStatusOutput = ''
+}
+if ($git -and (GitOut 'rev-parse --is-inside-work-tree') -eq 'true') {
+  $r.isRepo = $true
+  $r.branch = GitOut 'branch --show-current'
+  # 主分支取法与 CLI 相同：origin/HEAD 指向且该远程分支确实存在
+  $h = (GitOut 'symbolic-ref --short refs/remotes/origin/HEAD') -replace '^origin/', ''
+  if ($h -and (GitOk "show-ref --verify --quiet refs/remotes/origin/$h")) { $r.originHead = $h }
+  $r.hasOriginMain = GitOk 'show-ref --verify --quiet refs/remotes/origin/main'
+  $r.hasOriginMaster = GitOk 'show-ref --verify --quiet refs/remotes/origin/master'
+  $r.userName = GitOut 'config --show-scope --get user.name'
+  $r.userEmail = GitOut 'config --show-scope --get user.email'
+  $r.remoteUrl = GitOut 'remote get-url origin'
+  $s = GitOut 'status --porcelain'
+  $r.changedFiles = @($s -split "`n" | Where-Object { $_.Trim() }).Count
+}
+if ($gh) {
+  $x = Run $gh 'auth token' 5000 -NoStdout
+  if ($x) {
+    $r.ghInstalled = $true
+    $r.ghTokenCode = $x.code
+    $r.ghTokenStderr = $x.err
+    $x = Run $gh 'auth status' 8000
+    if ($x) { $r.ghStatusCode = $x.code; $r.ghStatusOutput = $x.out + "`n" + $x.err }
+  }
+}
+Out-AsciiJson (ConvertTo-Json -InputObject $r -Compress)
+"#;
+
+/// 在远端项目目录下采集 Git / gh 原始信息（结构见 `GIT_PROBE_SCRIPT`），由 git.rs 统一解析。
+pub async fn probe_remote_git(host_id: &str, remote_path: &str) -> Result<Value, String> {
+    if remote_path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    let host = find_host(host_id)?;
+    let script = GIT_PROBE_SCRIPT.replace("__DIR__", &ps_quote(&remote_path.replace('/', "\\")));
+    let (stdout, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(45)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("读取远端 Git 信息失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let text = stdout.trim().trim_start_matches('\u{feff}');
+    serde_json::from_str(text).map_err(|e| format!("解析远端 Git 信息失败: {}", e))
+}
+
 pub async fn rewind_remote_files(
     host_id: &str,
     remote_path: &str,

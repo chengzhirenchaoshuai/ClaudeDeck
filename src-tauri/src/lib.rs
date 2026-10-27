@@ -588,6 +588,7 @@ pub fn run() {
             commands::skills::translate_skill_metadata,
             commands::skills::translate_skill_markdown,
             commands::git::run_git_command,
+            commands::git::get_git_info,
             commands::git::rewind_files,
             commands::cli_setup::run_claude_command,
             commands::cli_setup::run_claude_plugin_command,
