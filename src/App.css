@@ -893,9 +893,9 @@ input, textarea, [contenteditable="true"],
 }
 
 /* ---------------- 自绘标题栏（TitleBar.tsx） ----------------
-   主窗口关闭了系统标题栏。水彩方案透明，透出应用背景；简洁方案把侧栏、消息区的底色
-   向上延伸（--sidebar-w 由 AppShell 设置），看起来像面板一直铺到窗口顶部；
-   设置了壁纸时与面板一样用毛玻璃。 */
+   主窗口关闭了系统标题栏。标题栏本身完全透明、不单独成一层：下方的面板行（.app-row）
+   向上延伸到窗口顶部，各面板用等高的 padding-top 让出标题栏位置，
+   这样侧栏、消息区、右侧面板的底色/极光/壁纸毛玻璃和分隔线都一直铺到窗口顶部。 */
 :root {
   --titlebar-h: 34px;
 }
@@ -909,28 +909,17 @@ input, textarea, [contenteditable="true"],
   height: var(--titlebar-h);
   flex-shrink: 0;
   user-select: none;
+  background: transparent;
 }
 
-:root[data-flat] .app-titlebar {
-  background-color: var(--color-bg-chat);
-  background-image:
-    var(--skin-grain),
-    linear-gradient(90deg,
-      var(--color-bg-sidebar) var(--sidebar-w, 0px),
-      var(--color-border-subtle) var(--sidebar-w, 0px),
-      var(--color-border-subtle) calc(var(--sidebar-w, 0px) + 1px),
-      transparent calc(var(--sidebar-w, 0px) + 1px));
-  background-size: 160px 160px, 100% 100%;
+.app-row {
+  margin-top: calc(-1 * var(--titlebar-h));
 }
 
-.custom-bg-active .app-titlebar {
-  background: color-mix(
-    in srgb,
-    var(--color-bg-sidebar) calc(var(--glass-opacity, 0.85) * 100%),
-    transparent
-  ) !important;
-  backdrop-filter: blur(var(--glass-blur, 8px));
-  -webkit-backdrop-filter: blur(var(--glass-blur, 8px));
+.app-row > .bg-bg-chat,
+.app-row > div > .bg-bg-sidebar,
+.app-row > div > .bg-bg-chat {
+  padding-top: var(--titlebar-h);
 }
 
 .app-titlebar-title {

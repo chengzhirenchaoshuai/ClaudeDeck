@@ -223,11 +223,8 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
   const showFloatingSecondary = secondaryPanelOpen && isFilePreviewMode;
 
   return (
-    <div
-      className="flex flex-col h-full w-full overflow-hidden gradient-bg"
-      // 标题栏按侧栏宽度分段着色，见 App.css 的 .app-titlebar
-      style={{ '--sidebar-w': `${showSidebar ? sidebarWidth : 0}px` } as React.CSSProperties}
-    >
+    <div className="flex flex-col h-full w-full overflow-hidden gradient-bg">
+      {/* 标题栏透明，面板行向上延伸到它下面，见 App.css 的 .app-titlebar / .app-row */}
       <TitleBar showTitle={!showSidebar} />
       <div className="app-row flex flex-1 min-h-0 w-full overflow-hidden">
       {/* Sidebar — animates to w-0 when hidden or preview mode */}
