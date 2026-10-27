@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionListItem } from '../../../lib/tauri-bridge';
-import { groupByProject, sessionSortTime } from '../session-list-model';
+import { filterSessions, groupByProject, isTempProject, sessionSortTime } from '../session-list-model';
 
 function item(id: string, modifiedAt: number, lastPromptAt?: number, project = 'F:/proj'): SessionListItem {
   return { id, path: `${id}.jsonl`, project, projectDir: project, modifiedAt, lastPromptAt, preview: id };
@@ -25,5 +25,24 @@ describe('groupByProject', () => {
   it('项目之间也按最后发言时间排序', () => {
     const sessions = [item('a', 999, 10, 'F:/x'), item('b', 100, 100, 'F:/y')];
     expect(groupByProject(sessions, new Set()).map(([key]) => key)).toEqual(['F:/y', 'F:/x']);
+  });
+});
+
+describe('临时目录会话', () => {
+  it('识别系统临时目录（含 8.3 短路径、目录名解码路径），不误伤普通项目', () => {
+    expect(isTempProject(String.raw`C:\Users\Administrator\AppData\Local\Temp\claude\x\scratchpad\desc-opt\trigger-iso\trig-_83yd1jq`)).toBe(true);
+    expect(isTempProject(String.raw`C:\Users\ADMINI~1\AppData\Local\Temp\claude\x`)).toBe(true);
+    expect(isTempProject(String.raw`C:\Users\ADMINI\1\AppData\Local\Temp\claude\x`)).toBe(true);
+    expect(isTempProject('C:/Users/me/AppData/Local/Temp')).toBe(true);
+    expect(isTempProject(String.raw`F:\AI\mywork\ClaudeDock`)).toBe(false);
+    expect(isTempProject(String.raw`F:\Temp\proj`)).toBe(false);
+  });
+
+  it('列表中隐藏临时目录的会话', () => {
+    const sessions = [item('a', 1), item('b', 2, 0, String.raw`C:\Users\me\AppData\Local\Temp\claude\trig-1`)];
+    const result = filterSessions(sessions, {
+      activeEnv: 'local', showArchived: false, archivedSessions: new Set(), searchQuery: '', displayName: (s) => s.preview,
+    });
+    expect(result.map((s) => s.id)).toEqual(['a']);
   });
 });

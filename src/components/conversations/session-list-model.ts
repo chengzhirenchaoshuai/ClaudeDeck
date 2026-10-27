@@ -43,6 +43,15 @@ export function projectLabel(project: string, parentHint?: boolean): string {
   return name;
 }
 
+/**
+ * 工作目录在系统临时目录（%LOCALAPPDATA%\Temp）下的会话：技能评测、描述优化等脚本
+ * 为每个测试用例在 scratchpad 里建临时目录跑一次 claude，会留下大量一次性会话，列表中隐藏。
+ * 兼容 8.3 短路径（ADMINI~1）和没有 cwd 时由目录名解码出的路径。
+ */
+export function isTempProject(project: string): boolean {
+  return /[\\/]AppData[\\/]Local[\\/]Temp([\\/]|$)/i.test(project);
+}
+
 /** 只保留当前环境（本机或某台远程主机）的会话，再按归档视图和搜索词过滤 */
 export function filterSessions(
   sessions: SessionListItem[],
@@ -57,6 +66,7 @@ export function filterSessions(
   const { activeEnv, showArchived, archivedSessions, searchQuery, displayName } = opts;
   // 本地与远程模式互相隔离：只显示当前环境的会话
   let result = sessions.filter((s) => (activeEnv === 'local' ? !s.host : s.host === activeEnv));
+  result = result.filter((s) => !isTempProject(s.project));
 
   // Archive filter: OFF = hide archived, ON = show ONLY archived
   if (showArchived) {
@@ -135,6 +145,7 @@ export function findContentOnlyMatches(
   const metadataIds = new Set(filtered.map((s) => s.id));
   return sessions.filter((s) => {
     if (s.host) return false;
+    if (isTempProject(s.project)) return false;
     if (metadataIds.has(s.id)) return false;
     if (!contentSearchResults.has(s.id)) return false;
     // Respect archive filter
