@@ -54,6 +54,7 @@ function renderCodeSegment(inner: string, key: number): ReactNode {
           transition-all duration-150 select-none
           align-baseline leading-normal whitespace-nowrap inline-block"
         title={resolved}
+        data-copy-text={inner}
       >
         <span className="text-[10px]">📄</span>
         <span className="max-w-[180px] truncate">{fileName}</span>

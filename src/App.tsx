@@ -25,6 +25,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import { useAutoUpdateCheck } from './hooks/useAutoUpdateCheck';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
+import { installChipCopy } from './lib/chip-copy';
 import { useTerminalSessions } from './hooks/useTerminalSessions';
 import {
   getContextInputTokens,
@@ -125,6 +126,9 @@ function App() {
 
   // 启动后静默检查应用更新
   useAutoUpdateCheck();
+
+  // 复制消息文本时把文件链接换成原文（完整路径），否则链接会被整个丢掉
+  useEffect(() => installChipCopy(), []);
 
   // CLI update detection: check on startup + poll every 30 minutes
   useEffect(() => {

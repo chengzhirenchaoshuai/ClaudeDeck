@@ -409,7 +409,7 @@ class MarkdownErrorBoundary extends React.Component<
  * 只有文件名、而项目根目录里没有这个文件时（例如 Claude 说的是临时目录里的文件）显示成灰色，不可点击。
  * 单独做成组件、自己订阅目录树：目录树刷新时只重绘链接本身，不重建整条消息的 Markdown。
  */
-function InlineFileChip({ path, line, base }: { path: string; line?: number; base: string }) {
+function InlineFileChip({ path, line, base, copyText }: { path: string; line?: number; base: string; copyText: string }) {
   const t = useT();
   const missing = useFileStore((s) => isBareFileMissing(path, base, { rootPath: s.rootPath, nodes: s.tree }));
   const resolved = resolveSessionPath(path, base);
@@ -423,6 +423,7 @@ function InlineFileChip({ path, line, base }: { path: string; line?: number; bas
           text-xs text-text-muted font-medium cursor-default
           align-baseline leading-normal whitespace-nowrap"
         title={t('md.fileNotInProject')}
+        data-copy-text={copyText}
       >
         <span className="text-[10px] opacity-60">📄</span>
         <span className="max-w-[180px] truncate">{fileName}</span>
@@ -452,6 +453,7 @@ function InlineFileChip({ path, line, base }: { path: string; line?: number; bas
         transition-all duration-150 select-none
         align-baseline leading-normal whitespace-nowrap"
       title={resolved}
+      data-copy-text={copyText}
     >
       <span className="text-[10px]">📄</span>
       <span className="max-w-[180px] truncate">{fileName}</span>
@@ -648,7 +650,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
       const text = extractText(children).trim();
       const filePath = parseInlineFilePath(text);
       if (filePath) {
-        return <InlineFileChip path={filePath.path} line={filePath.line} base={resolveBase} />;
+        return <InlineFileChip path={filePath.path} line={filePath.line} base={resolveBase} copyText={text} />;
       }
       return <code>{children}</code>;
     },
