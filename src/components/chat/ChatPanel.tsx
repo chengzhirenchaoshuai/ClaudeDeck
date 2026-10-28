@@ -16,12 +16,12 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
 import { useProviderStore } from '../../stores/providerStore';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
-import { parseTurns } from '../../lib/turns';
+import { computeTurnDurations, parseTurns } from '../../lib/turns';
 import { WelcomeScreen, LoadingSessionState, EmptyReadyState } from './WelcomeScreen';
 import { ConversationTimeline } from './ConversationTimeline';
 import { UsageStatusBar } from './UsageMeters';
 import { GitChip } from './GitChip';
-import { getModelDisplayName } from './chatFormat';
+import { formatElapsed, getModelDisplayName } from './chatFormat';
 import { ActivityIndicator } from './ActivityIndicator';
 import { usePlanPanelStore, PlanPanel } from './PlanPanel';
 
@@ -176,6 +176,20 @@ export function ChatPanel() {
   const showScrollBtnRef = useRef(false);
   const scrollRafRef = useRef(0);
   const turns = useMemo(() => parseTurns(messages), [messages]);
+  // 每轮结束后在最后一条回复下方显示用时（与 CLI 的 "Cooked for 1m 23s" 对应）
+  const turnDurations = useMemo(
+    () => computeTurnDurations(messages, sessionStatus === 'running'),
+    [messages, sessionStatus],
+  );
+  const renderTurnDuration = (lastMsgId: string) => {
+    const ms = turnDurations.get(lastMsgId);
+    if (ms === undefined) return null;
+    return (
+      <div className="ml-11 mt-1.5 text-[11px] text-text-muted select-none">
+        {t('chat.turnDuration').replace('{t}', formatElapsed(ms))}
+      </div>
+    );
+  };
 
   /** 往前补渲染时记下补之前的滚动高度，渲染后据此恢复位置，避免视图跳到别处 */
   const prependRef = useRef<{ height: number; top: number } | null>(null);
@@ -487,6 +501,7 @@ export function ChatPanel() {
                 return (
                   <div key={`tg_${item.msgs[0].id}`} className={spacing}>
                     <ToolGroup messages={item.msgs} />
+                    {renderTurnDuration(item.msgs[item.msgs.length - 1].id)}
                   </div>
                 );
               }
@@ -508,6 +523,7 @@ export function ChatPanel() {
               return (
                 <div key={msg.id} ref={setMessageNode(msg.id)} className={`${spacing} chat-message-item`}>
                   <MessageBubble message={msg} isFirstInGroup={isFirstInGroup} />
+                  {renderTurnDuration(msg.id)}
                 </div>
               );
             })}

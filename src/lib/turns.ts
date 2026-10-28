@@ -130,3 +130,29 @@ export function relativeTime(timestamp: number): string {
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
+
+/** 消息时间戳转毫秒：实时消息是毫秒数，从磁盘 JSONL 加载的是 ISO 字符串 */
+function toMillis(ts: unknown): number {
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') return new Date(ts).getTime();
+  return NaN;
+}
+
+/**
+ * 每轮的用时（从用户发出消息到这一轮最后一条回复），返回 Map：这一轮最后一条消息的 ID → 毫秒数。
+ * 磁盘上的 JSONL 没有记录 CLI 的用时，统一用消息时间戳计算，历史会话和实时会话结果一致。
+ * running 为 true 时最后一轮还没结束，不计算。
+ */
+export function computeTurnDurations(messages: ChatMessage[], running: boolean): Map<string, number> {
+  const result = new Map<string, number>();
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role !== 'user') continue;
+    const end = findNextUserIndex(messages, i + 1);
+    if (end === i + 1) continue; // 这一轮没有任何回复
+    if (end === messages.length && running) continue;
+    const last = messages[end - 1];
+    const ms = toMillis(last.timestamp) - toMillis(messages[i].timestamp);
+    if (Number.isFinite(ms) && ms > 0) result.set(last.id, ms);
+  }
+  return result;
+}
