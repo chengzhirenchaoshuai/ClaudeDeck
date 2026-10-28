@@ -181,7 +181,7 @@ export function UserMsg({ message }: MessageProps) {
             </button>
           </div>
         </div>
-        <UserAvatar size="w-8 h-8 text-xs" className="mt-0.5" />
+        <UserAvatar size="w-10 h-10 text-sm" rounded="rounded-xl" />
       </div>
     );
   }
@@ -202,9 +202,10 @@ export function UserMsg({ message }: MessageProps) {
           </svg>
         </button>
       )}
-      <div className="max-w-[75%] px-3.5 py-2.5 rounded-2xl rounded-br-md
+      {/* 单行时 py-2(16px) + leading-6(24px) = 40px，与头像等高 */}
+      <div className="max-w-[75%] px-3.5 py-2 rounded-2xl rounded-br-md
         bg-bg-user-msg text-text-inverse
-        text-sm leading-relaxed shadow-md whitespace-pre-wrap">
+        text-sm leading-6 shadow-md whitespace-pre-wrap">
         {renderUserContent(displayContent)}
         {!expanded && isLong && (
           <span className="text-white/60">…</span>
@@ -263,7 +264,7 @@ export function UserMsg({ message }: MessageProps) {
           </div>
         )}
       </div>
-      <UserAvatar size="w-8 h-8 text-xs" className="mt-0.5" />
+      <UserAvatar size="w-10 h-10 text-sm" rounded="rounded-xl" />
     </div>
   );
 }

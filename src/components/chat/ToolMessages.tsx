@@ -425,7 +425,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
   const depth = message.subAgentDepth ?? 0;
 
   return (
-    <div className={depth > 0 ? 'ml-16 pl-3 border-l-2 border-accent/15' : 'ml-11'}>
+    <div className={depth > 0 ? 'ml-18 pl-3 border-l-2 border-accent/15' : 'ml-13'}>
       <button
         onClick={() => canExpand && setExpanded(!expanded)}
         className={`flex items-center gap-1.5 py-1 text-left group w-full min-w-0
@@ -476,7 +476,7 @@ export function ToolResultMsg({ message }: MessageProps) {
     : '';
 
   return (
-    <div className={depth > 0 ? 'ml-16 pl-3 border-l-2 border-accent/15' : 'ml-11'}>
+    <div className={depth > 0 ? 'ml-18 pl-3 border-l-2 border-accent/15' : 'ml-13'}>
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 py-0.5 cursor-pointer group w-full min-w-0 text-left"

@@ -24,6 +24,7 @@ import { GitChip } from './GitChip';
 import { formatElapsed, getModelDisplayName } from './chatFormat';
 import { ActivityIndicator } from './ActivityIndicator';
 import { usePlanPanelStore, PlanPanel } from './PlanPanel';
+import { AiAvatar } from '../shared/AiAvatar';
 
 /** 首次只渲染最近这么多项（一个工具组算一项）：长会话全部渲染（含 Markdown）会让切换会话明显卡顿 */
 const RENDER_WINDOW = 60;
@@ -185,7 +186,7 @@ export function ChatPanel() {
     const ms = turnDurations.get(lastMsgId);
     if (ms === undefined) return null;
     return (
-      <div className="ml-11 mt-1.5 text-[11px] text-text-muted select-none">
+      <div className="ml-13 mt-1.5 text-[11px] text-text-muted select-none">
         {t('chat.turnDuration').replace('{t}', formatElapsed(ms))}
       </div>
     );
@@ -529,7 +530,7 @@ export function ChatPanel() {
             })}
             {/* Streaming thinking — collapsible like ThinkingMsg but with pulse cursor */}
             {isStreaming && partialThinking && (
-              <div className="ml-11 mt-1">
+              <div className="ml-13 mt-1">
                 <details open className="group">
                   <summary className="flex items-center gap-1.5 py-1
                     cursor-pointer text-[11px] text-text-tertiary list-none select-none">
@@ -574,11 +575,9 @@ export function ChatPanel() {
               return (
               <div className="flex gap-3 mt-2">
                 {showStreamAvatar ? (
-                  <div className="w-8 h-8 rounded-[10px] bg-accent
-                    flex items-center justify-center flex-shrink-0 text-text-inverse
-                    text-xs font-bold shadow-md mt-0.5">C</div>
+                  <AiAvatar size="w-10 h-10" rounded="rounded-xl" />
                 ) : (
-                  <div className="w-8 flex-shrink-0" />
+                  <div className="w-10 flex-shrink-0" />
                 )}
                 <div className="flex-1 min-w-0 text-base text-text-primary leading-relaxed">
                   <MarkdownRenderer content={partialText} />

@@ -54,7 +54,7 @@ export function CommandFeedbackMsg({ message }: MessageProps) {
     // Preformatted output (e.g. CLI command results)
     if (data.preformatted) {
       return (
-        <div className="ml-11 my-1 animate-fade-in">
+        <div className="ml-13 my-1 animate-fade-in">
           <div className="rounded-lg border border-border-subtle
             bg-bg-secondary/50 overflow-hidden max-w-md">
             <div className="flex items-center gap-2 px-3 py-1.5
@@ -71,7 +71,7 @@ export function CommandFeedbackMsg({ message }: MessageProps) {
     }
 
     return (
-      <div className="ml-11 my-1 animate-fade-in">
+      <div className="ml-13 my-1 animate-fade-in">
         <div className="inline-block rounded-lg border border-border-subtle
           bg-bg-secondary/50 overflow-hidden max-w-xs">
           {/* Header */}
@@ -115,7 +115,7 @@ export function CommandFeedbackMsg({ message }: MessageProps) {
   if (cType === 'help') {
     const builtins: Array<{ name: string; desc: string }> = data.builtins || [];
     return (
-      <div className="ml-11 my-1 animate-fade-in">
+      <div className="ml-13 my-1 animate-fade-in">
         <div className="rounded-lg border border-border-subtle
           bg-bg-secondary/50 overflow-hidden max-w-md">
           {/* Header */}

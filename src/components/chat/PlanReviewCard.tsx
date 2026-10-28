@@ -117,7 +117,7 @@ export function PlanReviewCard({ message, floating }: Props) {
   }, []);
 
   return (
-    <div className={`${floating ? '' : 'ml-11'} ${isResolved ? 'opacity-80' : ''} animate-scale-in`}>
+    <div className={`${floating ? '' : 'ml-13'} ${isResolved ? 'opacity-80' : ''} animate-scale-in`}>
       <div className={`rounded-xl border overflow-hidden transition-all duration-200
         ${isResolved
           ? 'border-border-subtle bg-bg-secondary/30'

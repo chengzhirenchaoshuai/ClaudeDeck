@@ -90,7 +90,7 @@ export function PermissionCard({ message }: Props) {
   const isPending = interactionState === 'pending';
 
   return (
-    <div className={`ml-11 animate-scale-in ${isResolved ? 'opacity-60' : ''}`}>
+    <div className={`ml-13 animate-scale-in ${isResolved ? 'opacity-60' : ''}`}>
       <div className={`rounded-xl border overflow-hidden transition-all duration-200
         ${isResolved
           ? 'border-border-subtle bg-bg-secondary/30'

@@ -42,9 +42,9 @@ function AssistantMsg({ message, isFirstInGroup = true }: MessageProps) {
     <div className="flex gap-3">
       {/* Avatar: show only for the first message in a consecutive group */}
       {isFirstInGroup ? (
-        <AiAvatar size="w-8 h-8" className="mt-0.5" />
+        <AiAvatar size="w-10 h-10" rounded="rounded-xl" />
       ) : (
-        <div className="w-8 flex-shrink-0" />
+        <div className="w-10 flex-shrink-0" />
       )}
       <div className="flex-1 min-w-0 text-base text-text-primary leading-relaxed">
         <MarkdownRenderer content={safeContent(message.content)} />
@@ -59,7 +59,7 @@ function AssistantMsg({ message, isFirstInGroup = true }: MessageProps) {
 function ThinkingMsg({ message }: MessageProps) {
   const t = useT();
   return (
-    <div className="ml-11">
+    <div className="ml-13">
       <details open className="group">
         <summary className="flex items-center gap-1.5 py-1
           cursor-pointer text-[11px] text-text-tertiary list-none select-none">
@@ -91,7 +91,7 @@ function PlanMsg({ message }: MessageProps) {
   const items = message.planItems || (typeof message.content === 'string' ? message.content.split('\n').filter(Boolean) : []);
 
   return (
-    <div className="ml-11">
+    <div className="ml-13">
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 py-1 cursor-pointer"
@@ -138,7 +138,7 @@ function TodoMsg({ message }: MessageProps) {
   const inProgressItem = items.find((i) => i.status === 'in_progress');
 
   return (
-    <div className="ml-11">
+    <div className="ml-13">
       {/* Header — collapsible */}
       <button
         onClick={() => setExpanded(!expanded)}

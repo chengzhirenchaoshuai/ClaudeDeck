@@ -191,7 +191,7 @@ export function QuestionCard({ message, floating }: Props) {
   if (isFullyResolved) {
     const answered = Object.entries(answeredMap);
     return (
-      <div className={`${floating ? '' : 'ml-11'} max-w-[50rem] animate-scale-in`}>
+      <div className={`${floating ? '' : 'ml-13'} max-w-[50rem] animate-scale-in`}>
         <div className="rounded-xl border border-border-subtle bg-bg-secondary/30 px-3.5 py-2.5">
           <div className="flex items-center gap-1.5 text-xs text-text-muted">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-success">
@@ -224,7 +224,7 @@ export function QuestionCard({ message, floating }: Props) {
   const isLast = currentIdx >= questions.length - 1;
 
   return (
-    <div className={`${floating ? '' : 'ml-11'} max-w-[50rem] animate-scale-in`}>
+    <div className={`${floating ? '' : 'ml-13'} max-w-[50rem] animate-scale-in`}>
       {/* 悬浮在消息区上方时限制高度，选项很多时在卡片内滚动 */}
       <div className={`rounded-2xl border border-accent/25 bg-bg-card shadow-[0_4px_18px_-6px_rgba(0,0,0,0.12)]
         ${floating ? 'max-h-[65vh] overflow-y-auto' : 'overflow-hidden'}`}>
