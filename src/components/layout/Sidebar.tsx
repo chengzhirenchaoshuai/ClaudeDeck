@@ -10,6 +10,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { EnvSwitcher, RemotePathInput } from './EnvSwitcher';
 import { LOCAL_ENV } from '../../lib/remote';
 import { refreshAll } from '../../lib/session-sync';
+import { useAppVersion } from '../../hooks/useAppVersion';
 
 export function Sidebar() {
   const [remotePathOpen, setRemotePathOpen] = useState(false);
@@ -23,6 +24,7 @@ export function Sidebar() {
   const updateAvailable = useUpdateStore((s) => s.phase === 'available');
   const cliUpdateAvailable = useSettingsStore((s) => s.cliUpdateAvailable);
   const t = useT();
+  const appVersion = useAppVersion();
 
   const startProjectDraft = (folderPath: string) => {
     useSettingsStore.getState().setWorkingDirectory(folderPath);
@@ -86,6 +88,11 @@ export function Sidebar() {
               Claude<span className="text-accent">/</span>Deck
             </span>
             <span className="text-[16px] text-success">♧</span>
+            {appVersion && (
+              <span className="self-end mb-0.5 text-[11px] text-text-tertiary">
+                v{appVersion}{import.meta.env.DEV ? ' Dev' : ''}
+              </span>
+            )}
           </div>
         </div>
         <button onClick={toggleSidebar}

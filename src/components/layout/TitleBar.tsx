@@ -5,11 +5,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useT } from '../../lib/i18n';
 import { APP_NAME } from '../../lib/edition';
 import { disposableListen } from '../../lib/disposable-listen';
+import { useAppVersion } from '../../hooks/useAppVersion';
 
 /** showTitle：侧栏收起时显示应用名（侧栏展开时左上角已有 Logo，不重复） */
 export function TitleBar({ showTitle }: { showTitle: boolean }) {
   const t = useT();
   const [maximized, setMaximized] = useState(false);
+  const appVersion = useAppVersion();
 
   // 最大化状态决定按钮图标；双击标题栏、Win+方向键等系统操作也会触发 resized
   useEffect(() => {
@@ -31,7 +33,7 @@ export function TitleBar({ showTitle }: { showTitle: boolean }) {
     <div data-tauri-drag-region className="app-titlebar">
       {/* data-tauri-drag-region 只对元素本身生效，文字也要加，否则按在文字上拖不动 */}
       <span data-tauri-drag-region className="app-titlebar-title">
-        {showTitle && (import.meta.env.DEV ? `${APP_NAME} Dev` : APP_NAME)}
+        {showTitle && `${APP_NAME}${appVersion ? ` v${appVersion}` : ''}${import.meta.env.DEV ? ' Dev' : ''}`}
       </span>
       <div className="app-titlebar-buttons">
         <button title={t('window.minimize')} onClick={() => win().minimize()}>
