@@ -26,6 +26,7 @@ import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import { useAutoUpdateCheck } from './hooks/useAutoUpdateCheck';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
 import { installChipCopy } from './lib/chip-copy';
+import { installDraftCleanup } from './lib/draft-cleanup';
 import { useTerminalSessions } from './hooks/useTerminalSessions';
 import {
   getContextInputTokens,
@@ -129,6 +130,9 @@ function App() {
 
   // 复制消息文本时把文件链接换成原文（完整路径），否则链接会被整个丢掉
   useEffect(() => installChipCopy(), []);
+
+  // 没发消息就切走的新建会话不保留，避免列表里堆满空会话
+  useEffect(() => installDraftCleanup(), []);
 
   // 回复权限请求/提问后，运行状态从“等待确认”恢复成之前的工具（工具此时才真正开始运行）。
   // 延后一拍：卡片在回复成功后才把自己标为已处理，要等它更新完再判断是否还有待确认项
