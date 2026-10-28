@@ -535,6 +535,8 @@ export function InputBar() {
           ? files.map((f) => ({ name: f.name, path: f.path, isImage: f.isImage, preview: f.preview }))
           : undefined,
       };
+      // 会话列表右侧的时间是最后发言时间：立即更新，不等磁盘写入或远程列表刷新
+      useSessionStore.getState().touchSession(tabId, userBubble.timestamp);
       if (shouldQueue) {
         // 气泡等 CLI 真正处理这条消息时再插入，否则会排在本轮回复的正文前面
         clearFiles();

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, memo, useSyncExternalStore } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { useSessionStore } from '../../stores/sessionStore';
 import { sessionSortTime } from './session-list-model';
@@ -21,6 +21,37 @@ function formatRelativeTime(ms: number): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}${tStatic('conv.dAgo')}`;
   return new Date(ms).toLocaleDateString();
+}
+
+/**
+ * 全局共享的分钟时钟：所有会话的相对时间共用一个定时器，每分钟通知一次。
+ * 列表项按数据是否变化决定是否重绘，不订阅时钟的话“3 分钟前”会一直停在那里。
+ */
+const minuteListeners = new Set<() => void>();
+let minuteNow = Date.now();
+let minuteTimer: ReturnType<typeof setInterval> | null = null;
+function subscribeMinute(listener: () => void) {
+  minuteListeners.add(listener);
+  if (!minuteTimer) {
+    minuteTimer = setInterval(() => {
+      minuteNow = Date.now();
+      minuteListeners.forEach((l) => l());
+    }, 60_000);
+  }
+  return () => {
+    minuteListeners.delete(listener);
+    if (minuteListeners.size === 0 && minuteTimer) {
+      clearInterval(minuteTimer);
+      minuteTimer = null;
+    }
+  };
+}
+const getMinute = () => minuteNow;
+
+/** 相对时间（刚刚 / x 分钟前 / HH:mm / x 天前），每分钟自动刷新 */
+function RelativeTime({ ms }: { ms: number }) {
+  useSyncExternalStore(subscribeMinute, getMinute);
+  return <>{formatRelativeTime(ms)}</>;
 }
 
 /** Renders snippet text with query matches highlighted in accent color */
@@ -243,7 +274,7 @@ export const SessionItem = memo(function SessionItem({
           <span className={`text-[10px] text-text-tertiary
             ${!multiSelect && !isRenaming && onPin ? 'group-hover:invisible' : ''}`}>
             {/* 与列表排序一致：显示最后发言时间，未知时为修改时间 */}
-            {formatRelativeTime(sessionSortTime(session))}
+            <RelativeTime ms={sessionSortTime(session)} />
           </span>
           {!multiSelect && !isRenaming && onPin && (
             <span

@@ -99,3 +99,17 @@ describe('keepPendingDrafts', () => {
     expect(keepPendingDrafts(sessions, [item(REAL, 'y.jsonl')]).map((s) => s.id)).toEqual(['draft_a']);
   });
 });
+
+describe('touchSession', () => {
+  it('发消息后立即更新最后发言时间，远程会话同步更新；不会把时间往回改', () => {
+    const remote = { ...item(REAL, 'ssh://h/C:/x.jsonl', '', 'h'), lastPromptAt: 1_000 };
+    useSessionStore.setState({ sessions: [remote], remoteSessions: [remote] });
+
+    useSessionStore.getState().touchSession(REAL, 5_000);
+    expect(useSessionStore.getState().sessions[0].lastPromptAt).toBe(5_000);
+    expect(useSessionStore.getState().remoteSessions[0].lastPromptAt).toBe(5_000);
+
+    useSessionStore.getState().touchSession(REAL, 3_000);
+    expect(useSessionStore.getState().sessions[0].lastPromptAt).toBe(5_000);
+  });
+});

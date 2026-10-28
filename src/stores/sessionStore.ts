@@ -126,6 +126,8 @@ interface SessionState {
   getTabForStdin: (stdinId: string) => string | undefined;
   /** Remove a draft session from the local list (no disk deletion needed) */
   removeDraft: (draftId: string) => void;
+  /** 用户刚给这个会话发了消息：立即更新列表里的最后发言时间（远程会话不会自动刷新，本机也要等磁盘写入） */
+  touchSession: (id: string, at: number) => void;
   /** Promote a draft session to a real session ID (when CLI returns the actual UUID).
    *  Updates session id, selectedSessionId, stdinToTab mapping, and runningSessions. */
   promoteDraft: (oldDraftId: string, newRealId: string) => void;
@@ -394,6 +396,12 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   },
 
   getTabForStdin: (stdinId) => get().stdinToTab[stdinId],
+
+  touchSession: (id, at) => set((state) => {
+    const touch = (s: SessionListItem) => (s.id === id && (s.lastPromptAt ?? 0) < at ? { ...s, lastPromptAt: at } : s);
+    if (!state.sessions.some((s) => s.id === id)) return {};
+    return { sessions: state.sessions.map(touch), remoteSessions: state.remoteSessions.map(touch) };
+  }),
 
   removeDraft: (draftId) => set((state) => ({
     sessions: state.sessions.filter((s) => s.id !== draftId),
