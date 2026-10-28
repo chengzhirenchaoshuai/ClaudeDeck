@@ -1,5 +1,5 @@
 // 聊天区的空状态：欢迎页（未选项目，含新建草稿会话并预热 CLI）、加载中、已就绪。
-import { useEffect, useMemo, useCallback } from 'react';
+import { useEffect, useMemo, useCallback, useState } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore, mapSessionModeToPermissionMode, getContextWindowForModel } from '../../stores/settingsStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -13,6 +13,7 @@ import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveThinking
 import { useProviderStore } from '../../stores/providerStore';
 import { SetupWizard } from '../setup/SetupWizard';
 import { AiAvatar } from '../shared/AiAvatar';
+import { APP_NAME } from '../../lib/edition';
 
 /** Start a new draft conversation for the given folder and pre-warm the CLI process */
 async function startDraftSession(folderPath: string) {
@@ -140,6 +141,14 @@ export function WelcomeScreen() {
 
   useEffect(() => { fetchProjects(); }, []);
 
+  // 当前版本号，显示在页面底部
+  const [appVersion, setAppVersion] = useState('');
+  useEffect(() => {
+    import('@tauri-apps/api/app').then(({ getVersion }) =>
+      getVersion().then(setAppVersion).catch(() => {})
+    );
+  }, []);
+
   const handlePickFolder = useCallback(async () => {
     const selected = await open({
       directory: true,
@@ -157,7 +166,7 @@ export function WelcomeScreen() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center">
+    <div className="relative flex flex-col items-center justify-center h-full text-center">
       {/* App icon — customizable AI avatar */}
       <AiAvatar size="w-20 h-20" rounded="rounded-3xl" className="mb-6 shadow-glow" />
       <h2 className="text-xl font-semibold text-accent mb-2">
@@ -218,6 +227,12 @@ export function WelcomeScreen() {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {appVersion && (
+        <div className="absolute bottom-4 left-0 right-0 text-[11px] text-text-tertiary">
+          {APP_NAME} v{appVersion}{import.meta.env.DEV ? ' Dev' : ''}
         </div>
       )}
     </div>
