@@ -18,6 +18,44 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.5',
+    date: '2026-10-28',
+    highlights: {
+      zh: ['运行指示器显示真实进度；远程会话与附件问题修复'],
+      en: ['Activity indicator shows real progress; remote session and attachment fixes'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '运行指示器显示正在执行的动作和对象（读取、运行、搜索），并行时显示其余数量',
+            '复制消息文本时，文件链接带上完整路径',
+          ],
+          en: [
+            'Activity indicator shows the current action and target (read, run, search), with a count of parallel tools',
+            'Copying message text includes full paths for file links',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '远程模式下新建会话出现影子行、没有自动命名',
+            '远程项目添加附件一直显示加载中',
+            '回复权限请求或提问后运行状态不正确',
+          ],
+          en: [
+            'Shadow rows and missing titles for new sessions in remote mode',
+            'Adding attachments in remote projects kept loading forever',
+            'Wrong activity status after answering a permission request or question',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.4.4',
     date: '2026-10-28',
     highlights: {
