@@ -333,9 +333,18 @@ export function ChatPanel() {
   }, [contentEl, pinTick]);
 
   // Auto-scroll to bottom only when already near bottom and user isn't scrolling up
+  const prevMsgCountRef = useRef(messages.length);
   useEffect(() => {
+    const grew = messages.length > prevMsgCountRef.current;
+    prevMsgCountRef.current = messages.length;
     if (isNearBottomRef.current && !userScrollingUpRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // 新消息先按 contain-intrinsic-size 估算的高度占位，渲染出真实高度后才向下撑开，
+      // 只滚一次会停在新消息开头（头像处）。新增消息时开一轮持续贴底，直到高度稳定
+      if (grew) {
+        pinBottomRef.current = true;
+        setPinTick((n) => n + 1);
+      }
     }
   }, [messages, partialText, partialThinking, pendingUserMessages]);
 
