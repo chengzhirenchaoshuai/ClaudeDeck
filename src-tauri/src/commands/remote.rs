@@ -227,6 +227,7 @@ pub async fn run_remote_with_input(
         (Some(data), Some(mut stdin)) => Some(tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
             let _ = stdin.write_all(&data).await;
+            let _ = stdin.flush().await;
             let _ = stdin.shutdown().await;
         })),
         _ => None,
@@ -1103,7 +1104,7 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
            $gi = Join-Path $base '.gitignore'; \
            if (-not [System.IO.File]::Exists($gi)) {{ [System.IO.File]::WriteAllText($gi, \"*`n\") }}; \
            $p = Join-Path $tmp {name}; \
-           $b64 = [Console]::In.ReadToEnd(); \
+           $b64 = [Console]::In.ReadLine(); \
            [System.IO.File]::WriteAllBytes($p, [Convert]::FromBase64String($b64.Trim())); \
            Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $true; path = $p }}) \
          }} catch {{ \
@@ -1113,7 +1114,11 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
         name = ps_quote(&safe_name),
     );
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let input = STANDARD.encode(data).into_bytes();
+    // 内容以一行 base64 加换行发送，远端读到换行即可，不等标准输入结束：
+    // 经 ssh 的管道输入有时传不过去 EOF，用 ReadToEnd 会一直等到超时（附件一直显示加载中）。
+    // 会话消息同样是逐行写入、从不关闭输入，这条路已经验证可用。
+    let mut input = STANDARD.encode(data).into_bytes();
+    input.push(b'\n');
     let (stdout, stderr, code) = run_remote_with_input(
         &host,
         &powershell_command(&script),

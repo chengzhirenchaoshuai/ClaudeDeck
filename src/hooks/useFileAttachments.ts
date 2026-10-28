@@ -5,6 +5,8 @@ import { isTreeDragActive } from '../lib/drag-state';
 import { disposableListen } from '../lib/disposable-listen';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useFileStore } from '../stores/fileStore';
+import { showToast } from '../components/shared/Toast';
+import { t } from '../lib/i18n';
 
 // --- Types ---
 
@@ -130,6 +132,7 @@ export function useFileAttachments() {
           });
         } catch (err) {
           console.error('Failed to add file:', file.name, err);
+          showToast(t('input.attachFailed').replace('{name}', file.name).replace('{error}', String(err)), 'error');
         }
       }
 
@@ -209,6 +212,8 @@ export function useFileAttachments() {
           });
         } catch (err) {
           console.error('Failed to add dropped file:', filePath, err);
+          const name = filePath.split(/[\\/]/).pop() || filePath;
+          showToast(t('input.attachFailed').replace('{name}', name).replace('{error}', String(err)), 'error');
         }
       }
       if (newFiles.length > 0) {
