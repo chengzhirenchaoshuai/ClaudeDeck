@@ -173,6 +173,8 @@ export interface TabSession {
   inputDraft: string;
   pendingAttachments: FileAttachment[];
   pendingUserMessages: PendingUserMessage[];
+  /** CLI 预测的下一句话（提示建议），输入框为空时灰色显示；发出消息后清空 */
+  promptSuggestion?: string;
 }
 
 /** 运行中提交的消息：已写入 stdin 等 CLI 插入（sent），或排队等本轮结束再发送 */
@@ -210,6 +212,7 @@ interface ChatState {
   resetTab: (tabId: string) => void;
   setSessionMeta: (tabId: string, meta: Partial<SessionMeta>) => void;
   setInputDraft: (tabId: string, text: string) => void;
+  setPromptSuggestion: (tabId: string, text: string | undefined) => void;
   setPendingAttachments: (tabId: string, files: FileAttachment[]) => void;
   addPendingMessage: (tabId: string, pending: PendingUserMessage) => void;
   /** 取出第一条还没写入 stdin 的排队消息（FIFO），没有时返回 undefined */
@@ -471,6 +474,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         ...tab,
         inputDraft: text,
       }));
+      return result ?? {};
+    }),
+
+  setPromptSuggestion: (tabId, text) =>
+    set((state) => {
+      if (state.tabs.get(tabId)?.promptSuggestion === text) return {};
+      const result = updateTab(state.tabs, tabId, (tab) => ({ ...tab, promptSuggestion: text }));
       return result ?? {};
     }),
 

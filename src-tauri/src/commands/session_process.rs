@@ -101,6 +101,8 @@ pub(crate) async fn start_claude_session(
     }
     // 需要注入的 effort 档位（关闭思考时不注入）
     let effort_level = thinking_level.filter(|level| *level != "off");
+    // 提示建议：除初始化请求外，还用环境变量强制开启，不受服务端灰度开关影响
+    let prompt_suggestions = params.prompt_suggestions.unwrap_or(false);
     let (mut child, claude_bin, env_count) = if let Some((host_id, remote_path)) = remote_target {
         let host = commands::remote::find_host(&host_id)?;
         // 去掉本机专用的 --strict-mcp-config（远端沿用自己的 MCP 配置）。
@@ -119,6 +121,9 @@ pub(crate) async fn start_claude_session(
         }
         if let Some(effort) = effort_level {
             remote_env.push(("CLAUDE_CODE_EFFORT_LEVEL", effort));
+        }
+        if prompt_suggestions {
+            remote_env.push(("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION", "true"));
         }
         let remote_cmd = commands::remote::build_remote_claude_command(
             &remote_path,
@@ -155,6 +160,12 @@ pub(crate) async fn start_claude_session(
             resolved_env.insert(
                 "CLAUDE_CODE_EFFORT_LEVEL".to_string(),
                 effort.to_string(),
+            );
+        }
+        if prompt_suggestions {
+            resolved_env.insert(
+                "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION".to_string(),
+                "true".to_string(),
             );
         }
 
@@ -634,6 +645,13 @@ pub(crate) async fn start_claude_session(
             }
         }
     });
+
+    // 开启提示建议：初始化请求要在第一条消息之前写入
+    if prompt_suggestions {
+        let init = serde_json::to_string(&protocol::ControlRequest::initialize(true))
+            .map_err(|e| format!("Failed to encode initialize request: {}", e))?;
+        stdin_mgr.send(&sid, &init).await?;
+    }
 
     // Send the first message via stdin as NDJSON (skip if prompt is empty — pre-warm mode)
     if !params.prompt.is_empty() {

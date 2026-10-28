@@ -28,6 +28,8 @@ export interface StartSessionParams {
   resume_session_at?: string;
   /** 跟随 CLI 配置：不注入 MCP、思考、输出上限、代理等参数；model / thinking_level 不传表示 CLI 默认 */
   follow_cli?: boolean;
+  /** 开启提示建议：每轮结束后 CLI 预测下一句话 */
+  prompt_suggestions?: boolean;
   /** Permission mode for CLI control protocol.
    *  "acceptEdits" | "default" | "plan" | "bypassPermissions"
    *  When not "bypassPermissions", enables structured permission requests via SDK protocol. */

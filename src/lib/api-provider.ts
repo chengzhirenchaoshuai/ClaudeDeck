@@ -114,6 +114,8 @@ export function envFingerprint(): string {
     // MCP 开关只能在进程启动时决定，切换后旧进程需要重启
     enableMcp: useSettingsStore.getState().enableMcp,
     followCli: useSettingsStore.getState().followCli,
+    // 提示建议也只能在进程启动时开启
+    promptSuggestions: useSettingsStore.getState().promptSuggestions,
   });
 }
 
@@ -125,10 +127,12 @@ export function cliLaunchArgs(resolvedModel: string, thinkingLevel: string): {
   model?: string;
   thinking_level?: string;
   follow_cli: boolean;
+  prompt_suggestions: boolean;
 } {
   return {
     model: resolvedModel && resolvedModel !== CLI_DEFAULT ? resolvedModel : undefined,
     thinking_level: thinkingLevel !== CLI_DEFAULT ? thinkingLevel : undefined,
     follow_cli: useSettingsStore.getState().followCli,
+    prompt_suggestions: useSettingsStore.getState().promptSuggestions,
   };
 }

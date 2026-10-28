@@ -114,6 +114,8 @@ export function GeneralTab() {
   const setAutoCompactThresholdTokens = useSettingsStore((s) => s.setAutoCompactThresholdTokens);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
   const toggleCtrlEnterToSend = useSettingsStore((s) => s.toggleCtrlEnterToSend);
+  const promptSuggestions = useSettingsStore((s) => s.promptSuggestions);
+  const togglePromptSuggestions = useSettingsStore((s) => s.togglePromptSuggestions);
   const minimizeOnClose = useSettingsStore((s) => s.minimizeOnClose);
   const toggleMinimizeOnClose = useSettingsStore((s) => s.toggleMinimizeOnClose);
   const ctrlClickOpenExternally = useSettingsStore((s) => s.ctrlClickOpenExternally);
@@ -209,6 +211,9 @@ export function GeneralTab() {
       <Section title={t('settings.section.input')}>
         <Row title={t('settings.ctrlEnterToSend')} hint={t('settings.ctrlEnterToSendHint')}>
           <Toggle on={ctrlEnterToSend} onClick={toggleCtrlEnterToSend} />
+        </Row>
+        <Row title={t('settings.promptSuggestions')} hint={t('settings.promptSuggestionsHint')}>
+          <Toggle on={promptSuggestions} onClick={togglePromptSuggestions} />
         </Row>
         <Row title={t('settings.ctrlClickOpenExternally')} hint={t('settings.ctrlClickOpenExternallyHint')}>
           <Toggle on={ctrlClickOpenExternally} onClick={toggleCtrlClickOpenExternally} />

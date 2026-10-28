@@ -66,6 +66,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'input.attachFailed': '附件「{name}」添加失败：{error}',
     'think.providerIgnored': '当前供应商可能不支持 thinking 设置',
     'input.shortcutHint': '⏎ 发送 · {mod}⏎ 换行',
+    'input.suggestionHint': 'Tab 填入建议',
     'input.shortcutHintCtrlEnter': '⏎ 换行 · {mod}⏎ 发送',
 
     // MessageBubble
@@ -505,6 +506,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'settings.autostart': '开机自启动',
     'settings.autostartHint': '登录 Windows 后自动启动；移动或重装应用后需重新开关一次',
     'settings.ctrlEnterToSendHint': '关闭时按 Enter 直接发送',
+    'settings.promptSuggestions': '提示建议',
+    'settings.promptSuggestionsHint': '每轮回复后预测你的下一句话，输入框为空时按 Tab 填入；每轮多一次小的模型调用；切换后从下一条消息起生效',
     'settings.ctrlClickOpenExternally': 'Ctrl+单击文件用系统程序打开',
     'settings.ctrlClickOpenExternallyHint': '关闭时在应用内预览；Ctrl+右键始终在资源管理器中定位文件',
     'settings.showImageThumbnails': '显示图片缩略图预览',
@@ -1017,6 +1020,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'input.attachFailed': 'Failed to attach "{name}": {error}',
     'think.providerIgnored': 'This provider may not support thinking settings',
     'input.shortcutHint': '⏎ Send · {mod}⏎ New line',
+    'input.suggestionHint': 'Tab to use suggestion',
     'input.shortcutHintCtrlEnter': '⏎ New line · {mod}⏎ Send',
 
     // MessageBubble
@@ -1456,6 +1460,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'settings.autostart': 'Launch at startup',
     'settings.autostartHint': 'Starts when you sign in to Windows; toggle again after moving or reinstalling the app',
     'settings.ctrlEnterToSendHint': 'When off, Enter sends',
+    'settings.promptSuggestions': 'Prompt suggestions',
+    'settings.promptSuggestionsHint': 'Predict your next message after each reply; press Tab in an empty input to use it. Adds a small model call per turn; takes effect from your next message',
     'settings.ctrlClickOpenExternally': 'Ctrl+click opens files in the system app',
     'settings.ctrlClickOpenExternallyHint': 'When off, files preview in-app; Ctrl+right-click always reveals the file in Explorer',
     'settings.showImageThumbnails': 'Show image thumbnail previews',

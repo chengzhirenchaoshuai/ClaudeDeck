@@ -93,6 +93,12 @@ pub enum SdkControlRequestPayload {
     },
     #[serde(rename = "rewind_files")]
     RewindFiles { user_message_id: String },
+    /// SDK 初始化请求：目前只用来开启提示建议
+    #[serde(rename = "initialize")]
+    Initialize {
+        #[serde(rename = "promptSuggestions")]
+        prompt_suggestions: bool,
+    },
 }
 
 impl ControlRequest {
@@ -135,11 +141,28 @@ impl ControlRequest {
             request: SdkControlRequestPayload::RewindFiles { user_message_id },
         }
     }
+
+    pub fn initialize(prompt_suggestions: bool) -> Self {
+        Self {
+            r#type: "control_request",
+            request_id: Self::random_id(),
+            request: SdkControlRequestPayload::Initialize { prompt_suggestions },
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 初始化请求的字段名必须是 CLI 认的 promptSuggestions（驼峰），否则建议不会开启
+    #[test]
+    fn initialize_request_enables_prompt_suggestions() {
+        let v = serde_json::to_value(ControlRequest::initialize(true)).unwrap();
+        assert_eq!(v["type"], "control_request");
+        assert_eq!(v["request"]["subtype"], "initialize");
+        assert_eq!(v["request"]["promptSuggestions"], true);
+    }
 
     #[test]
     fn test_parse_can_use_tool() {

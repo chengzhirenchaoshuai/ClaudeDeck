@@ -250,6 +250,9 @@ export function InputBar() {
   }, [workingDirectory]);
 
   const isRunning = sessionStatus === 'running';
+  // 提示建议：输入框为空且空闲时，用占位文字显示 CLI 预测的下一句话，按 Tab 填入
+  const promptSuggestion = useActiveTab((t) => t.promptSuggestion);
+  const showSuggestion = !!promptSuggestion && !input && !isRunning && activePrefixes.length === 0;
   const isAwaiting = isRunning && activityPhase === 'awaiting';
 
   // Whether this is a follow-up (session already has a CLI session ID)
@@ -394,6 +397,8 @@ export function InputBar() {
     }
 
     if (!text && selectedSkills.length === 0) return;
+    // 已经发出新内容，上一轮预测的下一句话作废
+    useChatStore.getState().setPromptSuggestion(tabId, undefined);
 
     // Intercept immediate (built-in) commands even when submitted directly
     // (e.g. user types "/help" and presses Enter without using the popover)
@@ -917,6 +922,15 @@ export function InputBar() {
       }
     }
 
+    // Tab 填入提示建议（光标放到末尾，可以接着修改再发送）
+    if (e.key === 'Tab' && !e.shiftKey && showSuggestion && promptSuggestion
+        && (textareaRef.current?.isEmpty() ?? true)) {
+      e.preventDefault();
+      setInputSync(promptSuggestion);
+      textareaRef.current?.getEditor()?.commands.focus('end');
+      return true;
+    }
+
     // Backspace at position 0 with empty input removes active prefix
     if (e.key === 'Backspace' && activePrefixes.length > 0 && (textareaRef.current?.isEmpty() ?? true)) {
       e.preventDefault();
@@ -1103,7 +1117,9 @@ export function InputBar() {
               }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={activePrefixes.length > 0
+              placeholder={showSuggestion
+                ? promptSuggestion
+                : activePrefixes.length > 0
                 ? t('input.prefixPlaceholder')
                 : isRunning
                   ? t('input.followUp')
@@ -1115,10 +1131,14 @@ export function InputBar() {
           </div>
           {/* Shortcut hint — visible when input area is not focused and input is empty */}
           {!input && activePrefixes.length === 0 && !isRunning && (
-            <span className="flex-shrink-0 text-[10px] text-text-tertiary/50
-              group-focus-within/input:hidden select-none whitespace-nowrap
-              self-center mr-1">
-              {t(ctrlEnterToSend ? 'input.shortcutHintCtrlEnter' : 'input.shortcutHint')}
+            <span className={`flex-shrink-0 text-[10px] select-none whitespace-nowrap self-center mr-1
+              ${showSuggestion
+                // 有建议时一直显示“Tab 填入建议”：输入框获得焦点时正是要用它的时候
+                ? 'text-text-tertiary'
+                : 'text-text-tertiary/50 group-focus-within/input:hidden'}`}>
+              {showSuggestion
+                ? t('input.suggestionHint')
+                : t(ctrlEnterToSend ? 'input.shortcutHintCtrlEnter' : 'input.shortcutHint')}
             </span>
           )}
           </div>

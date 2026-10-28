@@ -34,6 +34,7 @@ const KNOWN_TYPES: Record<StreamMessage['type'], true> = {
   process_exit: true,
   content_block_delta: true,
   rate_limit_event: true,
+  prompt_suggestion: true,
 };
 
 /**
@@ -202,6 +203,10 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         break;
       case 'result':
         handleResultMessage(ctx, msg);
+        break;
+      // 预测的下一句话：存到标签页上，输入框为空时灰色显示、按 Tab 填入
+      case 'prompt_suggestion':
+        cs.setPromptSuggestion(tabId, msg.suggestion?.trim() || undefined);
         break;
       case 'process_exit':
         handleProcessExit(ctx, msg);

@@ -194,6 +194,12 @@ export interface RateLimitEventMessage extends StreamMessageBase {
   rate_limit_info?: RateLimitInfo;
 }
 
+/** 提示建议：开启后每轮结束时 CLI 预测的用户下一句话（不是每轮都有，被过滤掉的不发） */
+export interface PromptSuggestionMessage extends StreamMessageBase {
+  type: 'prompt_suggestion';
+  suggestion?: string;
+}
+
 export type StreamMessage =
   | PermissionRequestMessage
   | ProcessExitMessage
@@ -205,6 +211,7 @@ export type StreamMessage =
   | LegacyToolResultMessage
   | LegacyContentBlockDeltaMessage
   | RateLimitEventMessage
+  | PromptSuggestionMessage
   | IgnoredMessage;
 
 /** 把 tool_result 的 content（字符串或片段数组）拼成文本 */

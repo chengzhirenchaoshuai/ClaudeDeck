@@ -156,6 +156,8 @@ interface SettingsState {
   minimizeOnClose: boolean;
   /** 在会话中加载 MCP 服务器（默认关闭：加载 MCP 会拖慢每个会话的启动） */
   enableMcp: boolean;
+  /** 提示建议（默认开启）：每轮结束后预测下一句话，输入框为空时灰色显示，按 Tab 填入 */
+  promptSuggestions: boolean;
   /** 跟随 CLI 配置（默认开启）：不注入 MCP、思考、输出上限、代理等参数，行为与终端里的 claude 一致 */
   followCli: boolean;
   /** 「CLI 默认」模式下 CLI 最近一次上报的实际模型；新会话在 CLI 上报前用它估算上下文窗口 */
@@ -212,6 +214,7 @@ interface SettingsState {
   toggleCtrlEnterToSend: () => void;
   toggleMinimizeOnClose: () => void;
   toggleEnableMcp: () => void;
+  togglePromptSuggestions: () => void;
   toggleFollowCli: () => void;
   setLastCliModel: (model: string) => void;
   /** 打开/关闭用量面板；传入 tab 时同时切到该 Tab（仅在从关闭状态打开时生效） */
@@ -294,6 +297,7 @@ export const useSettingsStore = create<SettingsState>()(
       ctrlEnterToSend: false,
       minimizeOnClose: true,
       enableMcp: false,
+      promptSuggestions: true,
       followCli: true,
       lastCliModel: '',
       ctrlClickOpenExternally: false,
@@ -411,6 +415,9 @@ export const useSettingsStore = create<SettingsState>()(
       toggleEnableMcp: () =>
         set((state) => ({ enableMcp: !state.enableMcp })),
 
+      togglePromptSuggestions: () =>
+        set((state) => ({ promptSuggestions: !state.promptSuggestions })),
+
       setLastCliModel: (model) => set(() => ({ lastCliModel: model })),
       toggleFollowCli: () =>
         set((state) => ({ followCli: !state.followCli })),
@@ -444,7 +451,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 21,
+      version: 22,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -552,6 +559,10 @@ export const useSettingsStore = create<SettingsState>()(
           delete persisted.updateAvailable;
           delete persisted.updateVersion;
         }
+        if (version < 22) {
+          // 新增提示建议，默认开启
+          persisted.promptSuggestions = true;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -580,6 +591,7 @@ export const useSettingsStore = create<SettingsState>()(
         ctrlEnterToSend: state.ctrlEnterToSend,
         minimizeOnClose: state.minimizeOnClose,
         enableMcp: state.enableMcp,
+        promptSuggestions: state.promptSuggestions,
         followCli: state.followCli,
         lastCliModel: state.lastCliModel,
         customModelPrices: state.customModelPrices,

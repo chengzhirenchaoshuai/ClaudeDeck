@@ -160,4 +160,7 @@ pub struct StartSessionParams {
     /// CLI 自己的 settings.json 与系统环境决定，使行为与终端里直接运行 claude 一致。
     /// 此时 model / thinking_level 为 None 表示“CLI 默认”，不传对应参数。
     pub follow_cli: Option<bool>,
+    /// 提示建议：每轮结束后 CLI 预测用户下一句话（prompt_suggestion 消息），输入框里按 Tab 填入。
+    /// 用初始化控制请求开启（不用 --prompt-suggestions 参数：老版本 CLI 不认识会直接启动失败）。
+    pub prompt_suggestions: Option<bool>,
 }
