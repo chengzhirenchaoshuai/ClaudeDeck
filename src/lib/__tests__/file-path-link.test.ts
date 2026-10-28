@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { parseInlineFilePath, resolveSessionPath } from '../file-path-link';
+import { isBareFileMissing, parseInlineFilePath, resolveSessionPath } from '../file-path-link';
 
 describe('parseInlineFilePath', () => {
   it('识别原先漏掉的路径（例子取自真实会话）', () => {
@@ -47,5 +47,34 @@ describe('resolveSessionPath', () => {
     expect(resolveSessionPath('C:\\p\\src\\a.ts', 'ssh://h/C:/p')).toBe('ssh://h/C:/p/src/a.ts');
     expect(resolveSessionPath('src\\a.ts', 'ssh://h/C:/p')).toBe('ssh://h/C:/p/src/a.ts');
     expect(resolveSessionPath('../q/b.ts', 'ssh://h/C:/p')).toBe('ssh://h/C:/q/b.ts');
+  });
+});
+
+describe('isBareFileMissing', () => {
+  const nodes = [
+    { name: 'src', is_dir: true },
+    { name: 'README.md', is_dir: false },
+  ];
+  const root = 'F:\\AI\\mywork\\GaussDB';
+  const tree = { rootPath: root, nodes };
+
+  it('项目根目录里没有的裸文件名判为缺失（例子取自真实会话：package.json 实际在临时目录）', () => {
+    expect(isBareFileMissing('package.json', root, tree)).toBe(true);
+  });
+
+  it('根目录里有的文件不算缺失，大小写和斜杠写法不影响', () => {
+    expect(isBareFileMissing('readme.md', 'f:/AI/mywork/GaussDB/', tree)).toBe(false);
+  });
+
+  it('带目录的路径、目录树属于别的项目或还没加载时不判断', () => {
+    expect(isBareFileMissing('src/a.ts', root, tree)).toBe(false);
+    expect(isBareFileMissing('src\\a.ts', root, tree)).toBe(false);
+    expect(isBareFileMissing('package.json', 'F:\\AI\\other', tree)).toBe(false);
+    expect(isBareFileMissing('package.json', root, { rootPath: root, nodes: [] })).toBe(false);
+  });
+
+  it('远程项目同样按目录树判断', () => {
+    const remote = { rootPath: 'ssh://mylocal/F:/AI/mywork/GaussDB', nodes };
+    expect(isBareFileMissing('package.json', 'ssh://mylocal/F:/AI/mywork/GaussDB', remote)).toBe(true);
   });
 });

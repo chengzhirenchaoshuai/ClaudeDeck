@@ -10,7 +10,7 @@ import { useFileStore } from '../../stores/fileStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { rehypeKatexFix } from '../../lib/rehype-katex-fix';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
-import { KNOWN_FILE_EXTENSIONS, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
+import { KNOWN_FILE_EXTENSIONS, isBareFileMissing, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { useT } from '../../lib/i18n';
 
 /* ================================================================
@@ -404,6 +404,61 @@ class MarkdownErrorBoundary extends React.Component<
   }
 }
 
+/**
+ * 行内代码里的文件路径，渲染成可点击的文件链接。
+ * 只有文件名、而项目根目录里没有这个文件时（例如 Claude 说的是临时目录里的文件）显示成灰色，不可点击。
+ * 单独做成组件、自己订阅目录树：目录树刷新时只重绘链接本身，不重建整条消息的 Markdown。
+ */
+function InlineFileChip({ path, line, base }: { path: string; line?: number; base: string }) {
+  const t = useT();
+  const missing = useFileStore((s) => isBareFileMissing(path, base, { rootPath: s.rootPath, nodes: s.tree }));
+  const resolved = resolveSessionPath(path, base);
+  const fileName = (path.split(/[\\/]/).pop() || path) + (line ? `:${line}` : '');
+
+  if (missing) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5
+          bg-bg-secondary border border-border-subtle rounded-md
+          text-xs text-text-muted font-medium cursor-default
+          align-baseline leading-normal whitespace-nowrap"
+        title={t('md.fileNotInProject')}
+      >
+        <span className="text-[10px] opacity-60">📄</span>
+        <span className="max-w-[180px] truncate">{fileName}</span>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={(e) => {
+        if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(resolved)) {
+          bridge.openWithDefaultApp(resolved);
+        } else {
+          useFileStore.getState().selectFile(resolved);
+        }
+      }}
+      onContextMenu={(e) => {
+        if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(resolved)) {
+          e.preventDefault();
+          bridge.revealInFinder(resolved);
+        }
+      }}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5
+        bg-accent/10 border border-accent/25 rounded-md
+        text-xs text-accent font-medium cursor-pointer
+        hover:bg-accent/20 hover:border-accent/40
+        transition-all duration-150 select-none
+        align-baseline leading-normal whitespace-nowrap"
+      title={resolved}
+    >
+      <span className="text-[10px]">📄</span>
+      <span className="max-w-[180px] truncate">{fileName}</span>
+    </button>
+  );
+}
+
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content, className, basePath }: Props) {
   const t = useT();
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
@@ -593,36 +648,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
       const text = extractText(children).trim();
       const filePath = parseInlineFilePath(text);
       if (filePath) {
-        const resolved = resolveSessionPath(filePath.path, resolveBase);
-        const fileName = (filePath.path.split(/[\\/]/).pop() || filePath.path)
-          + (filePath.line ? `:${filePath.line}` : '');
-        return (
-          <button
-            onClick={(e) => {
-              if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && isLocalSessionFile(resolved)) {
-                bridge.openWithDefaultApp(resolved);
-              } else {
-                useFileStore.getState().selectFile(resolved);
-              }
-            }}
-            onContextMenu={(e) => {
-              if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(resolved)) {
-                e.preventDefault();
-                bridge.revealInFinder(resolved);
-              }
-            }}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5
-              bg-accent/10 border border-accent/25 rounded-md
-              text-xs text-accent font-medium cursor-pointer
-              hover:bg-accent/20 hover:border-accent/40
-              transition-all duration-150 select-none
-              align-baseline leading-normal whitespace-nowrap"
-            title={resolved}
-          >
-            <span className="text-[10px]">📄</span>
-            <span className="max-w-[180px] truncate">{fileName}</span>
-          </button>
-        );
+        return <InlineFileChip path={filePath.path} line={filePath.line} base={resolveBase} />;
       }
       return <code>{children}</code>;
     },

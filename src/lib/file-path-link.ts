@@ -80,3 +80,21 @@ export function resolveSessionPath(path: string, base: string): string {
   if (!absolute && base) p = `${base.replace(/\\/g, '/').replace(/\/+$/, '')}/${p}`;
   return toSessionFilePath(normalizeSegments(p));
 }
+
+const normDir = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
+/**
+ * 只有文件名（不含目录）的链接，项目根目录里确实没有这个文件时返回 true。
+ * 用文件面板已加载的目录树判断（本机和远程都有），不额外读磁盘或走 ssh；
+ * 目录树不是当前项目的、还没加载出来时无法判断，返回 false（照常显示为链接）。
+ */
+export function isBareFileMissing(
+  path: string,
+  base: string,
+  tree: { rootPath: string; nodes: { name: string; is_dir: boolean }[] },
+): boolean {
+  if (/[\\/]/.test(path) || !base || tree.nodes.length === 0) return false;
+  if (normDir(tree.rootPath) !== normDir(base)) return false;
+  const name = path.toLowerCase();
+  return !tree.nodes.some((n) => !n.is_dir && n.name.toLowerCase() === name);
+}
