@@ -391,9 +391,12 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     saveLastSessionId(newRealId);
     set((state) => {
     // 1) Rename session in the list
-    const sessions = state.sessions.map((s) =>
-      s.id === oldDraftId ? { ...s, id: newRealId } : s,
-    );
+    // CLI 写 JSONL 与发出 init 几乎同时：文件监听可能先把磁盘上的真实会话加进列表，
+    // 此时再改名会出现两条同 ID 的行（列表以 ID 作 React key，会留下删不掉的"影子"行），
+    // 所以真实会话已在列表里时直接去掉草稿行
+    const sessions = state.sessions.some((s) => s.id === newRealId)
+      ? state.sessions.filter((s) => s.id !== oldDraftId)
+      : state.sessions.map((s) => (s.id === oldDraftId ? { ...s, id: newRealId } : s));
 
     // 2) Update selectedSessionId if it was the draft
     const selectedSessionId = state.selectedSessionId === oldDraftId
