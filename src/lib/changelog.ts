@@ -31,10 +31,12 @@ export const CHANGELOG: ChangelogEntry[] = [
           zh: [
             '运行指示器显示正在执行的动作和对象（读取、运行、搜索），并行时显示其余数量',
             '复制消息文本时，文件链接带上完整路径',
+            '主页底部显示当前版本号',
           ],
           en: [
             'Activity indicator shows the current action and target (read, run, search), with a count of parallel tools',
             'Copying message text includes full paths for file links',
+            'Home screen shows the current version',
           ],
         },
       },
@@ -42,11 +44,13 @@ export const CHANGELOG: ChangelogEntry[] = [
         label: { zh: '修复', en: 'Fixed' },
         items: {
           zh: [
+            '会话列表右侧的时间不刷新',
             '远程模式下新建会话出现影子行、没有自动命名',
             '远程项目添加附件一直显示加载中',
             '回复权限请求或提问后运行状态不正确',
           ],
           en: [
+            'Session list times did not update',
             'Shadow rows and missing titles for new sessions in remote mode',
             'Adding attachments in remote projects kept loading forever',
             'Wrong activity status after answering a permission request or question',
