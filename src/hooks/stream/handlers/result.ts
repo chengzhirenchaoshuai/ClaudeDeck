@@ -354,6 +354,12 @@ function finalizeTurn(ctx: StreamContext, msg: ResultMessage): void {
   );
   useSessionStore.getState().fetchSessions();
   setTimeout(() => useSessionStore.getState().fetchSessions(), 1000);
+  // 远程会话列表平时不自动刷新：新建的远程会话第一轮结束时还是草稿行（没有标题），
+  // 拉一次远程列表，用远端的真实会话替换它
+  const row = useSessionStore.getState().sessions.find((s) => s.id === tabId);
+  if (row?.host && row.path === '') {
+    void useSessionStore.getState().fetchRemoteSessions();
+  }
 }
 
 /** 第 3 轮成功回复后，没有自定义标题的会话用 AI 生成标题。 */

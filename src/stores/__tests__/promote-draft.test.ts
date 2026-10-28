@@ -8,19 +8,21 @@ vi.stubGlobal('sessionStorage', {
   removeItem: (k: string) => { memory.delete(k); },
 });
 
-const { useSessionStore } = await import('../sessionStore');
+const { useSessionStore, keepPendingDrafts } = await import('../sessionStore');
+const { bridge } = await import('../../lib/tauri-bridge');
 import type { SessionListItem } from '../../lib/tauri-bridge';
 
 const DRAFT = 'draft_1_abc';
 const REAL = '350834e4-78bd-43c9-8678-a53c394af2da';
 
-const item = (id: string, path: string, preview = ''): SessionListItem => ({
+const item = (id: string, path: string, preview = '', host?: string): SessionListItem => ({
   id,
   path,
   project: 'F:\\work',
   projectDir: 'F--work',
   modifiedAt: 0,
   preview,
+  ...(host ? { host } : {}),
 });
 
 describe('草稿转为真实会话', () => {
@@ -49,5 +51,51 @@ describe('草稿转为真实会话', () => {
     expect(sessions[0].path).not.toBe('');
     expect(sessions[0].preview).toBe('这个网站是干什么的');
     expect(selectedSessionId).toBe(REAL);
+  });
+});
+
+describe('远程模式下新建会话（影子行的真实复现路径）', () => {
+  const HOST = 'mylocal';
+  const remoteRow = item(REAL, 'ssh://mylocal/C:/Users/peng/.claude/projects/F--work/350834e4.jsonl', '这个网站是干什么的', HOST);
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useSessionStore.setState({ sessions: [], remoteSessions: [], selectedSessionId: null });
+    vi.spyOn(bridge, 'listSessions').mockResolvedValue([]);
+    vi.spyOn(bridge, 'listRemoteHosts').mockResolvedValue([{ id: HOST } as any]);
+    vi.spyOn(bridge, 'listRemoteSessions').mockResolvedValue([remoteRow]);
+    vi.spyOn(bridge, 'loadRemoteCustomPreviews').mockResolvedValue({});
+  });
+
+  it('草稿转为真实 ID 后拉取远程列表，只留下远端的那一行（带标题）', async () => {
+    useSessionStore.setState({ sessions: [item(DRAFT, '', '', HOST)], selectedSessionId: DRAFT });
+    useSessionStore.getState().promoteDraft(DRAFT, REAL);
+    // 本机刷新看不到远端会话，草稿行还要保留
+    await useSessionStore.getState().fetchSessions();
+    expect(useSessionStore.getState().sessions.map((s) => s.id)).toEqual([REAL]);
+
+    await useSessionStore.getState().fetchRemoteSessions();
+    let rows = useSessionStore.getState().sessions.filter((s) => s.id === REAL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].preview).toBe('这个网站是干什么的');
+
+    // 之后再做本机刷新也不会把草稿行带回来
+    await useSessionStore.getState().fetchSessions();
+    rows = useSessionStore.getState().sessions.filter((s) => s.id === REAL);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].path).not.toBe('');
+  });
+
+  it('还没转为真实 ID 的草稿在拉取远程列表后仍然保留', async () => {
+    useSessionStore.setState({ sessions: [item(DRAFT, '', '', HOST)], selectedSessionId: DRAFT });
+    await useSessionStore.getState().fetchRemoteSessions();
+    expect(useSessionStore.getState().sessions.map((s) => s.id).sort()).toEqual([DRAFT, REAL].sort());
+  });
+});
+
+describe('keepPendingDrafts', () => {
+  it('只保留列表里还没有同 ID 会话的草稿行', () => {
+    const sessions = [item('draft_a', ''), item(REAL, ''), item('real-b', 'x.jsonl')];
+    expect(keepPendingDrafts(sessions, [item(REAL, 'y.jsonl')]).map((s) => s.id)).toEqual(['draft_a']);
   });
 });

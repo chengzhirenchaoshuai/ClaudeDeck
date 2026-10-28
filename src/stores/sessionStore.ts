@@ -159,6 +159,16 @@ function sameSessionItem(a: SessionListItem, b: SessionListItem): boolean {
  * 内容没变的条目沿用旧对象，让 memo 过的 SessionItem 跳过重新渲染；
  * 整个列表都没变时返回旧数组本身，调用方据此跳过 set。
  */
+/**
+ * 列表里还需要保留的草稿行（path 为空）：真实会话已出现在 listed 中的草稿去掉。
+ * 草稿收到 CLI 的真实 ID 后会改用这个 ID，之后本机磁盘或远端列表里出现同 ID 的会话时，
+ * 两行同时显示就成了"影子"（列表以 ID 作 React key）。
+ */
+export function keepPendingDrafts(sessions: SessionListItem[], listed: SessionListItem[]): SessionListItem[] {
+  const ids = new Set(listed.map((s) => s.id));
+  return sessions.filter((s) => s.path === '' && !ids.has(s.id));
+}
+
 function reuseUnchanged(prev: SessionListItem[], next: SessionListItem[]): SessionListItem[] {
   const prevById = new Map(prev.map((s) => [s.id, s]));
   let changed = prev.length !== next.length;
@@ -196,11 +206,9 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     if (isFirstLoad) set({ isLoading: true });
     try {
       const diskSessions = await bridge.listSessions();
-      // Preserve draft sessions (path === '') that haven't been written to disk yet
-      const drafts = get().sessions.filter(
-        (s) => s.path === '' && !diskSessions.some((d) => d.id === s.id),
-      );
-      const next = reuseUnchanged(get().sessions, [...drafts, ...diskSessions, ...get().remoteSessions]);
+      const { remoteSessions } = get();
+      const drafts = keepPendingDrafts(get().sessions, [...diskSessions, ...remoteSessions]);
+      const next = reuseUnchanged(get().sessions, [...drafts, ...diskSessions, ...remoteSessions]);
       // CLI 写会话文件时这里约每秒触发一次：列表没有任何变化就不更新，避免整个会话列表重新渲染
       if (next === get().sessions) {
         if (get().isLoading) set({ isLoading: false });
@@ -235,14 +243,18 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
         if (r.status === 'fulfilled') remoteSessions.push(...r.value);
         else remoteErrors[hosts[i].id] = String(r.reason);
       });
-      // 用最新的远程会话替换列表中旧的远程部分，本机会话与草稿保持不变
-      // 远程草稿（尚未写入磁盘的新对话，path 为空）需要保留
+      // 用最新的远程会话替换列表中旧的远程部分，本机会话与草稿保持不变；
+      // 草稿只保留远端还没有的（已转为真实 ID、远端也已列出的草稿行要去掉，否则出现同 ID 的影子行）
       set((state) => ({
         remoteHosts: hosts,
         remoteSessions,
         remoteErrors,
         isRemoteLoading: false,
-        sessions: [...state.sessions.filter((s) => !s.host || s.path === ''), ...remoteSessions],
+        sessions: [
+          ...state.sessions.filter((s) => !s.host && s.path !== ''),
+          ...keepPendingDrafts(state.sessions, remoteSessions),
+          ...remoteSessions,
+        ],
       }));
 
       // 远程主机是改名的源端：拉取每台主机自己保存的改名文件，覆盖本地缓存里
