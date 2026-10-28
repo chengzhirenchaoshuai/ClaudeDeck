@@ -269,9 +269,31 @@ export function ChatPanel() {
 
   // 会话刚加载时持续贴底：消息用了 content-visibility，屏幕外的项先按估算高度占位，
   // 渲染出真实高度后总高度会变，一次性滚到底会停在中间。内容区尺寸变化时重新贴底，
-  // 用户主动滚动/点击或超过 PIN_DURATION 后停止。
+  // 用户主动滚动/点击或超过 PIN_DURATION 后停止。pinTick 变化时重新开始一轮贴底。
   const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
   const pinBottomRef = useRef(true);
+  const [pinTick, setPinTick] = useState(0);
+
+  // 用户发出新消息（含运行中排队的消息）时跳到底部：即使之前往上翻过也要看到刚发的消息
+  const userMessageCount = useMemo(
+    () => messages.filter((m) => m.role === 'user' && m.type === 'text').length
+      + pendingUserMessages.filter((p) => p.message).length,
+    [messages, pendingUserMessages],
+  );
+  // 记最大值而不是上一次的值：排队消息收到回显时先从排队中取出、再写入消息列表，
+  // 中间计数会短暂减一，按上一次的值比较会误判为又发了一条
+  const maxUserCountRef = useRef(userMessageCount);
+  useEffect(() => {
+    if (userMessageCount <= maxUserCountRef.current) return;
+    maxUserCountRef.current = userMessageCount;
+    userScrollingUpRef.current = false;
+    isNearBottomRef.current = true;
+    showScrollBtnRef.current = false;
+    setShowScrollBtn(false);
+    pinBottomRef.current = true;
+    setPinTick((n) => n + 1);
+  }, [userMessageCount]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!contentEl || !el || !pinBottomRef.current) return;
@@ -293,7 +315,7 @@ export function ChatPanel() {
       el.removeEventListener('pointerdown', stopPin);
       el.removeEventListener('keydown', stopPin);
     };
-  }, [contentEl]);
+  }, [contentEl, pinTick]);
 
   // Auto-scroll to bottom only when already near bottom and user isn't scrolling up
   useEffect(() => {
