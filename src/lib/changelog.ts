@@ -18,6 +18,37 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.4',
+    date: '2026-10-28',
+    highlights: {
+      zh: ['每轮回复显示用时；修复新建会话后的影子行'],
+      en: ['Each reply shows how long it took; fixed ghost rows after starting a new session'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: ['每轮回复结束后显示用时，历史会话同样显示'],
+          en: ['Each turn shows how long it took once finished, including in past sessions'],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['发送消息后自动跳到底部', '项目根目录中不存在的文件名链接显示为灰色，不再点开后报错'],
+          en: ['Sending a message scrolls to the bottom', 'File-name links not found in the project root are greyed out instead of failing to open'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['新建会话后列表里出现没有标题的影子行，选中一个会同时选中另一个'],
+          en: ['A ghost untitled row appeared after starting a new session, and selecting one selected both'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.4.3',
     date: '2026-10-27',
     highlights: {
