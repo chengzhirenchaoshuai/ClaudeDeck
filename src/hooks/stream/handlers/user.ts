@@ -46,6 +46,22 @@ export function handleUserMessage(ctx: StreamContext, msg: UserMessage): void {
 
   const userContent = msg.message?.content;
   if (Array.isArray(userContent)) {
+    // 工具返回了结果：从“运行中”移除，全部返回后模型在处理结果，回到思考阶段
+    // （否则会一直显示“运行 xxx”，直到下一段输出到来）
+    const doneIds = userContent.flatMap((b) => (b.type === 'tool_result' && b.tool_use_id ? [b.tool_use_id] : []));
+    const status = useChatStore.getState().getTab(tabId)?.activityStatus;
+    if (doneIds.length > 0 && status?.phase === 'tool') {
+      const running = (status.runningToolIds ?? []).filter((id) => !doneIds.includes(id));
+      ctx.setActivityStatus(running.length > 0 ? { ...status, runningToolIds: running } : { phase: 'thinking' });
+    } else if (doneIds.length > 0 && status?.phase === 'awaiting' && status.resumeStatus) {
+      // 等待确认期间并行的其他工具返回了：同步更新等待结束后要恢复的状态
+      const resume = status.resumeStatus;
+      const running = (resume.runningToolIds ?? []).filter((id) => !doneIds.includes(id));
+      ctx.setActivityStatus({
+        ...status,
+        resumeStatus: running.length > 0 ? { ...resume, runningToolIds: running } : { phase: 'thinking' },
+      });
+    }
     for (const block of userContent) {
       if (block.type === 'tool_result') {
         const resultText = toolResultText(block.content);

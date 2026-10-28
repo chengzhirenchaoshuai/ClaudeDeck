@@ -97,7 +97,7 @@ export function handleStreamEvent(ctx: StreamContext, msg: StreamEventMessage): 
         resolved: false,
         timestamp: Date.now(),
       });
-      setActivityStatus({ phase: 'awaiting' });
+      useChatStore.getState().awaitUser(tabId);
     }
   }
 

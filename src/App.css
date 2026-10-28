@@ -205,6 +205,34 @@ input, textarea, [contenteditable="true"],
   will-change: opacity;
 }
 
+/* 运行指示器：星形图标旋转并轻微缩放（与 CLI 的旋转星号对应） */
+@keyframes activity-spin {
+  0%   { transform: rotate(0deg) scale(0.85); }
+  50%  { transform: rotate(180deg) scale(1.05); }
+  100% { transform: rotate(360deg) scale(0.85); }
+}
+.activity-spinner {
+  animation: activity-spin 2.4s linear infinite;
+  will-change: transform;
+}
+
+/* 运行指示器：一道亮光从左向右扫过文字（思考、输出时） */
+@keyframes activity-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: 0% 0; }
+}
+.activity-shimmer {
+  background-image: linear-gradient(90deg,
+    var(--color-text-muted) 0%, var(--color-text-muted) 38%,
+    var(--color-text-primary) 50%,
+    var(--color-text-muted) 62%, var(--color-text-muted) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: activity-shimmer 2.2s linear infinite;
+}
+
 /* Indeterminate progress bar */
 @keyframes progress-indeterminate {
   0% { transform: translateX(-100%); }

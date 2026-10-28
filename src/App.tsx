@@ -13,7 +13,7 @@ import { useFileStore } from './stores/fileStore';
 import { useChatStore, useActiveTab } from './stores/chatStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useAgentStore } from './stores/agentStore';
-import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath } from './lib/tauri-bridge';
+import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath, setPermissionAnsweredHook } from './lib/tauri-bridge';
 import { hasStreamListener, setStreamListener } from './lib/stream-listeners';
 import { disposableListen } from './lib/disposable-listen';
 import { useScrollZoom } from './lib/useScrollZoom';
@@ -129,6 +129,18 @@ function App() {
 
   // 复制消息文本时把文件链接换成原文（完整路径），否则链接会被整个丢掉
   useEffect(() => installChipCopy(), []);
+
+  // 回复权限请求/提问后，运行状态从“等待确认”恢复成之前的工具（工具此时才真正开始运行）。
+  // 延后一拍：卡片在回复成功后才把自己标为已处理，要等它更新完再判断是否还有待确认项
+  useEffect(() => {
+    setPermissionAnsweredHook((stdinId) => {
+      setTimeout(() => {
+        const tabId = useSessionStore.getState().getTabForStdin(stdinId);
+        if (tabId) useChatStore.getState().resumeAfterAwaiting(tabId);
+      }, 0);
+    });
+    return () => setPermissionAnsweredHook(null);
+  }, []);
 
   // CLI update detection: check on startup + poll every 30 minutes
   useEffect(() => {

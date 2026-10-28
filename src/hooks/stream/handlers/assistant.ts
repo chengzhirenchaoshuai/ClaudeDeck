@@ -94,7 +94,17 @@ export function handleAssistantMessage(ctx: StreamContext, msg: AssistantMessage
         if (block.name === 'ExitPlanMode' && isForeground) exitPlanModeSeenRef.current = true;
         continue;
       }
-      setActivityStatus({ phase: 'tool', toolName: block.name });
+      {
+        // 记下还在运行的工具：并行调用时等全部返回结果才算这一步结束
+        const prev = useChatStore.getState().getTab(tabId)?.activityStatus;
+        const running = prev?.phase === 'tool' ? (prev.runningToolIds ?? []) : [];
+        setActivityStatus({
+          phase: 'tool',
+          toolName: block.name,
+          toolInput: block.input,
+          runningToolIds: block.id && !running.includes(block.id) ? [...running, block.id] : running,
+        });
+      }
       if (block.name === 'Task' || block.name === 'Agent') {
         agentActions?.upsertAgent({
           id: block.id || generateMessageId(),
@@ -138,7 +148,7 @@ export function handleAssistantMessage(ctx: StreamContext, msg: AssistantMessage
         if (existingQuestion) {
           // Already exists — just ensure awaiting state if unresolved
           if (!existingQuestion.resolved) {
-            setActivityStatus({ phase: 'awaiting' });
+            useChatStore.getState().awaitUser(tabId);
           }
           break;
         }
@@ -157,7 +167,7 @@ export function handleAssistantMessage(ctx: StreamContext, msg: AssistantMessage
           timestamp: Date.now(),
         });
         // Mark as awaiting user input (consistent with ExitPlanMode)
-        setActivityStatus({ phase: 'awaiting' });
+        useChatStore.getState().awaitUser(tabId);
       } else if (block.name === 'TodoWrite' && block.input?.todos) {
         addMessage({
           id: block.id || generateMessageId(),
@@ -215,7 +225,7 @@ export function handleAssistantMessage(ctx: StreamContext, msg: AssistantMessage
               resolved: false,
               timestamp: Date.now(),
             });
-            setActivityStatus({ phase: 'awaiting' });
+            useChatStore.getState().awaitUser(tabId);
           }
         }
       } else {

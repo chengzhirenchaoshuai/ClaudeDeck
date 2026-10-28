@@ -151,6 +151,12 @@ export type ActivityPhase = 'idle' | 'thinking' | 'writing' | 'tool' | 'awaiting
 export interface ActivityStatus {
   phase: ActivityPhase;
   toolName?: string;  // only when phase === 'tool'
+  /** 最近一个开始运行的工具的参数，用于显示“读取 a.ts”“运行 pnpm test”这类说明 */
+  toolInput?: any;
+  /** 已发出、还没收到结果的工具调用 ID；全部返回后回到思考阶段 */
+  runningToolIds?: string[];
+  /** 仅 awaiting：进入等待前的状态，用户回复后恢复 */
+  resumeStatus?: ActivityStatus;
 }
 
 // --- Tab session: the ONLY place session data lives ---
@@ -194,6 +200,10 @@ interface ChatState {
   updatePartialThinking: (tabId: string, text: string) => void;
   setSessionStatus: (tabId: string, status: SessionStatus) => void;
   setActivityStatus: (tabId: string, status: ActivityStatus) => void;
+  /** 进入“等待用户确认”，记下之前的工具状态 */
+  awaitUser: (tabId: string) => void;
+  /** 用户回复了权限请求/提问：没有其他待确认项时恢复之前的状态 */
+  resumeAfterAwaiting: (tabId: string) => void;
   /** Clear messages and UI state but PRESERVE sessionMeta (for session reload) */
   clearMessages: (tabId: string) => void;
   /** Full reset: clear everything including sessionMeta (for new session / /clear) */
@@ -391,11 +401,35 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   setActivityStatus: (tabId, status) =>
     set((state) => {
       const result = updateTab(state.tabs, tabId, (tab) => {
-        if (tab.activityStatus.phase === status.phase && tab.activityStatus.toolName === status.toolName) return tab;
+        // 所有字段都相同才跳过：只比阶段和工具名的话，连续两次 Read 时第二次的参数、运行中列表都写不进去
+        const prev = tab.activityStatus as unknown as Record<string, unknown>;
+        const next = status as unknown as Record<string, unknown>;
+        const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+        if ([...keys].every((k) => prev[k] === next[k])) return tab;
         return { ...tab, activityStatus: status };
       });
       return result ?? {};
     }),
+
+  awaitUser: (tabId) => {
+    const tab = get().tabs.get(tabId);
+    if (!tab) return;
+    const prev = tab.activityStatus;
+    // 记下进入等待前的工具状态：用户回复后工具才真正开始运行，要恢复成“运行 xxx”
+    const resumeStatus = prev.phase === 'awaiting' ? prev.resumeStatus : prev.phase === 'tool' ? prev : undefined;
+    get().setActivityStatus(tabId, { phase: 'awaiting', ...(resumeStatus ? { resumeStatus } : {}) });
+  },
+
+  resumeAfterAwaiting: (tabId) => {
+    const tab = get().tabs.get(tabId);
+    if (!tab || tab.activityStatus.phase !== 'awaiting') return;
+    // 还有别的待确认卡片（并行的权限请求、提问）时继续等待
+    const stillWaiting = tab.messages.some((m) =>
+      (m.type === 'permission' && m.interactionState === 'pending')
+      || ((m.type === 'question' || m.type === 'plan_review') && !m.resolved));
+    if (stillWaiting) return;
+    get().setActivityStatus(tabId, tab.activityStatus.resumeStatus ?? { phase: 'thinking' });
+  },
 
   clearMessages: (tabId) =>
     set((state) => {

@@ -49,7 +49,7 @@ export function handlePermissionRequest(msg: PermissionRequestMessage, tabId: st
         permissionData: permData,
         timestamp: Date.now(),
       });
-      chatStore.setActivityStatus(tabId, { phase: 'awaiting' });
+      chatStore.awaitUser(tabId);
     }
     return;
   }
@@ -100,7 +100,7 @@ export function handlePermissionRequest(msg: PermissionRequestMessage, tabId: st
         toolUseId: msg.tool_use_id,
       },
     });
-    chatStore.setActivityStatus(tabId, { phase: 'awaiting' });
+    chatStore.awaitUser(tabId);
     return;
   }
 
@@ -132,6 +132,6 @@ export function handlePermissionRequest(msg: PermissionRequestMessage, tabId: st
       toolUseId: msg.tool_use_id,
     },
   });
-  chatStore.setActivityStatus(tabId, { phase: 'awaiting' });
+  chatStore.awaitUser(tabId);
   return;
 }

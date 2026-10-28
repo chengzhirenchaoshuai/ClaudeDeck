@@ -328,6 +328,12 @@ export interface UnifiedCommand {
 
 // --- Bridge ---
 
+/** 回复权限请求/提问之后的回调（参数为 stdinId），由 App 注册：把运行状态从“等待确认”恢复过来 */
+let permissionAnsweredHook: ((stdinId: string) => void) | null = null;
+export function setPermissionAnsweredHook(fn: ((stdinId: string) => void) | null) {
+  permissionAnsweredHook = fn;
+}
+
 export const bridge = {
   previewOpenUrl: (url: string) =>
     invoke<string>('preview_open_url', { url }),
@@ -737,8 +743,10 @@ export const bridge = {
   // --- SDK Control Protocol ---
 
   /** Respond to a structured permission request from CLI。setMode：允许的同时切换 CLI 权限模式（如批准计划后进入 acceptEdits） */
-  respondPermission: (sessionId: string, requestId: string, allow: boolean, message?: string, toolUseId?: string, updatedInput?: Record<string, unknown>, setMode?: string) =>
-    invoke<void>('respond_permission', { sessionId, requestId, allow, message: message ?? null, toolUseId: toolUseId ?? null, updatedInput: updatedInput ?? null, setMode: setMode ?? null }),
+  respondPermission: async (sessionId: string, requestId: string, allow: boolean, message?: string, toolUseId?: string, updatedInput?: Record<string, unknown>, setMode?: string) => {
+    await invoke<void>('respond_permission', { sessionId, requestId, allow, message: message ?? null, toolUseId: toolUseId ?? null, updatedInput: updatedInput ?? null, setMode: setMode ?? null });
+    permissionAnsweredHook?.(sessionId);
+  },
 
   /** Send a runtime control command to change permission mode without restart */
   setPermissionMode: (sessionId: string, mode: string) =>

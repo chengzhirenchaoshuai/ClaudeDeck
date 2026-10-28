@@ -1,87 +1,27 @@
-// 运行中的活动指示器：打字机效果的“思考中”文案、当前阶段/工具、耗时与输出 token 数。
+// 运行中的活动指示器：旋转的星形图标 + 当前真实阶段（思考 / 输出 / 正在运行的工具及其对象 / 等待回复）、耗时与输出 token 数。
 import { useEffect, useState } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
 import { formatTokens, formatElapsed } from './chatFormat';
 import { resolveSessionContextWindow } from '../../lib/context-window';
+import { describeTool } from '../../lib/activity-label';
 
-/** Cycling typewriter text for thinking phase — like Claude Code website "Built for > coders" */
-const THINKING_WORD_COUNT = 5;
-const TYPING_SPEED = 80;      // ms per character (typing)
-const DELETING_SPEED = 40;    // ms per character (deleting)
-const PAUSE_DURATION = 2500;  // ms to hold full word
-const TRANSITION_DELAY = 300; // ms between delete and next word
-
-/** Fisher-Yates shuffle, always starts with index 0 ("思考中"/"Thinking") */
-function shuffledOrder(count: number): number[] {
-  const arr = Array.from({ length: count }, (_, i) => i);
-  for (let i = arr.length - 1; i > 1; i--) {
-    const j = 1 + Math.floor(Math.random() * i); // skip index 0
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+/** 星形图标：三条交叉的线（六芒星号），运行时旋转，等待用户回复时改为琥珀色圆点 */
+function ActivityGlyph({ waiting }: { waiting: boolean }) {
+  if (waiting) {
+    return <span className="w-2 h-2 rounded-full bg-warning animate-pulse-soft" aria-hidden />;
   }
-  return arr;
-}
-
-function CyclingThinkingText() {
-  const t = useT();
-  const [order, setOrder] = useState(() => shuffledOrder(THINKING_WORD_COUNT));
-  const [cursor, setCursor] = useState(0);
-  const [displayText, setDisplayText] = useState('');
-  const [phase, setPhase] = useState<'typing' | 'pausing' | 'deleting' | 'waiting'>('typing');
-
-  const wordIndex = order[cursor];
-  const fullWord = t(`chat.thinkingCycle.${wordIndex}`);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-
-    if (phase === 'typing') {
-      if (displayText.length < fullWord.length) {
-        timer = setTimeout(() => {
-          setDisplayText(fullWord.slice(0, displayText.length + 1));
-        }, TYPING_SPEED);
-      } else {
-        timer = setTimeout(() => setPhase('pausing'), 0);
-      }
-    } else if (phase === 'pausing') {
-      timer = setTimeout(() => setPhase('deleting'), PAUSE_DURATION);
-    } else if (phase === 'deleting') {
-      if (displayText.length > 0) {
-        timer = setTimeout(() => {
-          setDisplayText(displayText.slice(0, -1));
-        }, DELETING_SPEED);
-      } else {
-        const nextCursor = cursor + 1;
-        if (nextCursor >= THINKING_WORD_COUNT) {
-          // Reshuffle when all words shown
-          setOrder(shuffledOrder(THINKING_WORD_COUNT));
-          setCursor(0);
-        } else {
-          setCursor(nextCursor);
-        }
-        setPhase('waiting');
-      }
-    } else if (phase === 'waiting') {
-      timer = setTimeout(() => {
-        setDisplayText('');
-        setPhase('typing');
-      }, TRANSITION_DELAY);
-    }
-
-    return () => clearTimeout(timer);
-  }, [displayText, phase, fullWord, cursor]);
-
   return (
-    <span className="inline-flex items-baseline">
-      <span>{displayText}</span>
-      <span className="text-text-tertiary">...</span>
-    </span>
+    <svg className="activity-spinner text-accent" width="14" height="14" viewBox="0 0 14 14"
+      fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+      <path d="M7 1.5v11M2.24 4.25l9.52 5.5M2.24 9.75l9.52-5.5" />
+    </svg>
   );
 }
 
-/** Activity indicator with elapsed time and token count */
+/** 运行指示器：当前阶段、耗时与输出 token 数，以及卡住、上下文过大的提醒 */
 export function ActivityIndicator({ activityStatus, sessionMeta }: {
-  activityStatus: { phase: string; toolName?: string };
+  activityStatus: { phase: string; toolName?: string; toolInput?: any; runningToolIds?: string[] };
   sessionMeta: {
     turnStartTime?: number;
     outputTokens?: number;
@@ -101,17 +41,19 @@ export function ActivityIndicator({ activityStatus, sessionMeta }: {
     return () => clearInterval(id);
   }, []);
 
-  const phaseText = activityStatus.phase === 'thinking' ? t('chat.thinking')
-    : activityStatus.phase === 'writing' ? t('chat.writing')
-    : activityStatus.phase === 'tool' ? `${t('chat.runningTool')}: ${activityStatus.toolName || ''}`
-    : activityStatus.phase === 'awaiting' ? t('chat.awaiting')
-    : t('chat.running');
+  const { phase } = activityStatus;
+  const waiting = phase === 'awaiting';
+  // 工具阶段显示“动作 + 对象”；并行运行多个工具时附上其余数量
+  const tool = phase === 'tool' ? describeTool(activityStatus.toolName, activityStatus.toolInput) : null;
+  const moreTools = phase === 'tool' ? Math.max(0, (activityStatus.runningToolIds?.length ?? 0) - 1) : 0;
+  const label = tool ? t(tool.verbKey)
+    : phase === 'thinking' ? t('activity.thinking')
+    : phase === 'writing' ? t('activity.writing')
+    : waiting ? t('activity.awaiting')
+    : t('activity.working');
 
   const elapsed = sessionMeta.turnStartTime ? formatElapsed(now - sessionMeta.turnStartTime) : null;
   const tokens = sessionMeta.outputTokens ? formatTokens(sessionMeta.outputTokens) : null;
-  const statsText = elapsed
-    ? tokens ? `(${elapsed} · ↓ ${tokens})` : `(${elapsed})`
-    : null;
 
   // Context pressure warning: threshold depends on model context window size
   // 1M models (claude-opus-4-6-1m, mimo-v2-pro[1m]) → warn at 600K; others at 120K (60% of 200K)
@@ -126,18 +68,28 @@ export function ActivityIndicator({ activityStatus, sessionMeta }: {
     && !!elapsed
     && (now - sessionMeta.lastProgressAt) > 120_000;
 
-  const isThinking = activityStatus.phase === 'thinking';
-
   return (
-    <div className="flex items-center gap-1.5 py-1">
-      <span className={`text-sm font-medium leading-none text-accent
-        ${isThinking ? '' : 'animate-pulse-soft'}`}>/</span>
-      <span className="text-sm text-text-muted">
-        {isThinking ? <CyclingThinkingText /> : phaseText}
-        {statsText && (
-          <span className={`ml-1.5 ${stallWarning ? 'text-red-400' : 'text-text-tertiary'}`}>{statsText}</span>
-        )}
+    <div className="flex items-center gap-2 py-1 text-sm min-w-0">
+      <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
+        <ActivityGlyph waiting={waiting} />
       </span>
+      {/* 等待回复时文字不闪，用琥珀色提示需要操作；其余阶段有一道亮光扫过 */}
+      <span className={`flex-shrink-0 ${waiting ? 'text-warning' : 'activity-shimmer'}`}>{label}</span>
+      {tool?.target && (
+        <span className={`min-w-0 truncate ${tool.code
+          ? 'font-mono text-[12px] px-1.5 py-px rounded bg-bg-secondary text-text-secondary'
+          : 'text-text-secondary'}`} title={tool.target}>
+          {tool.target}
+        </span>
+      )}
+      {moreTools > 0 && (
+        <span className="flex-shrink-0 text-xs text-text-tertiary">{t('activity.more').replace('{n}', String(moreTools))}</span>
+      )}
+      {elapsed && (
+        <span className={`flex-shrink-0 text-xs tabular-nums ${stallWarning ? 'text-red-400' : 'text-text-tertiary'}`}>
+          {elapsed}{tokens ? ` · ↓ ${tokens}` : ''}
+        </span>
+      )}
       {stallWarning && (
         <span className="text-xs text-red-400 ml-2 flex items-center gap-1">
           <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
