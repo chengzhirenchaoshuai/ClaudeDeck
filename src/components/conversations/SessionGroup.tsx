@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { SessionItem } from './SessionItem';
 import { useT } from '../../lib/i18n';
@@ -77,6 +77,10 @@ export function SessionGroup({
 
   const [showMore, setShowMore] = useState(false);
   const expandAll = showAll || showMore;
+  // 项目收起时一并收起“其余会话”：下次点开项目仍只显示前几个，不用拉到列表末尾去点“收起”
+  useEffect(() => {
+    if (!isExpanded) setShowMore(false);
+  }, [isExpanded]);
 
   // 默认只显示前 COLLAPSED_LIMIT 个（置顶的始终显示并计入名额）；
   // 超出部分里正在选中、运行中或被定位高亮的会话也保留，避免当前会话“消失”
