@@ -18,6 +18,47 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.0',
+    date: '2026-10-28',
+    highlights: {
+      zh: ['提示建议：每轮回复后预测下一句话，按 Tab 填入'],
+      en: ['Prompt suggestions: predicts your next message after each reply, press Tab to fill it in'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '提示建议：输入框为空时显示预测的下一句话，按 Tab 填入，可在通用设置中关闭',
+            '新建会话没发消息就切走时自动移除，写了内容的草稿保留',
+            '左上角 Logo 旁显示当前版本号',
+            '收起项目时一并收起展开的其余会话',
+          ],
+          en: [
+            'Prompt suggestions: an empty input shows the predicted next message, press Tab to fill it in; can be turned off in General settings',
+            'New sessions left without sending a message are removed automatically; drafts with text are kept',
+            'Current version shown next to the logo',
+            'Collapsing a project also collapses its expanded sessions',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['双方头像统一为 40px，单行气泡与头像等高'],
+          en: ['Both avatars are 40 px, and single-line bubbles match their height'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['回复结束后视图停在回复开头', '右侧轮次导航高亮跳动、显示不准'],
+          en: ['The view stopped at the start of a reply instead of the end', 'Turn navigation highlight jumped or was inaccurate'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.4.5',
     date: '2026-10-28',
     highlights: {
