@@ -119,6 +119,11 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
     const onPasteRef = useRef(onPaste);
     onPasteRef.current = onPaste;
 
+    // 占位文字用函数形式、每次从 ref 读最新值：直接改扩展的 options 不一定能传到插件里
+    // （Tiptap 3 下插件读的未必是同一个 options 对象），提示建议换成下一轮时会继续显示上一轮的
+    const placeholderRef = useRef(placeholder);
+    placeholderRef.current = placeholder;
+
     const editor = useEditor({
       extensions: [
         StarterKit.configure({
@@ -132,7 +137,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
           horizontalRule: false,
           // Keep bold/italic/code inline marks
         }),
-        Placeholder.configure({ placeholder }),
+        Placeholder.configure({ placeholder: () => placeholderRef.current }),
         FileChipWithView,
       ],
       editorProps: {
@@ -195,17 +200,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
       };
     }, [editor]);
 
-    // Update placeholder when prop changes
+    // 占位文字变化时派发一个空事务，让占位装饰按 placeholderRef 的新值重新生成
     useEffect(() => {
-      if (!editor) return;
-      // Access the placeholder extension and reconfigure
-      editor.extensionManager.extensions.forEach((ext) => {
-        if (ext.name === 'placeholder') {
-          (ext.options as any).placeholder = placeholder;
-          // Force re-render of decorations
-          editor.view.dispatch(editor.view.state.tr);
-        }
-      });
+      if (!editor || editor.isDestroyed) return;
+      editor.view.dispatch(editor.view.state.tr);
     }, [editor, placeholder]);
 
     useImperativeHandle(ref, () => ({
