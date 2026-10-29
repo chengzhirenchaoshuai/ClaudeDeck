@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo, useSyncExternalStore } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useChatStore } from '../../stores/chatStore';
 import { sessionSortTime } from './session-list-model';
 import { useT } from '../../lib/i18n';
 import { t as tStatic } from '../../lib/i18n';
@@ -52,6 +53,16 @@ const getMinute = () => minuteNow;
 function RelativeTime({ ms }: { ms: number }) {
   useSyncExternalStore(subscribeMinute, getMinute);
   return <>{formatRelativeTime(ms)}</>;
+}
+
+/** 等待用户确认或选择（权限请求、提问、计划审批）：琥珀色圆点加向外扩散的波纹，与运行中的转圈区分 */
+export function AwaitingDot({ title }: { title?: string }) {
+  return (
+    <span className="relative flex flex-shrink-0 w-2.5 h-2.5" title={title}>
+      <span className="absolute inline-flex h-full w-full rounded-full bg-warning opacity-60 animate-ping" />
+      <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-warning" />
+    </span>
+  );
 }
 
 /** Renders snippet text with query matches highlighted in accent color */
@@ -129,6 +140,8 @@ export const SessionItem = memo(function SessionItem({
   const backgroundCount = useSessionStore((s) => s.backgroundTasks.get(session.id) ?? 0);
   // 终端里直接运行的 claude（不经本应用）：busy 正在回复，idle 等待输入
   const terminalStatus = useSessionStore((s) => s.terminalSessions.get(session.id));
+  // 正在等用户确认或选择：后台会话也会更新自己标签页的状态，切过去之前就能看到
+  const isAwaiting = useChatStore((s) => s.tabs.get(session.id)?.activityStatus.phase === 'awaiting');
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -208,9 +221,11 @@ export const SessionItem = memo(function SessionItem({
     >
       {/* 状态指示放在左侧缩进区（pl-7）里，不占标题行宽度，出现/消失也不会挤动标题：
           进行中显示转圈，否则未读显示圆点；终端里运行的会话用紫色区分 */}
-      {(isRunning || backgroundCount > 0 || terminalStatus || isUnread) && (
+      {(isAwaiting || isRunning || backgroundCount > 0 || terminalStatus || isUnread) && (
         <span className="absolute left-0 top-1.5 w-7 h-4 flex items-center justify-center">
-          {isRunning ? (
+          {isAwaiting ? (
+            <AwaitingDot title={t('conv.awaitingHint')} />
+          ) : isRunning ? (
             <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-accent/30 border-t-accent animate-spin" />
           ) : backgroundCount > 0 ? (
             // 本轮已结束、CLI 仍有后台任务在跑：用绿色转圈与前台运行区分
@@ -271,10 +286,10 @@ export const SessionItem = memo(function SessionItem({
         )}
         {/* 时间与置顶按钮共用一个位置：悬停时时间隐藏、置顶按钮显示在原处 */}
         <span className="relative flex-shrink-0 flex items-center justify-end min-w-[16px]">
-          <span className={`text-[10px] text-text-tertiary
+          <span className={`text-[10px] ${isAwaiting ? 'text-warning font-medium' : 'text-text-tertiary'}
             ${!multiSelect && !isRenaming && onPin ? 'group-hover:invisible' : ''}`}>
-            {/* 与列表排序一致：显示最后发言时间，未知时为修改时间 */}
-            <RelativeTime ms={sessionSortTime(session)} />
+            {/* 等待选择时显示“待选择”；否则与列表排序一致：显示最后发言时间，未知时为修改时间 */}
+            {isAwaiting ? t('conv.awaiting') : <RelativeTime ms={sessionSortTime(session)} />}
           </span>
           {!multiSelect && !isRenaming && onPin && (
             <span

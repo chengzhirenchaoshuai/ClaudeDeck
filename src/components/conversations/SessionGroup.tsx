@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SessionListItem } from '../../lib/tauri-bridge';
-import { SessionItem } from './SessionItem';
+import { SessionItem, AwaitingDot } from './SessionItem';
+import { useChatStore } from '../../stores/chatStore';
 import { useT } from '../../lib/i18n';
 
 /** 项目展开后默认显示的会话数 */
@@ -79,6 +80,9 @@ export function SessionGroup({
   }, [sessions, pinnedSessions]);
 
   const [showMore, setShowMore] = useState(false);
+  // 项目里有会话在等用户选择：收起时也要在项目标题上提示
+  const hasAwaiting = useChatStore((s) =>
+    sessions.some((x) => s.tabs.get(x.id)?.activityStatus.phase === 'awaiting'));
   const expandAll = showAll || showMore;
   // 项目收起时一并收起“其余会话”：下次点开项目仍只显示前几个，不用拉到列表末尾去点“收起”
   useEffect(() => {
@@ -142,7 +146,9 @@ export function SessionGroup({
             <path d="M9.5 2L14 6.5L8.5 12L6 14L4.5 11.5L2 9.5L4 7.5L9.5 2z" />
           </svg>
         )}
-        {!isExpanded && sessions.some((s) => unreadSessions.has(s.id)) && (
+        {!isExpanded && hasAwaiting ? (
+          <AwaitingDot title={t('conv.awaitingHint')} />
+        ) : !isExpanded && sessions.some((s) => unreadSessions.has(s.id)) && (
           <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-accent" title={t('conv.unread')} />
         )}
         <span className="text-[11px] text-text-tertiary flex-shrink-0">
