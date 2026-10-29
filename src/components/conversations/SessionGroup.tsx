@@ -26,6 +26,8 @@ interface SessionGroupProps {
   unreadSessions: Set<string>;
   /** 该项目是否被置顶 */
   isPinned?: boolean;
+  /** 该项目已在本机隐藏（临时显示隐藏项目时才会渲染出来） */
+  isHidden?: boolean;
   onProjectContextMenu: (e: React.MouseEvent, project: string) => void;
   onLoadSession: (session: SessionListItem) => void;
   onRename: (sessionId: string, newName: string) => void;
@@ -54,6 +56,7 @@ export function SessionGroup({
   onPin,
   unreadSessions,
   isPinned,
+  isHidden,
   onProjectContextMenu,
   onLoadSession,
   onRename,
@@ -118,10 +121,20 @@ export function SessionGroup({
             ${isExpanded ? 'rotate-90' : ''}`}>
           <path d="M3 1l4 4-4 4" />
         </svg>
-        <span className="text-[13px] font-extrabold text-text-primary
-          truncate flex-1 text-left min-w-0">
+        <span className={`text-[13px] font-extrabold truncate flex-1 text-left min-w-0
+          ${isHidden ? 'text-text-tertiary' : 'text-text-primary'}`}>
           {label}
         </span>
+        {isHidden && (
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            className="flex-shrink-0 text-text-tertiary">
+            <title>{t('conv.hiddenProjectBadge')}</title>
+            <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+            <circle cx="8" cy="8" r="2" />
+            <path d="M2.5 2.5l11 11" />
+          </svg>
+        )}
         {isPinned && (
           <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
             stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"

@@ -1,4 +1,4 @@
-// 会话列表的数据处理：项目路径换算、按环境/归档/搜索过滤、按项目分组。
+// 会话列表的数据处理：项目路径换算、按环境/隐藏项目/归档/搜索过滤、按项目分组。
 import { bridge, type SessionListItem, type ContentSearchResult } from '../../lib/tauri-bridge';
 
 let _cachedHomeDir: string | null = null;
@@ -31,6 +31,11 @@ export function normalizeProjectKey(raw: string): string {
   return raw;
 }
 
+/** 会话所属项目的分组键（与 groupByProject 一致），置顶项目、本机隐藏项目都按它记录 */
+export function sessionProjectKey(s: SessionListItem): string {
+  return normalizeProjectKey(s.project || s.projectDir);
+}
+
 /** Extract display label from a project key.
  *  When `parentHint` is true (duplicate names), appends parent folder:
  *  "A (Desktop)" vs "A (坚果云)" */
@@ -61,12 +66,19 @@ export function filterSessions(
     archivedSessions: Set<string>;
     searchQuery: string;
     displayName: (session: SessionListItem) => string;
+    /** 在本机隐藏的项目分组键 */
+    hiddenProjects?: Set<string>;
+    /** 为 true 时临时显示已隐藏的项目 */
+    showHidden?: boolean;
   },
 ): SessionListItem[] {
-  const { activeEnv, showArchived, archivedSessions, searchQuery, displayName } = opts;
+  const { activeEnv, showArchived, archivedSessions, searchQuery, displayName, hiddenProjects, showHidden } = opts;
   // 本地与远程模式互相隔离：只显示当前环境的会话
   let result = sessions.filter((s) => (activeEnv === 'local' ? !s.host : s.host === activeEnv));
   result = result.filter((s) => !isTempProject(s.project));
+  if (hiddenProjects && hiddenProjects.size > 0 && !showHidden) {
+    result = result.filter((s) => !hiddenProjects.has(sessionProjectKey(s)));
+  }
 
   // Archive filter: OFF = hide archived, ON = show ONLY archived
   if (showArchived) {
@@ -105,8 +117,7 @@ export function groupByProject(
 ): [string, SessionListItem[]][] {
   const map = new Map<string, SessionListItem[]>();
   for (const s of filtered) {
-    const raw = s.project || s.projectDir;
-    const key = normalizeProjectKey(raw);
+    const key = sessionProjectKey(s);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(s);
   }
@@ -132,7 +143,7 @@ export function groupByProject(
   return entries;
 }
 
-/** 只被内容搜索命中（标题/项目名没命中）的本机会话，同样遵守归档视图 */
+/** 只被内容搜索命中（标题/项目名没命中）的本机会话，同样遵守归档视图和本机隐藏项目 */
 export function findContentOnlyMatches(
   sessions: SessionListItem[],
   filtered: SessionListItem[],
@@ -140,12 +151,15 @@ export function findContentOnlyMatches(
   searchQuery: string,
   showArchived: boolean,
   archivedSessions: Set<string>,
+  hiddenProjects?: Set<string>,
 ): SessionListItem[] {
   if (!searchQuery.trim() || contentSearchResults.size === 0) return [];
   const metadataIds = new Set(filtered.map((s) => s.id));
   return sessions.filter((s) => {
     if (s.host) return false;
     if (isTempProject(s.project)) return false;
+    // 本机隐藏的项目同样不出现在内容搜索结果里（临时显示隐藏项目时由调用方不传）
+    if (hiddenProjects?.has(sessionProjectKey(s))) return false;
     if (metadataIds.has(s.id)) return false;
     if (!contentSearchResults.has(s.id)) return false;
     // Respect archive filter

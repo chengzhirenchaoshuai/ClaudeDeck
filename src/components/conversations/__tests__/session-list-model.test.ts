@@ -46,3 +46,20 @@ describe('临时目录会话', () => {
     expect(result.map((s) => s.id)).toEqual(['a']);
   });
 });
+
+describe('本机隐藏项目', () => {
+  const base = { activeEnv: 'local', showArchived: false, archivedSessions: new Set<string>(), searchQuery: '', displayName: (s: SessionListItem) => s.preview };
+
+  it('隐藏项目下的会话（含之后新建的）都不显示，临时显示时恢复', () => {
+    const sessions = [item('a', 1, 0, 'F:/home-proj'), item('b', 2, 0, 'F:/work-proj'), item('new', 3, 0, 'F:/work-proj')];
+    const hiddenProjects = new Set(['F:/work-proj']);
+    expect(filterSessions(sessions, { ...base, hiddenProjects }).map((s) => s.id)).toEqual(['a']);
+    expect(filterSessions(sessions, { ...base, hiddenProjects, showHidden: true }).map((s) => s.id)).toEqual(['a', 'b', 'new']);
+  });
+
+  it('按项目分组键匹配，用户目录下的路径统一成 ~ 开头', () => {
+    const sessions = [item('a', 1, 0, String.raw`C:\Users\me\work`)];
+    const result = filterSessions(sessions, { ...base, hiddenProjects: new Set([String.raw`~\work`]) });
+    expect(result).toEqual([]);
+  });
+});

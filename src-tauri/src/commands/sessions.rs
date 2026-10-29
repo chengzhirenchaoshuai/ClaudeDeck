@@ -1415,6 +1415,28 @@ pub(crate) async fn save_archived_sessions(data: Value) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("Failed to write archived sessions: {}", e))
 }
 
+/// 读取本机隐藏的项目列表（项目分组键）。只存在本客户端，不同步到远程主机。
+#[tauri::command]
+pub(crate) async fn load_hidden_projects() -> Result<Value, String> {
+    let path = app_paths::config_path("hidden_projects.json")?;
+    // 文件不存在时返回 null（区别于“存在但为空”），前端据此决定是否保留本地缓存
+    if !path.exists() {
+        return Ok(Value::Null);
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取隐藏项目失败: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("解析隐藏项目失败: {}", e))
+}
+
+/// 保存本机隐藏的项目列表。
+#[tauri::command]
+pub(crate) async fn save_hidden_projects(data: Value) -> Result<(), String> {
+    let path = app_paths::config_path("hidden_projects.json")?;
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化隐藏项目失败: {}", e))?;
+    std::fs::write(&path, content).map_err(|e| format!("写入隐藏项目失败: {}", e))
+}
+
 pub(crate) fn normalize_deepseek_model_name(model: &str) -> String {
     let trimmed = model.trim();
     let lower = trimmed.to_lowercase();

@@ -622,6 +622,8 @@ pub fn run() {
             commands::sessions::save_pinned_sessions,
             commands::sessions::load_archived_sessions,
             commands::sessions::save_archived_sessions,
+            commands::sessions::load_hidden_projects,
+            commands::sessions::save_hidden_projects,
             commands::sessions::generate_session_title,
             commands::providers::load_providers,
             commands::providers::save_providers,

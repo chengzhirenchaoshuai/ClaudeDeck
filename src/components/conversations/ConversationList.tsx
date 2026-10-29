@@ -22,6 +22,8 @@ import {
   projectLabel,
   filterSessions,
   groupByProject,
+  isTempProject,
+  sessionProjectKey,
   sessionSortTime,
   findContentOnlyMatches,
 } from './session-list-model';
@@ -83,9 +85,13 @@ export function ConversationList() {
   // 项目分组的展开/收起：只记录用户手动收起过的项目，默认都是展开的
   const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(new Set());
 
-  // 置顶与归档（实现见 usePinnedArchived.ts）
-  const { pinnedSessions, archivedSessions, persistPinned, persistArchived, pushArchivedToRemote } =
-    usePinnedArchived(remoteHosts, remoteSessionsList);
+  // 置顶、归档与本机隐藏项目（实现见 usePinnedArchived.ts）
+  const {
+    pinnedSessions, archivedSessions, hiddenProjects,
+    persistPinned, persistArchived, persistHiddenProjects, pushArchivedToRemote,
+  } = usePinnedArchived(remoteHosts, remoteSessionsList);
+  // 临时显示本机隐藏的项目：只在本次运行内有效，重启后恢复隐藏
+  const [showHidden, setShowHidden] = useState(false);
   // View mode: 'folder' | 'recent' | 'archived'——“归档”和“按文件夹”一样按项目分组，
   // 只是数据源换成已归档的会话，showArchived 直接从这里派生，不再单独维护一份状态。
   const [viewMode, setViewMode] = useState<'folder' | 'recent' | 'archived'>(() => {
@@ -214,9 +220,24 @@ export function ConversationList() {
   // Filtered sessions (search + archive)
   const activeEnv = useSettingsStore((s) => s.activeEnv);
   const filtered = useMemo(
-    () => filterSessions(sessions, { activeEnv, showArchived, archivedSessions, searchQuery, displayName }),
-    [sessions, searchQuery, displayName, showArchived, archivedSessions, activeEnv],
+    () => filterSessions(sessions, {
+      activeEnv, showArchived, archivedSessions, searchQuery, displayName, hiddenProjects, showHidden,
+    }),
+    [sessions, searchQuery, displayName, showArchived, archivedSessions, activeEnv, hiddenProjects, showHidden],
   );
+
+  // 当前环境下实际存在会话的隐藏项目数（隐藏记录里可能有已删光会话的旧项目，不计入）
+  const hiddenProjectCount = useMemo(() => {
+    if (hiddenProjects.size === 0) return 0;
+    const present = new Set<string>();
+    for (const s of sessions) {
+      const inEnv = activeEnv === 'local' ? !s.host : s.host === activeEnv;
+      if (!inEnv || isTempProject(s.project)) continue;
+      const key = sessionProjectKey(s);
+      if (hiddenProjects.has(key)) present.add(key);
+    }
+    return present.size;
+  }, [sessions, activeEnv, hiddenProjects]);
 
   // Group by project
   const projectGroups = useMemo(() => groupByProject(filtered, pinnedSessions), [filtered, pinnedSessions]);
@@ -230,8 +251,11 @@ export function ConversationList() {
 
   // Content-only matches: sessions hit by content search but NOT by metadata filter
   const contentOnlyMatches = useMemo(
-    () => findContentOnlyMatches(sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions),
-    [sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions],
+    () => findContentOnlyMatches(
+      sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions,
+      showHidden ? undefined : hiddenProjects,
+    ),
+    [sessions, filtered, contentSearchResults, searchQuery, showArchived, archivedSessions, showHidden, hiddenProjects],
   );
 
   // 默认全部展开，只有用户手动点了收起才收起——不再因为选中了别的项目的会话
@@ -605,6 +629,18 @@ export function ConversationList() {
     persistPinned(next);
   }, [pinnedSessions, persistPinned]);
 
+  // 在本机隐藏 / 取消隐藏项目：按项目分组键记录，之后在该项目新建的会话也一并隐藏
+  const handleToggleProjectHidden = useCallback((project: string) => {
+    const next = new Set(hiddenProjects);
+    if (next.has(project)) {
+      next.delete(project);
+    } else {
+      next.add(project);
+      showToast(t('conv.projectHiddenToast').replace('{project}', projectLabel(project)), 'info');
+    }
+    persistHiddenProjects(next);
+  }, [hiddenProjects, persistHiddenProjects, t]);
+
   // Folder operation handlers (resolve projectKey to real path)
   const resolveRealPathFromKey = useCallback((projectKey: string): string => {
     const suffix = projectKey.replace(/^~/, '');
@@ -777,6 +813,7 @@ export function ConversationList() {
               onPin={handleTogglePin}
               unreadSessions={unreadSessions}
               isPinned={pinnedSessions.has(`project:${project}`)}
+              isHidden={hiddenProjects.has(project)}
               onProjectContextMenu={handleProjectContextMenu}
               onLoadSession={handleLoadSession}
               onRename={handleRename}
@@ -873,6 +910,20 @@ export function ConversationList() {
         </div>
       )}
 
+      {/* 本机隐藏项目：显示数量，可临时显示 */}
+      {hiddenProjectCount > 0 && (
+        <div className="flex items-center justify-center gap-1.5 py-2 text-[11px] text-text-tertiary">
+          <span>{t('conv.hiddenProjectsCount').replace('{n}', String(hiddenProjectCount))}</span>
+          <span>·</span>
+          <button
+            onClick={() => setShowHidden((v) => !v)}
+            className="text-accent hover:underline"
+          >
+            {showHidden ? t('conv.collapseHiddenProjects') : t('conv.showHiddenProjects')}
+          </button>
+        </div>
+      )}
+
       {/* Multi-select floating toolbar — sticky at bottom of scroll container */}
       {multiSelect && (
         <div className="sticky bottom-0 mx-1 mt-2 p-2 rounded-xl
@@ -945,6 +996,8 @@ export function ConversationList() {
           onLoadAll={projectMenu.project.startsWith('ssh://') ? handleLoadAllInProject : undefined}
           isLoadingAll={loadingAllProject === projectMenu.project}
           isPinned={pinnedSessions.has(`project:${projectMenu.project}`)}
+          onToggleHidden={handleToggleProjectHidden}
+          isHidden={hiddenProjects.has(projectMenu.project)}
           onClose={() => setProjectMenu(null)}
         />
       )}

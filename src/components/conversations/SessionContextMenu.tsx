@@ -258,6 +258,9 @@ interface ProjectContextMenuProps {
   onNewSession: (project: string) => void;
   onDeleteAll: (project: string) => void;
   onPin?: (project: string) => void;
+  /** 在本机隐藏 / 取消隐藏该项目 */
+  onToggleHidden?: (project: string) => void;
+  isHidden?: boolean;
   onOpenInExplorer?: (project: string) => void;
   onLoadAll?: (project: string) => void;
   isLoadingAll?: boolean;
@@ -272,6 +275,8 @@ export function ProjectContextMenu({
   onNewSession,
   onDeleteAll,
   onPin,
+  onToggleHidden,
+  isHidden,
   onOpenInExplorer,
   onLoadAll,
   isLoadingAll,
@@ -329,6 +334,22 @@ export function ProjectContextMenu({
             <path d="M4.5 11.5L1.5 14.5" />
           </svg>
           {isPinned ? t('conv.unpinProject') : t('conv.pinProject')}
+        </button>
+      )}
+
+      {onToggleHidden && (
+        <button
+          onClick={() => { onClose(); onToggleHidden(project); }}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5
+            text-xs text-text-primary hover:bg-bg-secondary transition-smooth"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+            <circle cx="8" cy="8" r="2" />
+            {!isHidden && <path d="M2.5 2.5l11 11" />}
+          </svg>
+          {isHidden ? t('conv.unhideProject') : t('conv.hideProject')}
         </button>
       )}
 

@@ -719,6 +719,13 @@ export const bridge = {
   saveArchivedSessions: (data: string[]) =>
     invoke<void>('save_archived_sessions', { data }).catch(() => {}),
 
+  // 本机隐藏的项目（保存在 <数据目录>/config/hidden_projects.json，只属于本客户端）
+  loadHiddenProjects: () =>
+    invoke<string[] | null>('load_hidden_projects').catch(() => null),
+
+  saveHiddenProjects: (data: string[]) =>
+    invoke<void>('save_hidden_projects', { data }).catch(() => {}),
+
   /** 读取远程主机自己保存的归档会话 ID 列表——远程主机是归档状态的源端 */
   loadRemoteArchivedSessions: (hostId: string) =>
     invoke<string[]>('load_remote_archived_sessions', { hostId }),

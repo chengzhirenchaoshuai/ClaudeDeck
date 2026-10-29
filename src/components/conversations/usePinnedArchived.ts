@@ -1,4 +1,5 @@
 // 会话与项目的置顶、归档状态：localStorage 快速缓存 + 磁盘文件为准 + 远程主机各自的归档文件同步。
+// 另含“在本机隐藏的项目”：按项目分组键记录，只存本客户端，不同步到远程主机。
 import { useCallback, useEffect, useState } from 'react';
 import { bridge, type RemoteHost, type SessionListItem } from '../../lib/tauri-bridge';
 
@@ -16,6 +17,13 @@ export function usePinnedArchived(remoteHosts: RemoteHost[], remoteSessionsList:
     } catch { return new Set(); }
   });
 
+  const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(() => {
+    try {
+      const data = localStorage.getItem('claudedeck_hidden_projects');
+      return new Set(data ? JSON.parse(data) : []);
+    } catch { return new Set(); }
+  });
+
   // Persist pinned/archived
   const persistPinned = useCallback((next: Set<string>) => {
     setPinnedSessions(next);
@@ -27,6 +35,12 @@ export function usePinnedArchived(remoteHosts: RemoteHost[], remoteSessionsList:
     setArchivedSessions(next);
     localStorage.setItem('tokenicode_archived_sessions', JSON.stringify([...next]));
     bridge.saveArchivedSessions([...next]).catch(() => {});
+  }, []);
+
+  const persistHiddenProjects = useCallback((next: Set<string>) => {
+    setHiddenProjects(next);
+    localStorage.setItem('claudedeck_hidden_projects', JSON.stringify([...next]));
+    bridge.saveHiddenProjects([...next]).catch(() => {});
   }, []);
 
   // 归档和改名一样是 ClaudeDeck 自己的概念，claude CLI 没有这个功能，本机只存在
@@ -98,7 +112,18 @@ export function usePinnedArchived(remoteHosts: RemoteHost[], remoteSessionsList:
         }
       })
       .catch(() => {});
+    bridge.loadHiddenProjects()
+      .then((data: string[] | null) => {
+        if (Array.isArray(data)) {
+          setHiddenProjects(new Set(data));
+          localStorage.setItem('claudedeck_hidden_projects', JSON.stringify(data));
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  return { pinnedSessions, archivedSessions, persistPinned, persistArchived, pushArchivedToRemote };
+  return {
+    pinnedSessions, archivedSessions, hiddenProjects,
+    persistPinned, persistArchived, persistHiddenProjects, pushArchivedToRemote,
+  };
 }
