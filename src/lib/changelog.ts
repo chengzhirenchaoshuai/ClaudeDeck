@@ -18,6 +18,45 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.2',
+    date: '2026-10-29',
+    highlights: {
+      zh: ['新增「终端」主题；文件可另存为；会话列表显示「待选择」'],
+      en: ['New "Terminal" theme; Save as for files; "Needs you" status in the session list'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '「终端」深色主题：命令行控制台风格，纯黑底、荧光绿强调色、等宽字体',
+            '文件预览可另存为，本机与远程文件都能直接保存到本机',
+            '会话等你确认或选择时，列表显示「待选择」',
+          ],
+          en: [
+            '"Terminal" dark theme: console style with a black background, green accent and monospace font',
+            'Save as in the file preview, for both local and remote files',
+            'Sessions waiting for your confirmation or choice show "Needs you" in the list',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['设置页去掉外观栏，点主题即切到其深浅'],
+          en: ['The appearance row is gone from settings; picking a theme switches to its light or dark mode'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['刚发出的消息立即编辑重发时提示「无法定位回退点」'],
+          en: ['Editing and resending a just-sent message reported that the rewind point could not be found'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.1',
     date: '2026-10-29',
     highlights: {
