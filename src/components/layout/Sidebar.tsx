@@ -75,7 +75,7 @@ export function Sidebar() {
       <div
         className="flex items-center justify-between mb-6 px-5 cursor-default">
         <div className="flex items-center">
-          {/* Text logo — Claude/Deck, slash uses theme accent */}
+          {/* 文字 Logo：CDeck，C 用主题色 */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => toggleUsage('activity')}
@@ -85,7 +85,7 @@ export function Sidebar() {
               <img src="/app-icon.png" alt="" className="w-8 h-8" />
             </button>
             <span className="text-[18px] font-bold tracking-wide text-text-primary">
-              Claude<span className="text-accent">/</span>Deck
+              <span className="text-accent">C</span>Deck
             </span>
             <span className="text-[16px] text-success">♧</span>
             {appVersion && (
