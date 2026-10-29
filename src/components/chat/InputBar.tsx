@@ -158,7 +158,7 @@ export function InputBar() {
     return null;
   });
 
-  const { files, setFiles, isProcessing, addFiles, removeFile, clearFiles } = useFileAttachments();
+  const { files, setFiles, isProcessing, addFiles, removeFile, clearFiles, cancelProcessing } = useFileAttachments();
 
   // 本地 files 与 store.pendingAttachments 双向同步（切换标签页时保留附件）。
   // 用 lastSyncedRef 记住最近一次同步过的数组：同一个值不再反向写回。
@@ -1052,7 +1052,8 @@ export function InputBar() {
         {/* File upload chips */}
         {(files.length > 0 || isProcessing) && (
           <div className="mb-2">
-            <FileUploadChips files={files} onRemove={removeFile} isProcessing={isProcessing} />
+            <FileUploadChips files={files} onRemove={removeFile} isProcessing={isProcessing}
+              onCancelProcessing={cancelProcessing} />
           </div>
         )}
 

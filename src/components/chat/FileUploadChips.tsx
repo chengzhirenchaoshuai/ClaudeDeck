@@ -5,6 +5,8 @@ interface FileUploadChipsProps {
   files: FileAttachment[];
   onRemove: (id: string) => void;
   isProcessing?: boolean;
+  /** 取消正在处理的附件 */
+  onCancelProcessing?: () => void;
 }
 
 function formatSize(bytes: number): string {
@@ -13,7 +15,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1048576).toFixed(1)}MB`;
 }
 
-export function FileUploadChips({ files, onRemove, isProcessing }: FileUploadChipsProps) {
+export function FileUploadChips({ files, onRemove, isProcessing, onCancelProcessing }: FileUploadChipsProps) {
   const t = useT();
 
   if (files.length === 0 && !isProcessing) return null;
@@ -32,6 +34,18 @@ export function FileUploadChips({ files, onRemove, isProcessing }: FileUploadChi
             <path d="M8 2a6 6 0 105.3 3.2" />
           </svg>
           {t('input.processingFiles')}
+          {onCancelProcessing && (
+            <button
+              onClick={onCancelProcessing}
+              title={t('common.cancel')}
+              className="p-0.5 rounded hover:bg-accent/15 transition-smooth"
+            >
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
       {files.map((file) => (

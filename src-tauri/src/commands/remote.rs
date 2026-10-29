@@ -202,43 +202,19 @@ pub async fn run_remote(
     remote_cmd: &str,
     timeout: Duration,
 ) -> Result<(String, String, i32), String> {
-    run_remote_with_input(host, remote_cmd, None, timeout).await
-}
-
-/// 同 `run_remote`，但可把 `input` 写入远端命令的标准输入（写完即关闭，远端读到 EOF）。
-/// 用于传输较大的数据：放在命令行里会超出 Windows 命令行长度上限。
-pub async fn run_remote_with_input(
-    host: &RemoteHost,
-    remote_cmd: &str,
-    input: Option<Vec<u8>>,
-    timeout: Duration,
-) -> Result<(String, String, i32), String> {
     let mut cmd = ssh_command(host);
     cmd.arg(remote_cmd)
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let mut child = cmd
+    let child = cmd
         .spawn()
         .map_err(|e| format!("无法启动 ssh（请确认系统已安装 OpenSSH 客户端）: {}", e))?;
-    // 写 stdin 与读输出并行进行，避免双方都在等对方读管道而互相卡死
-    let writer = match (input, child.stdin.take()) {
-        (Some(data), Some(mut stdin)) => Some(tokio::spawn(async move {
-            use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(&data).await;
-            let _ = stdin.flush().await;
-            let _ = stdin.shutdown().await;
-        })),
-        _ => None,
-    };
     let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
         .map_err(|_| "连接超时".to_string())?
         .map_err(|e| format!("等待 ssh 结束失败: {}", e))?;
-    if let Some(w) = writer {
-        let _ = w.await;
-    }
     Ok((
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
@@ -1071,10 +1047,49 @@ pub async fn read_remote_file(uri: &str, max_bytes: u64) -> Result<Vec<u8>, Stri
     Ok(bytes)
 }
 
-/// 把附件写到远端 `<项目>/.tokenicode/tmp/<file_name>`，返回远端绝对路径（Windows 格式），
-/// 与本机 save_temp_file 的落盘位置约定一致。内容以 base64 文本经 stdin 传输（只含 ASCII，
-/// 不受远端控制台编码影响）；脚本自己 try/catch 把错误写成 JSON，避免看到 CLIXML。
+/// 附件上传每一步（建目录、scp）的超时；界面上另有取消按钮
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// scp 命令，连接参数与 ssh_command 一致（scp 的端口参数是大写 -P）
+fn scp_command(host: &RemoteHost) -> Command {
+    let mut cmd = Command::new("scp");
+    cmd.arg("-q")
+        .args(["-o", "BatchMode=yes"])
+        .args(["-o", "ConnectTimeout=15"])
+        .args(["-o", "StrictHostKeyChecking=accept-new"]);
+    if let Some(port) = host.port {
+        cmd.arg("-P").arg(port.to_string());
+    }
+    if let Some(identity) = &host.identity_file {
+        if !identity.trim().is_empty() {
+            cmd.arg("-i").arg(identity.trim());
+        }
+    }
+    cmd.creation_flags(0x08000000);
+    cmd
+}
+
+/// 粘贴、选择的附件只有内容没有本机文件：先写到本机临时目录，上传后删除
 pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) -> Result<String, String> {
+    let dir = std::env::temp_dir().join("tokenicode").join("upload");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建临时目录失败: {}", e))?;
+    let local = dir.join(file_name);
+    std::fs::write(&local, data).map_err(|e| format!("写入临时文件失败: {}", e))?;
+    let result = upload_remote_temp_file(cwd_uri, file_name, &local).await;
+    let _ = std::fs::remove_file(&local);
+    result
+}
+
+/// 把本机文件上传到远端 `<项目>/.tokenicode/tmp/<file_name>`，返回远端绝对路径（Windows 格式），
+/// 与本机 save_temp_file 的落盘位置约定一致。
+/// 分两步：先在远端建目录并算出目标路径（脚本自己 try/catch 把错误写成 JSON，避免看到 CLIXML），
+/// 再用 scp 传文件。不经 ssh 的标准输入传内容：Windows OpenSSH 上一次性命令的 stdin
+/// 时常收不到结束，小文件也会一直卡在「处理中」直到超时。
+pub async fn upload_remote_temp_file(
+    cwd_uri: &str,
+    file_name: &str,
+    local_path: &std::path::Path,
+) -> Result<String, String> {
     let (host_id, path) = parse_remote_uri(cwd_uri).ok_or("无效的远程路径")?;
     if path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
         return Err("远程路径含有不支持的字符".to_string());
@@ -1094,6 +1109,36 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
         return Err("文件名不合法".to_string());
     }
     let host = find_host(&host_id)?;
+    // 第一次上传时在远端建好目录并记下；之后直接 scp，只连一次。
+    // 目录被删导致 scp 失败时，清掉记录重建一次再传
+    let cached = remote_tmp_dirs().lock().unwrap().get(cwd_uri).cloned();
+    let tmp_dir = match &cached {
+        Some(dir) => dir.clone(),
+        None => prepare_remote_tmp_dir(&host, cwd_uri, &path).await?,
+    };
+    let remote_path = format!("{}\\{}", tmp_dir.trim_end_matches('\\'), safe_name);
+    match scp_upload(&host, local_path, &remote_path).await {
+        Err(_) if cached.is_some() => {
+            remote_tmp_dirs().lock().unwrap().remove(cwd_uri);
+            let tmp_dir = prepare_remote_tmp_dir(&host, cwd_uri, &path).await?;
+            let remote_path = format!("{}\\{}", tmp_dir.trim_end_matches('\\'), safe_name);
+            scp_upload(&host, local_path, &remote_path).await?;
+            Ok(remote_path)
+        }
+        result => result.map(|_| remote_path),
+    }
+}
+
+/// 已在远端建好的附件目录：远程项目 URI → 远端 `<项目>\.tokenicode\tmp` 绝对路径
+fn remote_tmp_dirs() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static DIRS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+        std::sync::OnceLock::new();
+    DIRS.get_or_init(Default::default)
+}
+
+/// 在远端建 `<项目>\.tokenicode\tmp`（并写 .gitignore），返回其绝对路径并记入 remote_tmp_dirs。
+/// 脚本自己 try/catch 把错误写成 JSON，避免看到 CLIXML
+async fn prepare_remote_tmp_dir(host: &RemoteHost, cwd_uri: &str, path: &str) -> Result<String, String> {
     let win_path = path.replace('/', "\\");
     let script = format!(
         "try {{ \
@@ -1103,29 +1148,14 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
            [System.IO.Directory]::CreateDirectory($tmp) | Out-Null; \
            $gi = Join-Path $base '.gitignore'; \
            if (-not [System.IO.File]::Exists($gi)) {{ [System.IO.File]::WriteAllText($gi, \"*`n\") }}; \
-           $p = Join-Path $tmp {name}; \
-           $b64 = [Console]::In.ReadLine(); \
-           [System.IO.File]::WriteAllBytes($p, [Convert]::FromBase64String($b64.Trim())); \
-           Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $true; path = $p }}) \
+           Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $true; path = $tmp }}) \
          }} catch {{ \
            Out-AsciiJson (ConvertTo-Json -Compress -InputObject @{{ ok = $false; error = $_.Exception.Message }}) \
          }}",
         dir = ps_quote(&win_path),
-        name = ps_quote(&safe_name),
     );
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    // 内容以一行 base64 加换行发送，远端读到换行即可，不等标准输入结束：
-    // 经 ssh 的管道输入有时传不过去 EOF，用 ReadToEnd 会一直等到超时（附件一直显示加载中）。
-    // 会话消息同样是逐行写入、从不关闭输入，这条路已经验证可用。
-    let mut input = STANDARD.encode(data).into_bytes();
-    input.push(b'\n');
-    let (stdout, stderr, code) = run_remote_with_input(
-        &host,
-        &powershell_command(&script),
-        Some(input),
-        Duration::from_secs(120),
-    )
-    .await?;
+    let (stdout, stderr, code) =
+        run_remote(host, &powershell_command(&script), UPLOAD_TIMEOUT).await?;
     let text = stdout.trim().trim_start_matches('\u{feff}');
     let resp: Value = serde_json::from_str(text).map_err(|_| {
         if stderr.trim().is_empty() {
@@ -1135,12 +1165,42 @@ pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) 
         }
     })?;
     match resp["path"].as_str() {
-        Some(p) if resp["ok"].as_bool() == Some(true) => Ok(p.to_string()),
+        Some(dir) if resp["ok"].as_bool() == Some(true) => {
+            remote_tmp_dirs().lock().unwrap().insert(cwd_uri.to_string(), dir.to_string());
+            Ok(dir.to_string())
+        }
         _ => Err(format!(
             "上传附件到远端失败: {}",
             resp["error"].as_str().unwrap_or("未知错误")
         )),
     }
+}
+
+/// 用 scp 把本机文件传到远端绝对路径（Windows 格式）
+async fn scp_upload(host: &RemoteHost, local_path: &std::path::Path, remote_path: &str) -> Result<(), String> {
+    // scp 的远端路径用正斜杠（F:/a/b.png），Windows OpenSSH 的 sftp 服务端可直接识别，空格、中文无需加引号
+    let target = format!("{}:{}", host.destination.trim(), remote_path.replace('\\', "/"));
+    let output = tokio::time::timeout(
+        UPLOAD_TIMEOUT,
+        scp_command(host)
+            .arg(local_path)
+            .arg(&target)
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| "上传附件到远端超时".to_string())?
+    .map_err(|e| format!("无法启动 scp（请确认系统已安装 OpenSSH 客户端）: {}", e))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&output.stderr);
+    Err(if err.trim().is_empty() {
+        format!("上传附件到远端失败（scp 退出码 {}）", output.status.code().unwrap_or(-1))
+    } else {
+        format!("上传附件到远端失败: {}", err.trim())
+    })
 }
 
 /// 回溯时恢复文件的兜底路径（会话进程已不在、无法走控制协议时）：在远端项目目录下执行

@@ -100,14 +100,35 @@ async function readFileAsBytes(file: File): Promise<Uint8Array> {
 export function useFileAttachments() {
   const [files, setFiles] = useState<FileAttachment[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  // 取消处理：epoch 每次取消加一，进行中的批次发现 epoch 变了就丢弃结果；
+  // active 记录未结束的批次数，全部结束（或取消）才收起「处理中」
+  const epochRef = useRef(0);
+  const activeRef = useRef(0);
+  const beginBatch = useCallback(() => {
+    activeRef.current += 1;
+    setIsProcessing(true);
+    return epochRef.current;
+  }, []);
+  const endBatch = useCallback((epoch: number) => {
+    if (epoch !== epochRef.current) return;
+    activeRef.current -= 1;
+    if (activeRef.current === 0) setIsProcessing(false);
+  }, []);
+  /** 取消正在处理的附件（远程上传卡住时用）；后台的上传进程最多到超时自行结束，结果被丢弃 */
+  const cancelProcessing = useCallback(() => {
+    epochRef.current += 1;
+    activeRef.current = 0;
+    setIsProcessing(false);
+  }, []);
 
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
-    setIsProcessing(true);
+    const epoch = beginBatch();
     try {
       const newFiles: FileAttachment[] = [];
       const fileArray = Array.from(fileList);
 
       for (const file of fileArray) {
+        if (epoch !== epochRef.current) return;
         try {
           // Generate thumbnail for images
           const preview = await generateThumbnail(file);
@@ -132,24 +153,27 @@ export function useFileAttachments() {
           });
         } catch (err) {
           console.error('Failed to add file:', file.name, err);
+          if (epoch !== epochRef.current) return;
           showToast(t('input.attachFailed').replace('{name}', file.name).replace('{error}', String(err)), 'error');
         }
       }
 
+      if (epoch !== epochRef.current) return;
       if (newFiles.length > 0) {
         setFiles((prev) => [...prev, ...newFiles]);
       }
     } finally {
-      setIsProcessing(false);
+      endBatch(epoch);
     }
-  }, []);
+  }, [beginBatch, endBatch]);
 
   /** Add files by their OS file paths (for Tauri native drag-drop) */
   const addFilePaths = useCallback(async (paths: string[]) => {
-    setIsProcessing(true);
+    const epoch = beginBatch();
     try {
       const newFiles: FileAttachment[] = [];
       for (const filePath of paths) {
+        if (epoch !== epochRef.current) return;
         try {
           const name = filePath.split(/[\\/]/).pop() || filePath;
           const mime = guessMime(name);
@@ -212,17 +236,19 @@ export function useFileAttachments() {
           });
         } catch (err) {
           console.error('Failed to add dropped file:', filePath, err);
+          if (epoch !== epochRef.current) return;
           const name = filePath.split(/[\\/]/).pop() || filePath;
           showToast(t('input.attachFailed').replace('{name}', name).replace('{error}', String(err)), 'error');
         }
       }
+      if (epoch !== epochRef.current) return;
       if (newFiles.length > 0) {
         setFiles((prev) => [...prev, ...newFiles]);
       }
     } finally {
-      setIsProcessing(false);
+      endBatch(epoch);
     }
-  }, []);
+  }, [beginBatch, endBatch]);
 
   // Listen for Tauri native drag-drop events (OS file drag into window)
   // Debounce guard: Tauri may fire onDragDropEvent multiple times per drop
@@ -325,5 +351,5 @@ export function useFileAttachments() {
     setFiles([]);
   }, []);
 
-  return { files, setFiles, isProcessing, addFiles, addFilePaths, removeFile, clearFiles };
+  return { files, setFiles, isProcessing, addFiles, addFilePaths, removeFile, clearFiles, cancelProcessing };
 }

@@ -597,12 +597,12 @@ pub(crate) async fn upload_temp_file_to_remote(src_path: String, cwd: String) ->
     if meta.len() > 50_000_000 {
         return Err(format!("文件太大（{} 字节）", meta.len()));
     }
-    let data = std::fs::read(&src_path).map_err(|e| format!("读取文件失败: {}", e))?;
-    let name = std::path::Path::new(&src_path)
+    let src = std::path::Path::new(&src_path);
+    let name = src
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "file".to_string());
-    commands::remote::save_remote_temp_file(&cwd, &unique_temp_name(&name), &data).await
+    commands::remote::upload_remote_temp_file(&cwd, &unique_temp_name(&name), src).await
 }
 
 #[cfg(test)]
