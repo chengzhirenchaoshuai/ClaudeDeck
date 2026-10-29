@@ -17,7 +17,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { bridge } from '../lib/tauri-bridge';
 import { releaseStreamListener } from '../lib/stream-listeners';
 import { parseTurns, type Turn } from '../lib/turns';
-import { resolveResumeAt, recordUuidOf } from '../lib/rewind-point';
+import { resolveResumeAt, resolveResumeAtForLatest, recordUuidOf } from '../lib/rewind-point';
 import { t } from '../lib/i18n';
 import { showToast } from '../components/shared/Toast';
 
@@ -129,14 +129,27 @@ export function useRewind() {
     // 回退对话前先算出 CLI 该续接到哪条消息：找不到就整体中止，不能悄悄丢掉全部上下文。
     // 必须在杀进程和改界面之前做，失败时什么都不会被改动。
     let resumeAt: string | null | undefined;
+    // 最后一轮刚发出时 CLI 可能还没回显记录 uuid（进程启动中、回显未到），
+    // 这时改为先结束进程，再按会话文件的末尾定位，见 resolveResumeAtForLatest
+    let locateLatestAfterKill: (() => Promise<string | null>) | undefined;
     const oldCliSessionId = state.sessionMeta.sessionId;
     if (action !== 'restore_code' && oldCliSessionId && !oldCliSessionId.startsWith('desk_')) {
       try {
         resumeAt = await resolveResumeAt(oldCliSessionId, recordUuidOf(turn));
       } catch (err) {
-        console.error('[useRewind] cannot locate rewind point:', err);
-        showToast(t('rewind.locateFailed'), 'error');
-        return;
+        const allTurns = parseTurns(state.messages);
+        const isLatest = allTurns[allTurns.length - 1]?.userMessageId === turn.userMessageId;
+        const prev = allTurns[allTurns.length - 2];
+        let prevUuid: string | null = null;
+        try {
+          prevUuid = prev ? recordUuidOf(prev) : null;
+        } catch { /* 上一轮也没有记录 uuid，无法兜底 */ }
+        if (!isLatest || (prev && !prevUuid)) {
+          console.error('[useRewind] cannot locate rewind point:', err);
+          showToast(t('rewind.locateFailed'), 'error');
+          return;
+        }
+        locateLatestAfterKill = () => resolveResumeAtForLatest(oldCliSessionId, prevUuid);
       }
     }
 
@@ -155,6 +168,18 @@ export function useRewind() {
       await killProcess();
     } catch (err) {
       console.warn('[useRewind] Failed to kill process:', err);
+    }
+
+    if (locateLatestAfterKill) {
+      try {
+        resumeAt = await locateLatestAfterKill();
+      } catch (err) {
+        console.error('[useRewind] cannot locate rewind point after kill:', err);
+        showToast(t('rewind.locateFailed'), 'error');
+        // 进程已结束、监听已释放：对话保持原样，只把标签页恢复成可继续输入的状态
+        resetSession({ keepSession: true });
+        return;
+      }
     }
 
     // Grab original text before truncating (or the edited replacement, if provided)
