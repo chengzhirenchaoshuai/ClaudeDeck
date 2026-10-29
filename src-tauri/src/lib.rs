@@ -560,6 +560,7 @@ pub fn run() {
             commands::files::read_file_content,
             commands::files::write_file_content,
             commands::files::copy_file,
+            commands::files::save_file_as,
             commands::files::rename_file,
             commands::files::delete_file,
             commands::files::create_directory,

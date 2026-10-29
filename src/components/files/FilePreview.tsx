@@ -29,6 +29,8 @@ import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
 import { tokenicodeTheme, tokenicodeHighlight } from '../../lib/codemirror-theme';
 import { useT } from '../../lib/i18n';
+import { save } from '@tauri-apps/plugin-dialog';
+import { showToast } from '../shared/Toast';
 
 /* ================================================================
    Helpers
@@ -269,6 +271,29 @@ export function FilePreview() {
     }).catch(() => {});
   }, [textToCopy]);
 
+  // 另存为：本机与远程文件都可用，省得再去资源管理器或远端目录里找；保存的是磁盘上的文件，不含未保存的编辑
+  const [isSavingAs, setIsSavingAs] = useState(false);
+  const handleSaveAs = useCallback(async () => {
+    if (!selectedFile) return;
+    const name = getFileName(selectedFile);
+    const dot = name.lastIndexOf('.');
+    const ext = dot > 0 ? name.slice(dot + 1) : '';
+    const dest = await save({
+      defaultPath: name,
+      filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined,
+    });
+    if (!dest) return;
+    setIsSavingAs(true);
+    try {
+      await bridge.saveFileAs(selectedFile, dest);
+      showToast(t('files.savedAs').replace('{path}', dest), 'success');
+    } catch (err) {
+      showToast(`${t('files.saveAsFailed')}: ${err}`, 'error');
+    } finally {
+      setIsSavingAs(false);
+    }
+  }, [selectedFile, t]);
+
   /* Mode tabs for the header */
   const modeTabs = useMemo(() => {
     if (isMarkdown) {
@@ -400,6 +425,21 @@ export function FilePreview() {
               )}
             </button>
           )}
+
+          {/* 另存为 */}
+          <button
+            onClick={handleSaveAs}
+            disabled={isSavingAs}
+            className="p-2 rounded-lg hover:bg-bg-tertiary
+              text-text-tertiary transition-smooth cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+            title={isSavingAs ? t('files.savingAs') : t('files.saveAs')}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 2v8M4.5 6.5L8 10l3.5-3.5" />
+              <path d="M2.5 11v1.5A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5V11" />
+            </svg>
+          </button>
 
           {/* Refresh button */}
           <button

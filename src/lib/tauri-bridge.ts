@@ -452,6 +452,10 @@ export const bridge = {
   writeFileContent: (path: string, content: string) =>
     invoke<void>('write_file_content', { path, content }),
 
+  /** 另存为：src 可以是本机路径或 ssh:// 远程路径，dest 为本机路径 */
+  saveFileAs: (src: string, dest: string) =>
+    invoke<void>('save_file_as', { src, dest }),
+
   copyFile: (src: string, dest: string) =>
     invoke<void>('copy_file', { src, dest }),
 

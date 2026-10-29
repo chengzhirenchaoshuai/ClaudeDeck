@@ -306,6 +306,22 @@ pub(crate) async fn copy_file(src: String, dest: String) -> Result<(), String> {
         .map_err(|e| format!("Cannot copy file: {}", e))
 }
 
+/// 另存为：把预览中的文件存到本机任意位置（目标路径来自保存对话框）。
+/// 远程文件经 ssh 读出原始字节再写入本机，本机文件直接复制。
+#[tauri::command]
+pub(crate) async fn save_file_as(src: String, dest: String) -> Result<(), String> {
+    reject_unsafe_path(&dest)?;
+    reject_remote_path(&dest)?;
+    if src.starts_with(commands::remote::REMOTE_SCHEME) {
+        let bytes = commands::remote::read_remote_file(&src, 100_000_000).await?;
+        return std::fs::write(&dest, bytes).map_err(|e| format!("保存失败: {}", e));
+    }
+    reject_unsafe_path(&src)?;
+    std::fs::copy(&src, &dest)
+        .map(|_| ())
+        .map_err(|e| format!("保存失败: {}", e))
+}
+
 #[tauri::command]
 pub(crate) async fn rename_file(src: String, dest: String) -> Result<(), String> {
     reject_unsafe_path(&src)?;
