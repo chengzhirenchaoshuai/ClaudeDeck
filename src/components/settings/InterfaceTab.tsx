@@ -90,12 +90,12 @@ export function InterfaceTab() {
   const activeMode: SkinMode = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
   const activeSkinId = skinForMode(activeMode === 'dark' ? darkSkin : lightSkin, activeMode).id;
 
-  // 选中某个方案：记到对应深浅；外观固定为另一种深浅时一并切换，让点击立即生效
+  // 选中某个方案：记到对应深浅，并把外观切到该方案的深浅，让点击立即生效
   const pickSkin = useCallback((skin: SkinDef) => {
     if (skin.mode === 'dark') setDarkSkin(skin.id);
     else setLightSkin(skin.id);
-    if (theme !== 'system' && theme !== skin.mode) setTheme(skin.mode);
-  }, [theme, setDarkSkin, setLightSkin, setTheme]);
+    setTheme(skin.mode);
+  }, [setDarkSkin, setLightSkin, setTheme]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, target: 'ai' | 'user') => {
     const file = e.target.files?.[0];
@@ -191,31 +191,8 @@ export function InterfaceTab() {
         />
       )}
 
-      {/* 外观 */}
-      <div>
-        <h3 className="text-[13px] font-medium text-text-primary mb-2">{t('settings.appearance')}</h3>
-        <div className="inline-flex rounded-lg border border-border-subtle overflow-hidden">
-          {(['light', 'dark', 'system'] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setTheme(m)}
-              className={`py-1.5 px-3 text-[13px] font-medium transition-smooth
-                border-r border-border-subtle last:border-r-0 whitespace-nowrap
-                ${theme === m
-                  ? 'bg-accent/10 text-accent'
-                  : 'text-text-muted hover:bg-bg-secondary'
-                }`}
-            >
-              {t(`settings.${m}`)}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1.5 text-[11px] text-text-tertiary">{t('settings.skinHint')}</p>
-      </div>
-
       {/* 浅色 / 深色主题方案 */}
       {(['light', 'dark'] as const).map((mode) => {
-        const selectedId = mode === 'dark' ? darkSkin : lightSkin;
         return (
           <div key={mode}>
             <h3 className="text-[13px] font-medium text-text-primary mb-3">
@@ -228,7 +205,7 @@ export function InterfaceTab() {
                   onClick={() => pickSkin(skin)}
                   title={t(`skin.${skin.id}`)}
                   className={`group relative rounded-xl p-2 transition-smooth text-left
-                    ${selectedId === skin.id
+                    ${activeSkinId === skin.id
                       ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-card bg-accent/[0.03]'
                       : 'hover:scale-[1.02] border border-border-subtle hover:border-black/10 dark:hover:border-white/10'
                     }`}

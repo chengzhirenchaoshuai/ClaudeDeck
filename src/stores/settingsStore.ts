@@ -232,13 +232,13 @@ interface SettingsState {
   clearCustomBg: () => void;
 }
 
-// --- Theme cycle order ---
-
-const themeCycle: Theme[] = ['light', 'dark', 'system'];
+// --- 浅色 / 深色互切；旧的「跟随系统」按系统当前深浅切到相反的一种 ---
 
 function nextTheme(current: Theme): Theme {
-  const idx = themeCycle.indexOf(current);
-  return themeCycle[(idx + 1) % themeCycle.length];
+  const dark = current === 'system'
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : current === 'dark';
+  return dark ? 'light' : 'dark';
 }
 
 // --- Store ---

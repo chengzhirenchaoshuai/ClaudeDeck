@@ -16,7 +16,8 @@ export type SkinId =
   | 'sky'
   // 深色
   | 'tokyo-night'
-  | 'dracula';
+  | 'dracula'
+  | 'terminal';
 
 export interface SkinDef {
   id: SkinId;
@@ -65,6 +66,11 @@ export const SKINS: SkinDef[] = [
   {
     id: 'dracula', mode: 'dark', flat: true,
     preview: { bg: '#282A36', sidebar: '#21222C', accent: '#BD93F9', text: '#F8F8F2', background: aurora('#282A36', '#FF79C6', '#8BE9FD') },
+  },
+  {
+    // 命令行控制台风，不带极光
+    id: 'terminal', mode: 'dark', flat: true,
+    preview: { bg: '#0C0C0C', sidebar: '#080808', accent: '#16C60C', text: '#CCCCCC' },
   },
 ];
 

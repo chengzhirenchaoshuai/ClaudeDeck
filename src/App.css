@@ -888,6 +888,73 @@ input, textarea, [contenteditable="true"],
   --color-icon-slash: #282A36;
 }
 
+/* 终端 —— 命令行控制台风：Windows Terminal Campbell 色板，纯黑底、荧光绿强调色、等宽字体、小圆角 */
+:root[data-skin="terminal"] {
+  --color-bg-primary: #0C0C0C;
+  --color-bg-secondary: #141414;
+  --color-bg-tertiary: #1F1F1F;
+  --color-bg-chat: #0C0C0C;
+  --color-bg-sidebar: #080808;
+  --color-bg-input: #080808;
+  --color-bg-user-msg: #13A10E;
+  --color-bg-assistant-msg: #0C0C0C;
+  --color-bg-tool: #111111;
+  --color-bg-thinking: #111111;
+  --color-bg-card: #111111;
+  --color-bg-nav-active: color-mix(in srgb, #16C60C 14%, transparent);
+  --color-text-primary: #CCCCCC;
+  --color-text-secondary: #B0B0B0;
+  --color-text-tertiary: #6A6A6A;
+  --color-text-inverse: #0C0C0C;
+  --color-text-muted: #8A8A8A;
+  --color-border: #2E2E2E;
+  --color-border-subtle: #222222;
+  --color-border-focus: #16C60C;
+  --color-accent: #16C60C;
+  --color-accent-light: #61D6D6;
+  --color-accent-hover: #13A10E;
+  --color-accent-glow: rgba(22, 198, 12, 0.14);
+  --color-success: #16C60C;
+  --color-error: #E74856;
+  --color-warning: #F9F1A5;
+  --color-gradient-start: #16C60C;
+  --color-gradient-mid: #13A10E;
+  --color-gradient-end: #61D6D6;
+  --color-syntax-keyword:  #B4009E;
+  --color-syntax-string:   #16C60C;
+  --color-syntax-number:   #F9F1A5;
+  --color-syntax-function: #3B78FF;
+  --color-syntax-comment:  #767676;
+  --color-syntax-type:     #61D6D6;
+  --color-syntax-builtin:  #61D6D6;
+  --color-syntax-delete:   #E74856;
+  --color-syntax-meta:     #C19C00;
+  --skin-body-background: #0C0C0C;
+  --skin-app-background: #0C0C0C;
+  --skin-border-strong: #2E2E2E;
+  --skin-border-soft: #2A2A2A;
+  --skin-dashed-border: transparent;
+  --skin-decor: "";
+  --skin-decor-color: transparent;
+  --skin-grid-line-a: transparent;
+  --skin-grid-line-b: transparent;
+  --skin-accent-gradient: linear-gradient(90deg, #16C60C 0%, #61D6D6 100%);
+  --skin-accent-border: rgba(22, 198, 12, 0.40);
+  --skin-hover-bg: #1A1A1A;
+  --skin-table-head: #141414;
+  --skin-resize-bg: #141414;
+  --skin-resize-line: #2E2E2E;
+  --skin-scrollbar: #3A3A3A;
+  --skin-accent-text: #16C60C;
+  --skin-warning-text: #F9F1A5;
+  --skin-success-text: #16C60C;
+  --shadow-sm: none;
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.7);
+  --shadow-glow: none;
+  --color-icon-slash: #0C0C0C;
+}
+
 
 .gradient-bg {
   position: relative;
@@ -1137,6 +1204,54 @@ button {
 .rounded-2xl,
 .rounded-\[20px\] {
   border-radius: 18px;
+}
+
+/* ---------------- 终端方案专属 ----------------
+   去掉极光、颗粒和按钮光晕，界面统一用等宽字体，圆角收小，像命令行控制台 */
+:root[data-skin="terminal"]:not([data-maximized]) {
+  --window-radius: 6px;
+}
+
+:root[data-skin="terminal"] body {
+  font-family: "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI", "Microsoft YaHei", monospace;
+}
+
+:root[data-skin="terminal"] .app-row > .bg-bg-chat,
+:root[data-skin="terminal"] .app-row > div > .bg-bg-sidebar {
+  background-image: none;
+}
+
+:root[data-skin="terminal"] .app-row > .bg-bg-chat .bg-bg-chat {
+  background-color: var(--color-bg-chat);
+  backdrop-filter: none;
+}
+
+:root[data-skin="terminal"] .bg-accent,
+:root[data-skin="terminal"] .bg-bg-user-msg {
+  box-shadow: none;
+}
+
+:root[data-skin="terminal"] h1.text-accent,
+:root[data-skin="terminal"] h2.text-accent {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+:root[data-skin="terminal"] .bg-bg-card,
+:root[data-skin="terminal"] .bg-bg-input {
+  box-shadow: none;
+}
+
+:root[data-skin="terminal"] .bg-bg-input:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: none;
+}
+
+:root[data-skin="terminal"] .rounded-lg,
+:root[data-skin="terminal"] .rounded-xl,
+:root[data-skin="terminal"] .rounded-2xl,
+:root[data-skin="terminal"] .rounded-\[20px\] {
+  border-radius: 4px;
 }
 
 .shadow-md,
