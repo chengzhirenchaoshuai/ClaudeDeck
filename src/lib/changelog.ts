@@ -18,6 +18,37 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.1',
+    date: '2026-10-29',
+    highlights: {
+      zh: ['项目可在本机隐藏；退出更快；提示建议刷新修复'],
+      en: ['Hide projects on this device; faster exit; prompt suggestion refresh fix'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: ['项目可在本机隐藏，之后新建的会话也一并隐藏，列表底部可临时显示'],
+          en: ['Projects can be hidden on this device, including sessions created later; show them from the bottom of the list'],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['退出时先隐藏窗口，再在后台结束 CLI 进程', '侧栏文字 Logo 改为 CDeck'],
+          en: ['On exit the window hides first while CLI processes shut down in the background', 'Sidebar wordmark is now CDeck'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['提示建议换到下一轮后，输入框仍显示上一轮的内容'],
+          en: ['The input kept showing the previous prompt suggestion after a new one arrived'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2026-10-28',
     highlights: {

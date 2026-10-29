@@ -3,6 +3,18 @@
 本项目为自用版本，基于 [TOKENICODE DeepSeek Alpha](https://github.com/mistydew/tokenicode-deepseek-alpha) v1.0.8 继续独立维护。
 1.0.0 之前的历史见上游 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)。
 
+## [1.5.1] - 2026-10-29
+
+### 新增
+- 项目可在本机隐藏（项目右键菜单「在本机隐藏」）：只存在本客户端，之后新建的会话也一并隐藏；列表底部可临时显示或取消隐藏
+
+### 调整
+- 退出时先隐藏窗口，再在后台有序结束 CLI 进程，关闭不再卡顿
+- 侧栏文字 Logo 改为 CDeck
+
+### 修复
+- 输入框占位文字不刷新：提示建议换到下一轮后仍显示上一轮的内容
+
 ## [1.5.0] - 2026-10-28
 
 ### 新增
