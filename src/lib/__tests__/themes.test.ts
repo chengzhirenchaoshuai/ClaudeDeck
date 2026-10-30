@@ -25,13 +25,15 @@ describe('themes', () => {
 
   it('id 不存在或深浅不符时退回默认方案', () => {
     expect(skinForMode('nope', 'light').id).toBe(DEFAULT_LIGHT_SKIN);
-    expect(skinForMode('dracula', 'light').id).toBe(DEFAULT_LIGHT_SKIN);
+    expect(skinForMode('mint-night', 'light').id).toBe(DEFAULT_LIGHT_SKIN);
     expect(skinForMode('sakura', 'dark').id).toBe(DEFAULT_DARK_SKIN);
     // 旧的「花园」已改为樱花
     expect(skinForMode('garden', 'light').id).toBe('sakura');
-    expect(skinForMode('dracula', 'dark').id).toBe('dracula');
+    expect(skinForMode('mint-night', 'dark').id).toBe('mint-night');
     // 已下线的方案
     expect(skinForMode('nord', 'dark').id).toBe(DEFAULT_DARK_SKIN);
+    expect(skinForMode('tokyo-night', 'dark').id).toBe(DEFAULT_DARK_SKIN);
+    expect(skinForMode('dracula', 'dark').id).toBe(DEFAULT_DARK_SKIN);
   });
 
   describe('migrateLegacySkin', () => {

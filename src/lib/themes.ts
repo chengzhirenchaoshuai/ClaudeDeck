@@ -15,8 +15,10 @@ export type SkinId =
   | 'orange'
   | 'sky'
   // 深色
-  | 'tokyo-night'
-  | 'dracula'
+  | 'sakura-night'
+  | 'mint-night'
+  | 'orange-night'
+  | 'sky-night'
   | 'terminal';
 
 export interface SkinDef {
@@ -60,22 +62,33 @@ export const SKINS: SkinDef[] = [
     preview: { bg: '#F9FCFF', sidebar: '#EDF6FD', accent: '#1E8FD6', text: '#15324A', background: aurora('#F9FCFF', '#7FD0FF', '#9EE6F0') },
   },
   {
-    id: 'tokyo-night', mode: 'dark', flat: true,
-    preview: { bg: '#1A1B26', sidebar: '#16161E', accent: '#7AA2F7', text: '#C0CAF5', background: aurora('#1A1B26', '#BB9AF7', '#2AC3DE') },
+    id: 'sakura-night', mode: 'dark', flat: false,
+    preview: {
+      bg: '#21151C', sidebar: '#1A1116', accent: '#BE3F71', text: '#F8E6ED',
+      background: 'radial-gradient(circle at 88% 12%, #BE3F71 0 18%, transparent 20%), linear-gradient(135deg, #21151C, #3D2732)',
+    },
   },
   {
-    id: 'dracula', mode: 'dark', flat: true,
-    preview: { bg: '#282A36', sidebar: '#21222C', accent: '#BD93F9', text: '#F8F8F2', background: aurora('#282A36', '#FF79C6', '#8BE9FD') },
+    id: 'mint-night', mode: 'dark', flat: true,
+    preview: { bg: '#121D18', sidebar: '#0E1612', accent: '#137D4D', text: '#E4F4EB', background: aurora('#121D18', '#34C38F', '#2AA5C4') },
+  },
+  {
+    id: 'orange-night', mode: 'dark', flat: true,
+    preview: { bg: '#1E1711', sidebar: '#17110C', accent: '#BD5A0B', text: '#F8EBDF', background: aurora('#1E1711', '#F08A3C', '#E0B040') },
+  },
+  {
+    id: 'sky-night', mode: 'dark', flat: true,
+    preview: { bg: '#101B26', sidebar: '#0C141C', accent: '#1673B5', text: '#E3F1FB', background: aurora('#101B26', '#38A8F0', '#3FC4D4') },
   },
   {
     // 命令行控制台风，不带极光
     id: 'terminal', mode: 'dark', flat: true,
-    preview: { bg: '#0C0C0C', sidebar: '#080808', accent: '#16C60C', text: '#CCCCCC' },
+    preview: { bg: '#0D110E', sidebar: '#0A0D0B', accent: '#1C7F45', text: '#D0DAD3' },
   },
 ];
 
 export const DEFAULT_LIGHT_SKIN: SkinId = 'sakura';
-export const DEFAULT_DARK_SKIN: SkinId = 'tokyo-night';
+export const DEFAULT_DARK_SKIN: SkinId = 'sakura-night';
 
 const SKIN_MAP = new Map<string, SkinDef>(SKINS.map((s) => [s.id, s]));
 

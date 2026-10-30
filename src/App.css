@@ -195,6 +195,15 @@ input, textarea, [contenteditable="true"],
   color: var(--color-accent);
 }
 
+/* 深色方案的 --color-accent 是给白字垫底的中等亮度色，作文字用时换成更亮的 */
+.dark .gradient-text {
+  color: var(--skin-accent-text);
+}
+
+.dark .prose {
+  --tw-prose-links: var(--skin-accent-text);
+}
+
 /* Pulse animation for streaming */
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
@@ -752,207 +761,352 @@ input, textarea, [contenteditable="true"],
 }
 
 /* ---------------- 深色方案 ----------------
+   前四套与浅色方案一一对应：色相、质感（水彩 / 极光）相同，明暗对调。
+   强调色取中等亮度，保证气泡和按钮上的白字可读；文字用的强调色走更亮的 --skin-accent-text。
    深色方案的 AI 头像底色是浅色（dark:bg-white），--color-icon-slash 取方案背景色 */
 
-/* Tokyo Night —— folke/tokyonight 的 night 色板 */
-:root[data-skin="tokyo-night"] {
-  --color-bg-primary: #1A1B26;
-  --color-bg-secondary: #16161E;
-  --color-bg-tertiary: #292E42;
-  --color-bg-chat: #1A1B26;
-  --color-bg-sidebar: #16161E;
-  --color-bg-input: #16161E;
-  --color-bg-user-msg: #7AA2F7;
-  --color-bg-assistant-msg: #1A1B26;
-  --color-bg-tool: #16161E;
-  --color-bg-thinking: #16161E;
-  --color-bg-card: #16161E;
-  --color-bg-nav-active: color-mix(in srgb, #7AA2F7 16%, transparent);
-  --color-text-primary: #C0CAF5;
-  --color-text-secondary: #A9B1D6;
-  --color-text-tertiary: #565F89;
-  --color-text-inverse: #1A1B26;
-  --color-text-muted: #737AA2;
-  --color-border: #3B4261;
-  --color-border-subtle: #292E42;
-  --color-border-focus: #7AA2F7;
-  --color-accent: #7AA2F7;
-  --color-accent-light: #7DCFFF;
-  --color-accent-hover: color-mix(in srgb, #7AA2F7 82%, #000000);
-  --color-accent-glow: rgba(122, 162, 247, 0.16);
-  --color-success: #9ECE6A;
-  --color-error: #F7768E;
-  --color-warning: #E0AF68;
-  --color-gradient-start: #BB9AF7;
-  --color-gradient-mid: #7AA2F7;
-  --color-gradient-end: #2AC3DE;
-  --color-syntax-keyword:  #BB9AF7;
-  --color-syntax-string:   #9ECE6A;
-  --color-syntax-number:   #FF9E64;
-  --color-syntax-function: #7AA2F7;
-  --color-syntax-comment:  #737AA2;
-  --color-syntax-type:     #2AC3DE;
-  --color-syntax-builtin:  #7DCFFF;
-  --color-syntax-delete:   #F7768E;
-  --color-syntax-meta:     #89DDFF;
-  --skin-body-background: #1A1B26;
-  --skin-app-background: #1A1B26;
-  --skin-border-strong: #3B4261;
-  --skin-border-soft: #3B4261;
+/* 夜樱 —— 樱花的深色版，水彩手绘风：酒红黑底、玫粉强调色、花瓣点缀 */
+:root[data-skin="sakura-night"] {
+  --color-bg-primary: #1F141A;
+  --color-bg-secondary: #2A1B23;
+  --color-bg-tertiary: #3D2732;
+  --color-bg-chat: #21151C;
+  --color-bg-sidebar: #1A1116;
+  --color-bg-input: rgba(46, 29, 38, 0.94);
+  --color-bg-user-msg: #BE3F71;
+  --color-bg-assistant-msg: rgba(33, 21, 28, 0.80);
+  --color-bg-tool: #281A21;
+  --color-bg-thinking: #2A1B23;
+  --color-bg-card: #281A21;
+  --color-bg-nav-active: rgba(238, 122, 162, 0.18);
+  --color-text-primary: #F8E6ED;
+  --color-text-secondary: #DDBCC9;
+  --color-text-tertiary: #A17D8C;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #BC97A6;
+  --color-border: #5A3648;
+  --color-border-subtle: rgba(238, 122, 162, 0.20);
+  --color-border-focus: #EE7AA2;
+  --color-accent: #BE3F71;
+  --color-accent-light: #F7A8C2;
+  --color-accent-hover: #A63260;
+  --color-accent-glow: rgba(238, 122, 162, 0.20);
+  --color-success: #7CC98A;
+  --color-error: #F0708A;
+  --color-warning: #EDAA5C;
+  --color-gradient-start: #F7A8C2;
+  --color-gradient-mid: #E0507F;
+  --color-gradient-end: #A63260;
+  --color-syntax-keyword: #F48FB4;
+  --color-syntax-string: #93D3A0;
+  --color-syntax-number: #F2B47A;
+  --color-syntax-function: #8FC1F0;
+  --color-syntax-comment: #94707F;
+  --color-syntax-type: #7FD3D3;
+  --color-syntax-builtin: #C7A6F2;
+  --color-syntax-delete: #F0708A;
+  --color-syntax-meta: #B5949F;
+  --skin-body-background:
+    radial-gradient(circle at 88% 10%, rgba(224, 80, 127, 0.20), transparent 24%),
+    radial-gradient(circle at 10% 92%, rgba(190, 63, 113, 0.18), transparent 26%),
+    linear-gradient(135deg, #21151C 0%, #1B1117 50%, #22161D 100%);
+  --skin-app-background:
+    radial-gradient(circle at 94% 6%, rgba(224, 80, 127, 0.22), transparent 24%),
+    radial-gradient(circle at 6% 100%, rgba(190, 63, 113, 0.20), transparent 24%),
+    linear-gradient(180deg, #21151C 0%, #1A1116 100%);
+  --skin-border-strong: rgba(238, 122, 162, 0.42);
+  --skin-border-soft: rgba(238, 122, 162, 0.22);
+  --skin-dashed-border: rgba(238, 122, 162, 0.24);
+  --skin-decor: "✿  ˚  ❀";
+  --skin-decor-color: rgba(238, 122, 162, 0.30);
+  --skin-grid-line-a: rgba(255, 255, 255, 0.018);
+  --skin-grid-line-b: rgba(255, 255, 255, 0.014);
+  --skin-accent-gradient: linear-gradient(180deg, #C5457A 0%, #B23867 100%);
+  --skin-accent-border: rgba(247, 168, 194, 0.28);
+  --skin-hover-bg: rgba(238, 122, 162, 0.16);
+  --skin-table-head: rgba(238, 122, 162, 0.12);
+  --skin-resize-bg: rgba(238, 122, 162, 0.10);
+  --skin-resize-line: rgba(238, 122, 162, 0.32);
+  --skin-scrollbar: rgba(238, 122, 162, 0.30);
+  --skin-accent-text: #F58FB3;
+  --skin-warning-text: #EDAA5C;
+  --skin-success-text: #7CC98A;
+  --shadow-sm: 0 2px 0 rgba(0, 0, 0, 0.18),
+    0 5px 16px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 3px 0 rgba(0, 0, 0, 0.20),
+    0 12px 26px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 4px 0 rgba(0, 0, 0, 0.22),
+    0 20px 42px rgba(0, 0, 0, 0.48);
+  --shadow-glow: 0 0 24px rgba(224, 80, 127, 0.24);
+  --color-icon-slash: #1F141A;
+}
+
+/* 墨绿 —— 薄荷的深色版：墨绿底色、翠绿强调色，极光为薄荷绿与天青 */
+:root[data-skin="mint-night"] {
+  --color-bg-primary: #111B16;
+  --color-bg-secondary: #18251E;
+  --color-bg-tertiary: #24362C;
+  --color-bg-chat: #121D18;
+  --color-bg-sidebar: #0E1612;
+  --color-bg-input: #18251E;
+  --color-bg-user-msg: #137D4D;
+  --color-bg-assistant-msg: #121D18;
+  --color-bg-tool: #16221C;
+  --color-bg-thinking: #16221C;
+  --color-bg-card: #16221C;
+  --color-bg-nav-active: color-mix(in srgb, #4CCB8C 16%, transparent);
+  --color-text-primary: #E4F4EB;
+  --color-text-secondary: #BBD6C7;
+  --color-text-tertiary: #7C9A8A;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #98B5A6;
+  --color-border: #2D4438;
+  --color-border-subtle: #213229;
+  --color-border-focus: #4CCB8C;
+  --color-accent: #137D4D;
+  --color-accent-light: #6FCF97;
+  --color-accent-hover: #0F6A41;
+  --color-accent-glow: rgba(76, 203, 140, 0.16);
+  --color-success: #5FCF8E;
+  --color-error: #F0707A;
+  --color-warning: #E0B050;
+  --color-gradient-start: #34C38F;
+  --color-gradient-mid: #1FA567;
+  --color-gradient-end: #2AA5C4;
+  --color-syntax-keyword: #B79CF2;
+  --color-syntax-string: #7FD6A0;
+  --color-syntax-number: #EDB46A;
+  --color-syntax-function: #72C2EC;
+  --color-syntax-comment: #6F8C7D;
+  --color-syntax-type: #62D0CC;
+  --color-syntax-builtin: #9BA8F0;
+  --color-syntax-delete: #F0707A;
+  --color-syntax-meta: #96AEA2;
+  --skin-body-background: #111B16;
+  --skin-app-background: #111B16;
+  --skin-border-strong: #2D4438;
+  --skin-border-soft: #2A3F34;
   --skin-dashed-border: transparent;
   --skin-decor: "";
   --skin-decor-color: transparent;
   --skin-grid-line-a: transparent;
   --skin-grid-line-b: transparent;
-  --skin-accent-gradient: linear-gradient(135deg, #7AA2F7 0%, #BB9AF7 100%);
-  --skin-accent-border: rgba(122, 162, 247, 0.40);
-  --skin-hover-bg: #292E42;
-  --skin-table-head: #16161E;
-  --skin-resize-bg: #16161E;
-  --skin-resize-line: #3B4261;
-  --skin-scrollbar: #414868;
-  --skin-accent-text: #7AA2F7;
-  --skin-warning-text: #E0AF68;
-  --skin-success-text: #9ECE6A;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --skin-accent-gradient: linear-gradient(135deg, #15854F 0%, #0F7A70 100%);
+  --skin-accent-border: rgba(111, 207, 151, 0.28);
+  --skin-hover-bg: #21322A;
+  --skin-table-head: #16221C;
+  --skin-resize-bg: #16221C;
+  --skin-resize-line: #2D4438;
+  --skin-scrollbar: #38544A;
+  --skin-accent-text: #5FD49B;
+  --skin-warning-text: #E0B050;
+  --skin-success-text: #5FCF8E;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.50);
   --shadow-glow: none;
-  --color-icon-slash: #1A1B26;
+  --color-icon-slash: #111B16;
 }
 
-/* Dracula —— Dracula 官方色板 */
-:root[data-skin="dracula"] {
-  --color-bg-primary: #282A36;
-  --color-bg-secondary: #21222C;
-  --color-bg-tertiary: #44475A;
-  --color-bg-chat: #282A36;
-  --color-bg-sidebar: #21222C;
-  --color-bg-input: #21222C;
-  --color-bg-user-msg: #BD93F9;
-  --color-bg-assistant-msg: #282A36;
-  --color-bg-tool: #21222C;
-  --color-bg-thinking: #21222C;
-  --color-bg-card: #21222C;
-  --color-bg-nav-active: color-mix(in srgb, #BD93F9 18%, transparent);
-  --color-text-primary: #F8F8F2;
-  --color-text-secondary: color-mix(in srgb, #F8F8F2 85%, #282A36);
-  --color-text-tertiary: #6272A4;
-  --color-text-inverse: #282A36;
-  --color-text-muted: color-mix(in srgb, #F8F8F2 65%, #282A36);
-  --color-border: #44475A;
-  --color-border-subtle: #191A21;
-  --color-border-focus: #BD93F9;
-  --color-accent: #BD93F9;
-  --color-accent-light: #FF79C6;
-  --color-accent-hover: color-mix(in srgb, #BD93F9 82%, #000000);
-  --color-accent-glow: rgba(189, 147, 249, 0.16);
-  --color-success: #50FA7B;
-  --color-error: #FF5555;
-  --color-warning: #FFB86C;
-  --color-gradient-start: #FF79C6;
-  --color-gradient-mid: #BD93F9;
-  --color-gradient-end: #8BE9FD;
-  --color-syntax-keyword:  #FF79C6;
-  --color-syntax-string:   #F1FA8C;
-  --color-syntax-number:   #BD93F9;
-  --color-syntax-function: #50FA7B;
-  --color-syntax-comment:  #6272A4;
-  --color-syntax-type:     #8BE9FD;
-  --color-syntax-builtin:  #8BE9FD;
-  --color-syntax-delete:   #FF5555;
-  --color-syntax-meta:     #FFB86C;
-  --skin-body-background: #282A36;
-  --skin-app-background: #282A36;
-  --skin-border-strong: #44475A;
-  --skin-border-soft: #44475A;
+/* 琥珀 —— 暖橙的深色版：焦褐底色、橙色强调色，极光为杏橙与暖黄 */
+:root[data-skin="orange-night"] {
+  --color-bg-primary: #1C1510;
+  --color-bg-secondary: #271D15;
+  --color-bg-tertiary: #3A2B1F;
+  --color-bg-chat: #1E1711;
+  --color-bg-sidebar: #17110C;
+  --color-bg-input: #271D15;
+  --color-bg-user-msg: #BD5A0B;
+  --color-bg-assistant-msg: #1E1711;
+  --color-bg-tool: #241B13;
+  --color-bg-thinking: #241B13;
+  --color-bg-card: #241B13;
+  --color-bg-nav-active: color-mix(in srgb, #FF9E4F 16%, transparent);
+  --color-text-primary: #F8EBDF;
+  --color-text-secondary: #DCC6B3;
+  --color-text-tertiary: #A08A78;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #BBA491;
+  --color-border: #4A3727;
+  --color-border-subtle: #35271C;
+  --color-border-focus: #FF9E4F;
+  --color-accent: #BD5A0B;
+  --color-accent-light: #FFB070;
+  --color-accent-hover: #A34C07;
+  --color-accent-glow: rgba(255, 158, 79, 0.16);
+  --color-success: #72C47E;
+  --color-error: #F0706E;
+  --color-warning: #EBB93F;
+  --color-gradient-start: #F08A3C;
+  --color-gradient-mid: #D9690F;
+  --color-gradient-end: #E0B040;
+  --color-syntax-keyword: #F08FB0;
+  --color-syntax-string: #A6D28A;
+  --color-syntax-number: #F5B066;
+  --color-syntax-function: #7FB4F0;
+  --color-syntax-comment: #8F7A68;
+  --color-syntax-type: #6CCFC9;
+  --color-syntax-builtin: #BFA2F0;
+  --color-syntax-delete: #F0706E;
+  --color-syntax-meta: #B59F8C;
+  --skin-body-background: #1C1510;
+  --skin-app-background: #1C1510;
+  --skin-border-strong: #4A3727;
+  --skin-border-soft: #453325;
   --skin-dashed-border: transparent;
   --skin-decor: "";
   --skin-decor-color: transparent;
   --skin-grid-line-a: transparent;
   --skin-grid-line-b: transparent;
-  --skin-accent-gradient: linear-gradient(135deg, #BD93F9 0%, #FF79C6 100%);
-  --skin-accent-border: rgba(189, 147, 249, 0.40);
-  --skin-hover-bg: #44475A;
-  --skin-table-head: #21222C;
-  --skin-resize-bg: #21222C;
-  --skin-resize-line: #44475A;
-  --skin-scrollbar: #44475A;
-  --skin-accent-text: #BD93F9;
-  --skin-warning-text: #FFB86C;
-  --skin-success-text: #50FA7B;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --skin-accent-gradient: linear-gradient(135deg, #B85808 0%, #AE4A08 100%);
+  --skin-accent-border: rgba(255, 176, 112, 0.28);
+  --skin-hover-bg: #35281C;
+  --skin-table-head: #241B13;
+  --skin-resize-bg: #241B13;
+  --skin-resize-line: #4A3727;
+  --skin-scrollbar: #5C4634;
+  --skin-accent-text: #FFA45C;
+  --skin-warning-text: #EBB93F;
+  --skin-success-text: #72C47E;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.50);
   --shadow-glow: none;
-  --color-icon-slash: #282A36;
+  --color-icon-slash: #1C1510;
 }
 
-/* 终端 —— 命令行控制台风：Windows Terminal Campbell 色板，纯黑底、荧光绿强调色、等宽字体、小圆角 */
+/* 深海 —— 天蓝的深色版：深蓝底色、天蓝强调色，极光为天蓝与浅青 */
+:root[data-skin="sky-night"] {
+  --color-bg-primary: #0F1923;
+  --color-bg-secondary: #16232F;
+  --color-bg-tertiary: #213444;
+  --color-bg-chat: #101B26;
+  --color-bg-sidebar: #0C141C;
+  --color-bg-input: #16232F;
+  --color-bg-user-msg: #1673B5;
+  --color-bg-assistant-msg: #101B26;
+  --color-bg-tool: #14202B;
+  --color-bg-thinking: #14202B;
+  --color-bg-card: #14202B;
+  --color-bg-nav-active: color-mix(in srgb, #5BB8F5 16%, transparent);
+  --color-text-primary: #E3F1FB;
+  --color-text-secondary: #B8D0E2;
+  --color-text-tertiary: #7A95AA;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #96B0C4;
+  --color-border: #2B4256;
+  --color-border-subtle: #1F3040;
+  --color-border-focus: #5BB8F5;
+  --color-accent: #1673B5;
+  --color-accent-light: #7CC4F2;
+  --color-accent-hover: #12629C;
+  --color-accent-glow: rgba(91, 184, 245, 0.16);
+  --color-success: #62CC8C;
+  --color-error: #F0707A;
+  --color-warning: #E5B547;
+  --color-gradient-start: #38A8F0;
+  --color-gradient-mid: #1E8FD6;
+  --color-gradient-end: #3FC4D4;
+  --color-syntax-keyword: #B79CF2;
+  --color-syntax-string: #84D6A0;
+  --color-syntax-number: #EDB46A;
+  --color-syntax-function: #6EC1F5;
+  --color-syntax-comment: #6C8598;
+  --color-syntax-type: #5ED0D0;
+  --color-syntax-builtin: #EE94CC;
+  --color-syntax-delete: #F0707A;
+  --color-syntax-meta: #93ABBD;
+  --skin-body-background: #0F1923;
+  --skin-app-background: #0F1923;
+  --skin-border-strong: #2B4256;
+  --skin-border-soft: #283D50;
+  --skin-dashed-border: transparent;
+  --skin-decor: "";
+  --skin-decor-color: transparent;
+  --skin-grid-line-a: transparent;
+  --skin-grid-line-b: transparent;
+  --skin-accent-gradient: linear-gradient(135deg, #1878BC 0%, #176DB2 100%);
+  --skin-accent-border: rgba(124, 196, 242, 0.28);
+  --skin-hover-bg: #1F3141;
+  --skin-table-head: #14202B;
+  --skin-resize-bg: #14202B;
+  --skin-resize-line: #2B4256;
+  --skin-scrollbar: #38546B;
+  --skin-accent-text: #62BCF7;
+  --skin-warning-text: #E5B547;
+  --skin-success-text: #62CC8C;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.50);
+  --shadow-glow: none;
+  --color-icon-slash: #0F1923;
+}
+
+/* 终端 —— 命令行控制台风：近黑微绿底、低饱和磷光绿、纯色按钮、等宽字体、小圆角 */
 :root[data-skin="terminal"] {
-  --color-bg-primary: #0C0C0C;
-  --color-bg-secondary: #141414;
-  --color-bg-tertiary: #1F1F1F;
-  --color-bg-chat: #0C0C0C;
-  --color-bg-sidebar: #080808;
-  --color-bg-input: #080808;
-  --color-bg-user-msg: #13A10E;
-  --color-bg-assistant-msg: #0C0C0C;
-  --color-bg-tool: #111111;
-  --color-bg-thinking: #111111;
-  --color-bg-card: #111111;
-  --color-bg-nav-active: color-mix(in srgb, #16C60C 14%, transparent);
-  --color-text-primary: #CCCCCC;
-  --color-text-secondary: #B0B0B0;
-  --color-text-tertiary: #6A6A6A;
-  --color-text-inverse: #0C0C0C;
-  --color-text-muted: #8A8A8A;
-  --color-border: #2E2E2E;
-  --color-border-subtle: #222222;
-  --color-border-focus: #16C60C;
-  --color-accent: #16C60C;
-  --color-accent-light: #61D6D6;
-  --color-accent-hover: #13A10E;
-  --color-accent-glow: rgba(22, 198, 12, 0.14);
-  --color-success: #16C60C;
-  --color-error: #E74856;
-  --color-warning: #F9F1A5;
-  --color-gradient-start: #16C60C;
-  --color-gradient-mid: #13A10E;
-  --color-gradient-end: #61D6D6;
-  --color-syntax-keyword:  #B4009E;
-  --color-syntax-string:   #16C60C;
-  --color-syntax-number:   #F9F1A5;
-  --color-syntax-function: #3B78FF;
-  --color-syntax-comment:  #767676;
-  --color-syntax-type:     #61D6D6;
-  --color-syntax-builtin:  #61D6D6;
-  --color-syntax-delete:   #E74856;
-  --color-syntax-meta:     #C19C00;
-  --skin-body-background: #0C0C0C;
-  --skin-app-background: #0C0C0C;
-  --skin-border-strong: #2E2E2E;
-  --skin-border-soft: #2A2A2A;
+  --color-bg-primary: #0D110E;
+  --color-bg-secondary: #151B17;
+  --color-bg-tertiary: #202821;
+  --color-bg-chat: #0D110E;
+  --color-bg-sidebar: #0A0D0B;
+  --color-bg-input: #111612;
+  --color-bg-user-msg: #1C7F45;
+  --color-bg-assistant-msg: #0D110E;
+  --color-bg-tool: #121713;
+  --color-bg-thinking: #121713;
+  --color-bg-card: #121713;
+  --color-bg-nav-active: color-mix(in srgb, #5FD38A 14%, transparent);
+  --color-text-primary: #D0DAD3;
+  --color-text-secondary: #AEB9B1;
+  --color-text-tertiary: #6E7A72;
+  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #8D9992;
+  --color-border: #2B342E;
+  --color-border-subtle: #1F2722;
+  --color-border-focus: #5FD38A;
+  --color-accent: #1C7F45;
+  --color-accent-light: #7FDDA0;
+  --color-accent-hover: #186B3B;
+  --color-accent-glow: rgba(95, 211, 138, 0.12);
+  --color-success: #5FD38A;
+  --color-error: #F0727C;
+  --color-warning: #E3C567;
+  --color-gradient-start: #5FD38A;
+  --color-gradient-mid: #1C7F45;
+  --color-gradient-end: #5FC9C9;
+  --color-syntax-keyword:  #C792C8;
+  --color-syntax-string:   #8FCF9F;
+  --color-syntax-number:   #DDBE82;
+  --color-syntax-function: #74B6F2;
+  --color-syntax-comment:  #6E7A72;
+  --color-syntax-type:     #62C8C8;
+  --color-syntax-builtin:  #A0C8E6;
+  --color-syntax-delete:   #F0727C;
+  --color-syntax-meta:     #B9A671;
+  --skin-body-background: #0D110E;
+  --skin-app-background: #0D110E;
+  --skin-border-strong: #2B342E;
+  --skin-border-soft: #262E29;
   --skin-dashed-border: transparent;
   --skin-decor: "";
   --skin-decor-color: transparent;
   --skin-grid-line-a: transparent;
   --skin-grid-line-b: transparent;
-  --skin-accent-gradient: linear-gradient(90deg, #16C60C 0%, #61D6D6 100%);
-  --skin-accent-border: rgba(22, 198, 12, 0.40);
-  --skin-hover-bg: #1A1A1A;
-  --skin-table-head: #141414;
-  --skin-resize-bg: #141414;
-  --skin-resize-line: #2E2E2E;
-  --skin-scrollbar: #3A3A3A;
-  --skin-accent-text: #16C60C;
-  --skin-warning-text: #F9F1A5;
-  --skin-success-text: #16C60C;
+  --skin-accent-gradient: linear-gradient(90deg, #1C7F45 0%, #1C7F45 100%);
+  --skin-accent-border: rgba(95, 211, 138, 0.30);
+  --skin-hover-bg: #1A211C;
+  --skin-table-head: #151B17;
+  --skin-resize-bg: #151B17;
+  --skin-resize-line: #2B342E;
+  --skin-scrollbar: #38423C;
+  --skin-accent-text: #5FD38A;
+  --skin-warning-text: #E3C567;
+  --skin-success-text: #5FD38A;
   --shadow-sm: none;
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.7);
   --shadow-glow: none;
-  --color-icon-slash: #0C0C0C;
+  --color-icon-slash: #0D110E;
 }
 
 
@@ -1091,6 +1245,15 @@ button {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.42);
 }
 
+/* 深色水彩方案（夜樱）：白色内描边和文字高光在深底上会发亮，压暗或去掉 */
+:root.dark button {
+  text-shadow: none;
+}
+
+:root.dark .gradient-bg {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
 /* 水彩方案的强调色较浅，白字加一层同色系阴影保证可读 */
 :root:not([data-flat]) .bg-accent,
 :root:not([data-flat]) .bg-bg-user-msg {
@@ -1185,6 +1348,13 @@ button {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+/* 深色方案的强调渐变偏暗，标题改用更亮的纯色 */
+:root.dark[data-flat] h1.text-accent,
+:root.dark[data-flat] h2.text-accent {
+  background: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 :root[data-flat] .bg-bg-card,
