@@ -678,22 +678,101 @@ pub(crate) async fn try_native_cli_update(china: bool) -> Result<String, String>
     Ok(version)
 }
 
+/// 更新 CLI 的方式，由当前使用的 CLI 决定，避免另外下载一份
+#[derive(Debug, PartialEq, Eq)]
+enum CliUpdateTarget {
+    /// 不归应用管理的安装（官方安装器、系统 npm 等）：运行它自己的 `claude update` 原地更新
+    SelfUpdate,
+    /// 应用下载的原生副本，或还没有 CLI：下载原生版本，失败时退回 npm
+    AppNative,
+    /// 应用自己的 npm 前缀：只用 npm 更新这一份
+    AppNpm,
+}
+
+fn cli_update_target(
+    current: Option<&str>,
+    app_native_dirs: &[std::path::PathBuf],
+    app_npm_dir: Option<&std::path::Path>,
+) -> CliUpdateTarget {
+    let norm = |p: &std::path::Path| p.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_lowercase();
+    let is_in = |path: &str, dir: &std::path::Path| {
+        path.starts_with(&format!("{}/", norm(dir)))
+    };
+    let Some(current) = current else { return CliUpdateTarget::AppNative };
+    let path = norm(std::path::Path::new(current));
+    if app_npm_dir.is_some_and(|d| is_in(&path, d)) {
+        return CliUpdateTarget::AppNpm;
+    }
+    if app_native_dirs.iter().any(|d| is_in(&path, d)) {
+        return CliUpdateTarget::AppNative;
+    }
+    CliUpdateTarget::SelfUpdate
+}
+
+/// 运行 CLI 自己的 update 子命令，返回更新后的版本号
+async fn run_cli_self_update(binary: &str) -> Result<String, String> {
+    let mut cmd = if claude_needs_cmd_wrapper(binary) {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(binary).arg("update");
+        c
+    } else {
+        let mut c = Command::new(binary);
+        c.arg("update");
+        c
+    };
+    cmd.env("PATH", build_enriched_path());
+    cmd.env_remove("CLAUDECODE");
+    cmd.stdin(Stdio::null());
+    cmd.creation_flags(0x08000000);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(600), cmd.output())
+        .await
+        .map_err(|_| format!("{} update 超时", binary))?
+        .map_err(|e| format!("无法运行 {} update: {}", binary, e))?;
+    if !output.status.success() {
+        let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout));
+        let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
+        let detail = if stderr.trim().is_empty() { stdout } else { stderr };
+        return Err(format!("{} update 失败: {}", binary, detail.trim()));
+    }
+    let check = check_claude_cli().await?;
+    Ok(check.version.unwrap_or_else(|| "unknown".to_string()))
+}
+
 /// Update the Claude CLI to the latest version.
-/// Strategy:
+/// 先按当前使用的 CLI 决定方式（见 CliUpdateTarget）。应用自己管理的副本：
 ///   Non-China: native binary from GCS → npm fallback
 ///   China: npm with multi-registry + version verification (npmmirror → npm official)
 #[tauri::command]
 pub(crate) async fn update_claude_cli(app: AppHandle) -> Result<String, String> {
+    let current = find_claude_binary();
+    let mut app_native_dirs: Vec<std::path::PathBuf> = cli_download_dir().into_iter().collect();
+    if let Some(home) = dirs::home_dir() {
+        app_native_dirs.push(home.join(".claude").join("local"));
+    }
+    let target = cli_update_target(
+        current.as_deref(),
+        &app_native_dirs,
+        npm_global_dir().ok().as_deref(),
+    );
+    eprintln!("[update_claude_cli] current: {:?}, target: {:?}", current, target);
+
+    if target == CliUpdateTarget::SelfUpdate {
+        // 失败时直接报错，不退回下载：否则又会多出一份 CLI
+        return run_cli_self_update(current.as_deref().unwrap_or_default()).await;
+    }
+
     let china = is_china_network().await;
 
     // Phase 1: Try native binary download (non-China only, GCS CDN)
-    match try_native_cli_update(china).await {
-        Ok(version) => {
-            eprintln!("[update_claude_cli] native binary update success: v{}", version);
-            return Ok(version);
-        }
-        Err(e) => {
-            eprintln!("[update_claude_cli] native binary skipped/failed: {}, using npm", e);
+    if target == CliUpdateTarget::AppNative {
+        match try_native_cli_update(china).await {
+            Ok(version) => {
+                eprintln!("[update_claude_cli] native binary update success: v{}", version);
+                return Ok(version);
+            }
+            Err(e) => {
+                eprintln!("[update_claude_cli] native binary skipped/failed: {}, using npm", e);
+            }
         }
     }
 

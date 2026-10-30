@@ -202,6 +202,12 @@ fn collect_tiered_dirs() -> Vec<TieredDir> {
     if let Some(home) = dirs::home_dir() {
         // ── Tier 0: Official ───────────────────────────────
 
+        // 官方安装器的位置，优先于应用自己下载的副本
+        push(
+            home.join(".local\\bin").to_string_lossy().to_string(),
+            CliSource::Official,
+        );
+
         for base_fn in [dirs::data_local_dir, dirs::data_dir] {
             if let Some(base) = base_fn() {
                 let vdir = base.join("Claude").join("claude-code");
@@ -561,6 +567,9 @@ fn classify_path(path: &str) -> CliSource {
     if path.contains(".claude/local") || path.contains(".claude\\local") {
         return CliSource::Official;
     }
+    if path.contains(".local/bin") || path.contains(".local\\bin") {
+        return CliSource::Official;
+    }
     if path.contains("Claude/claude-code") || path.contains("Claude\\claude-code") {
         return CliSource::Official;
     }
@@ -727,6 +736,10 @@ mod tests {
     fn test_classify_path_official() {
         assert_eq!(
             classify_path("/Users/test/.claude/local/claude"),
+            CliSource::Official
+        );
+        assert_eq!(
+            classify_path("C:\\Users\\test\\.local\\bin\\claude.exe"),
             CliSource::Official
         );
         assert_eq!(
