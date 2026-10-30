@@ -31,10 +31,12 @@ export const CHANGELOG: ChangelogEntry[] = [
           zh: [
             '消息发出后还没回应就终止时，撤回并放回输入框，附件和技能一并恢复',
             '远程项目添加附件时可以取消',
+            '支持 /login 命令，主页显示当前登录账号和订阅类型',
           ],
           en: [
             'Stopping before any reply takes the message back into the input, with its attachments and skills',
             'Remote attachment uploads can be canceled',
+            '/login command, and the home screen shows the signed-in account and plan',
           ],
         },
       },
@@ -45,11 +47,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             '深色主题改为夜樱、墨绿、琥珀、深海，与浅色一一对应；Tokyo Night、Dracula 已删除，选过的自动回退到夜樱',
             '「终端」主题调整配色',
             '消息里的文件名放不下时才截断',
+            '更新 CLI 时原地更新当前使用的那一份，官方安装优先',
           ],
           en: [
             'Dark themes are now four counterparts of the light ones; Tokyo Night and Dracula are removed and fall back to the new default',
             'Refined colors for the Terminal theme',
             'File names in messages are truncated only when they do not fit',
+            'Updating the CLI updates the copy in use in place, preferring the official install',
           ],
         },
       },
