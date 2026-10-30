@@ -43,3 +43,10 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 tempfile = "3"
+
+# 开发版减小调试信息，控制 target/debug 体积
+[profile.dev]
+debug = "line-tables-only"   # 自己的代码只保留行号，崩溃调用栈仍可定位
+
+[profile.dev.package."*"]
+debug = false                # 依赖不带调试信息
