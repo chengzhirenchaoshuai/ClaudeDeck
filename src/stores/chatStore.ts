@@ -1,3 +1,4 @@
+import type { UnifiedCommand } from '../lib/tauri-bridge';
 import { create } from 'zustand';
 import { useSessionStore } from './sessionStore';
 import { CLI_DEFAULT, useSettingsStore, mapSessionModeToPermissionMode, takeSkipModeSync } from './settingsStore';
@@ -29,6 +30,8 @@ export interface MessageAttachment {
   path: string;
   isImage: boolean;
   preview?: string;  // base64 data URL (thumbnail)
+  size?: number;
+  type?: string;
 }
 
 export type InteractionState = 'pending' | 'sending' | 'resolved' | 'failed' | 'expired';
@@ -78,6 +81,12 @@ export interface ChatMessage {
   subAgentDepth?: number;
   // CLI checkpoint UUID for file restoration (from --replay-user-messages)
   checkpointUuid?: string;
+  // 发送时的输入状态：刚发出还没回应就终止时，据此把消息原样放回输入框
+  sendContext?: {
+    rawInput: string;
+    prefixes: UnifiedCommand[];
+    pendingSummary?: string;
+  };
 }
 
 export interface SessionMeta {

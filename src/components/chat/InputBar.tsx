@@ -9,6 +9,7 @@ import { FileUploadChips } from './FileUploadChips';
 import { RewindPanel } from './RewindPanel';
 import { useFileAttachments } from '../../hooks/useFileAttachments';
 import { useRewind } from '../../hooks/useRewind';
+import { findWithdrawableTurn } from '../../lib/turns';
 import { useStreamProcessor } from '../../hooks/useStreamProcessor';
 import { flushStreamBuffer } from '../../hooks/stream/buffer';
 import { useAgentStore } from '../../stores/agentStore';
@@ -159,6 +160,8 @@ export function InputBar() {
   });
 
   const { files, setFiles, isProcessing, addFiles, removeFile, clearFiles, cancelProcessing } = useFileAttachments();
+  // 正在启动 CLI 的标签页：启动返回前 stdinId 还没写入，终止时靠这里标记取消
+  const spawningRef = useRef(new Map<string, { stdinId: string; cancelled: boolean }>());
 
   // 本地 files 与 store.pendingAttachments 双向同步（切换标签页时保留附件）。
   // 用 lastSyncedRef 记住最近一次同步过的数组：同一个值不再反向写回。
@@ -217,7 +220,7 @@ export function InputBar() {
 
   // Rewind state
   const [showRewindPanel, setShowRewindPanel] = useState(false);
-  const { showRewind, canRewind } = useRewind();
+  const { showRewind, canRewind, executeRewind } = useRewind();
   // lastEscTime removed — double-Esc rewind disabled (#36/#71)
 
   // Listen for rewind event from /rewind command
@@ -382,9 +385,10 @@ export function InputBar() {
 
     // Resolve selected and directly typed skills in the app. This avoids the
     // CLI's "command not found" path and supports multiple/custom directories.
+    const sentPrefixes = useCommandStore.getState().activePrefixes;
     const invocation = resolveSkillInvocation(
       text,
-      useCommandStore.getState().activePrefixes,
+      sentPrefixes,
       useCommandStore.getState().commands,
     );
     useCommandStore.getState().clearPrefixes();
@@ -537,8 +541,9 @@ export function InputBar() {
         content: rawInput.trim() || selectedSkills.map((skill) => skill.name).join(' '),
         timestamp: Date.now(),
         attachments: files.length > 0
-          ? files.map((f) => ({ name: f.name, path: f.path, isImage: f.isImage, preview: f.preview }))
+          ? files.map((f) => ({ name: f.name, path: f.path, isImage: f.isImage, preview: f.preview, size: f.size, type: f.type }))
           : undefined,
+        sendContext: { rawInput, prefixes: sentPrefixes, pendingSummary },
       };
       // 会话列表右侧的时间是最后发言时间：立即更新，不等磁盘写入或远程列表刷新
       useSessionStore.getState().touchSession(tabId, userBubble.timestamp);
@@ -595,6 +600,8 @@ export function InputBar() {
     });
 
     let sessionStdinId: string | undefined;
+    let spawn: { stdinId: string; cancelled: boolean } | undefined;
+    const spawnTabId = tabId;
 
     try {
       if (!workingDirectory) {
@@ -684,6 +691,8 @@ export function InputBar() {
         // event listeners BEFORE spawning the process.
         const preGeneratedId = `desk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         sessionStdinId = preGeneratedId;
+        spawn = { stdinId: preGeneratedId, cancelled: false };
+        spawningRef.current.set(spawnTabId, spawn);
 
         // Reset guards for the new session
         autoCompactFiredRef.current = false;
@@ -730,6 +739,14 @@ export function InputBar() {
         });
         console.log('[ClaudeDeck:session] started successfully', { sessionId: session.session_id, pid: session.pid, cli: session.cli_path });
 
+        // 启动期间用户点了终止：此时才拿得到进程，直接结束，不接管这个会话
+        if (spawn.cancelled) {
+          bridge.killSession(preGeneratedId).catch(() => {});
+          releaseStreamListener(preGeneratedId);
+          useSessionStore.getState().unregisterStdinTab(preGeneratedId);
+          return;
+        }
+
         // Store both: session_id for tracking, stdinId (preGeneratedId) for stdin communication
         const rewoundFromSessionId = getActiveTabState().sessionMeta.rewoundFromSessionId;
         setSessionMeta(tabId, {
@@ -775,6 +792,8 @@ export function InputBar() {
       if (sessionStdinId) {
         useSessionStore.getState().unregisterStdinTab(sessionStdinId);
       }
+      // 已被用户终止的启动，失败了也不用再报错
+      if (spawn?.cancelled) return;
       setSessionStatus(tabId, 'error');
       addMessage(tabId, {
         id: generateMessageId(),
@@ -783,6 +802,8 @@ export function InputBar() {
         content: `Error: ${err}`,
         timestamp: Date.now(),
       });
+    } finally {
+      if (spawn && spawningRef.current.get(spawnTabId) === spawn) spawningRef.current.delete(spawnTabId);
     }
   }, [hasActiveSession, workingDirectory, selectedModel, sessionMode, files, clearFiles]);
 
@@ -1226,12 +1247,54 @@ export function InputBar() {
             <button
               onClick={async () => {
                 const stopTabId = useSessionStore.getState().selectedSessionId;
-                const sid = getActiveTabState().sessionMeta.stdinId;
+                const tabState = getActiveTabState();
+                const sid = tabState.sessionMeta.stdinId;
+                const withdrawTurn = findWithdrawableTurn(tabState);
+                const lastMessage = tabState.messages[tabState.messages.length - 1];
+                if (stopTabId) {
+                  // 进程还在启动：拿到进程后由启动流程结束它
+                  const spawn = spawningRef.current.get(stopTabId);
+                  if (spawn) {
+                    spawn.cancelled = true;
+                    releaseStreamListener(spawn.stdinId);
+                  }
+                  useChatStore.getState().setSessionStatus(stopTabId, 'completed');
+                  useChatStore.getState().setActivityStatus(stopTabId, { phase: 'completed' });
+                }
+                // 刚发出还没有回应：撤回这条消息，连同附件、技能放回输入框，模型也不会记得它
+                if (stopTabId && withdrawTurn) {
+                  const ctx = lastMessage.sendContext;
+                  const restoredText = ctx?.rawInput ?? lastMessage.content;
+                  const draft = tabState.inputDraft.trim();
+                  const withdrawn = await executeRewind(
+                    withdrawTurn,
+                    'restore_conversation',
+                    draft ? `${restoredText}\n${draft}` : restoredText,
+                    true,
+                  );
+                  if (withdrawn) {
+                    if (ctx?.prefixes.length) {
+                      ctx.prefixes.forEach((cmd) => useCommandStore.getState().addPrefix(cmd));
+                    }
+                    if (ctx?.pendingSummary) {
+                      useChatStore.getState().setSessionMeta(stopTabId, { pendingSummary: ctx.pendingSummary });
+                    }
+                    const restoredFiles = (lastMessage.attachments ?? []).map((a, i) => ({
+                      id: `withdrawn_${lastMessage.id}_${i}`,
+                      name: a.name,
+                      path: a.path,
+                      size: a.size ?? 0,
+                      type: a.type ?? 'application/octet-stream',
+                      isImage: a.isImage,
+                      preview: a.preview,
+                    }));
+                    if (restoredFiles.length > 0) setFiles((prev) => [...restoredFiles, ...prev]);
+                    return;
+                  }
+                }
                 // Immediately clear stdinId so no further messages are sent to the dead process
                 if (stopTabId) {
                   useChatStore.getState().setSessionMeta(stopTabId, { stdinId: undefined });
-                  useChatStore.getState().setSessionStatus(stopTabId, 'completed');
-                  useChatStore.getState().setActivityStatus(stopTabId, { phase: 'completed' });
                 }
                 if (sid) {
                   await bridge.killSession(sid).catch(() => {});

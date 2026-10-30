@@ -58,6 +58,26 @@ export function parseTurns(messages: ChatMessage[]): Turn[] {
 }
 
 /**
+ * 刚发出、还没有任何回应的一轮（终止时可撤回，消息放回输入框）；不符合时返回 undefined。
+ * 运行中插入的消息不算：它的时间晚于本轮开始时间，前面的工作已经在进行。
+ */
+export function findWithdrawableTurn(tab: {
+  messages: ChatMessage[];
+  partialText: string;
+  partialThinking: string;
+  pendingUserMessages: unknown[];
+  sessionMeta: { turnStartTime?: number };
+}): Turn | undefined {
+  const last = tab.messages[tab.messages.length - 1];
+  if (!last || last.role !== 'user' || last.type !== 'text') return undefined;
+  if (tab.partialText || tab.partialThinking || tab.pendingUserMessages.length > 0) return undefined;
+  const turnStart = tab.sessionMeta.turnStartTime;
+  if (turnStart === undefined || last.timestamp > turnStart) return undefined;
+  const turns = parseTurns(tab.messages);
+  return turns[turns.length - 1];
+}
+
+/**
  * Find the index of the next user message starting from `fromIdx`.
  * Returns `messages.length` if no more user messages exist.
  */

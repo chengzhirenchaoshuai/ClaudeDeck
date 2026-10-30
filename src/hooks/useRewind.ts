@@ -114,16 +114,23 @@ export function useRewind() {
    * All actions restore the user's original input text to the input box.
    * overrideText：编辑已发送消息时，用修改后的文字替换原文回填到输入框
    * （其余回退到这条消息之前的逻辑完全一致）。
+   * silent：不提示回退成功（终止时撤回刚发出的消息）。
+   * 返回对话是否已回退到位；false 表示中止，对话保持原样。
    */
-  const executeRewind = useCallback(async (turn: Turn, action: RewindAction = 'restore_conversation', overrideText?: string) => {
+  const executeRewind = useCallback(async (
+    turn: Turn,
+    action: RewindAction = 'restore_conversation',
+    overrideText?: string,
+    silent = false,
+  ): Promise<boolean> => {
     const tid = useSessionStore.getState().selectedSessionId;
-    if (!tid) return;
+    if (!tid) return false;
     const state = getActiveTabState();
 
     // Guard: validate turn index
     if (turn.startMsgIdx < 0 || turn.startMsgIdx > state.messages.length) {
       console.error('[useRewind] Invalid turn startMsgIdx:', turn.startMsgIdx);
-      return;
+      return false;
     }
 
     // 回退对话前先算出 CLI 该续接到哪条消息：找不到就整体中止，不能悄悄丢掉全部上下文。
@@ -147,7 +154,7 @@ export function useRewind() {
         if (!isLatest || (prev && !prevUuid)) {
           console.error('[useRewind] cannot locate rewind point:', err);
           showToast(t('rewind.locateFailed'), 'error');
-          return;
+          return false;
         }
         locateLatestAfterKill = () => resolveResumeAtForLatest(oldCliSessionId, prevUuid);
       }
@@ -178,7 +185,7 @@ export function useRewind() {
         showToast(t('rewind.locateFailed'), 'error');
         // 进程已结束、监听已释放：对话保持原样，只把标签页恢复成可继续输入的状态
         resetSession({ keepSession: true });
-        return;
+        return false;
       }
     }
 
@@ -205,7 +212,7 @@ export function useRewind() {
           resetSession({ resumeAt });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
-          showToast(t('rewind.success').replace('{n}', String(turn.index)), 'success');
+          if (!silent) showToast(t('rewind.success').replace('{n}', String(turn.index)), 'success');
           break;
         }
 
@@ -268,10 +275,13 @@ export function useRewind() {
       console.error('[useRewind] executeRewind failed:', err);
       // Ensure we're in a recoverable state even if rewind failed
       resetSession({ keepSession: true });
+      saveToTab();
+      return false;
     }
 
     // Save to cache
     saveToTab();
+    return true;
   }, [killProcess, resetSession, saveToTab, turns.length]);
 
   return { turns, showRewind, canRewind, executeRewind };
