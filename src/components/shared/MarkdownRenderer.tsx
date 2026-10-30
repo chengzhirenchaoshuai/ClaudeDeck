@@ -418,15 +418,15 @@ function InlineFileChip({ path, line, base, copyText }: { path: string; line?: n
   if (missing) {
     return (
       <span
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5
+        className="inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 mx-0.5
           bg-bg-secondary border border-border-subtle rounded-md
           text-xs text-text-muted font-medium cursor-default
           align-baseline leading-normal whitespace-nowrap"
-        title={t('md.fileNotInProject')}
+        title={`${fileName}\n${t('md.fileNotInProject')}`}
         data-copy-text={copyText}
       >
         <span className="text-[10px] opacity-60">📄</span>
-        <span className="max-w-[180px] truncate">{fileName}</span>
+        <span className="min-w-0 truncate">{fileName}</span>
       </span>
     );
   }
@@ -446,7 +446,7 @@ function InlineFileChip({ path, line, base, copyText }: { path: string; line?: n
           bridge.revealInFinder(resolved);
         }
       }}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5
+      className="inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 mx-0.5
         bg-accent/10 border border-accent/25 rounded-md
         text-xs text-accent font-medium cursor-pointer
         hover:bg-accent/20 hover:border-accent/40
@@ -456,7 +456,7 @@ function InlineFileChip({ path, line, base, copyText }: { path: string; line?: n
       data-copy-text={copyText}
     >
       <span className="text-[10px]">📄</span>
-      <span className="max-w-[180px] truncate">{fileName}</span>
+      <span className="min-w-0 truncate">{fileName}</span>
     </button>
   );
 }

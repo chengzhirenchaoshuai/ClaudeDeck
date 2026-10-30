@@ -42,7 +42,11 @@ export function parseInlineFilePath(text: string): InlineFilePath | null {
     line = Number(lineMatch[1]);
     s = s.slice(0, lineMatch.index);
   }
-  if (!PATH_BODY.test(s.replace(/^[a-zA-Z]:/, ''))) return null;
+  // 带盘符的绝对路径允许空格（文件夹、文件名常带空格）；相对路径不放开，否则 cat a.md 这类命令会被当成文件。
+  // 排除 C:\python.exe run.py、C:\a.exe --x 这类命令行：空格前已出现扩展名，或空格后是选项
+  const body = s.replace(/^[a-zA-Z]:/, '');
+  const spaced = /^[a-zA-Z]:[\\/]/.test(s) && !/\.[a-zA-Z0-9]{1,10} |(^| )-/.test(body);
+  if (!PATH_BODY.test(spaced ? body.replace(/ /g, '_') : body)) return null;
   const name = s.split(/[\\/]/).pop() ?? '';
   const dot = name.lastIndexOf('.');
   if (dot <= 0 || dot === name.length - 1) return null;

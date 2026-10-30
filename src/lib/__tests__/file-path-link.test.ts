@@ -20,6 +20,18 @@ describe('parseInlineFilePath', () => {
     expect(parseInlineFilePath('/etc/sudoers.d')?.path).toBe('/etc/sudoers.d');
   });
 
+  it('带盘符的绝对路径可以含空格（例子取自真实会话）', () => {
+    const p = 'F:\\AI\\mywork\\GaussDB\\专题\\261028-cgroup挂载方式差异验证\\TPOPS agent线程进组-问题说明.md';
+    expect(parseInlineFilePath(p)?.path).toBe(p);
+    expect(parseInlineFilePath('C:/Program Files/app/a b.txt:12')).toEqual({ path: 'C:/Program Files/app/a b.txt', line: 12 });
+  });
+
+  it('含空格的命令行和相对路径不算文件', () => {
+    for (const s of ['C:\\python.exe run.py', 'C:\\tools\\a.exe --config b.json', 'C:\\a\\b -x c.txt', 'cat a.md', 'npm run x.ts', 'docs/a b.md', '/bin/sh run.sh']) {
+      expect(parseInlineFilePath(s), s).toBeNull();
+    }
+  });
+
   it('不把普通代码当成文件', () => {
     for (const s of ['1.2.3', 'v1.2', 'a.b', 'foo.bar()', 'npm run dev', 'https://x.com/a.js', 'react-dom/client', 'obj.method', 'x.unknownext/y.zz']) {
       expect(parseInlineFilePath(s), s).toBeNull();
