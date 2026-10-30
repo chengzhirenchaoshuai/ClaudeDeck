@@ -18,6 +18,51 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.3',
+    date: '2026-10-30',
+    highlights: {
+      zh: ['深色主题换成四套新配色；还没回应就终止时撤回消息；远程附件上传更稳'],
+      en: ['Four new dark themes; stopping before a reply takes the message back; more reliable remote attachments'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '消息发出后还没回应就终止时，撤回并放回输入框，附件和技能一并恢复',
+            '远程项目添加附件时可以取消',
+          ],
+          en: [
+            'Stopping before any reply takes the message back into the input, with its attachments and skills',
+            'Remote attachment uploads can be canceled',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '深色主题改为夜樱、墨绿、琥珀、深海，与浅色一一对应；Tokyo Night、Dracula 已删除，选过的自动回退到夜樱',
+            '「终端」主题调整配色',
+            '消息里的文件名放不下时才截断',
+          ],
+          en: [
+            'Dark themes are now four counterparts of the light ones; Tokyo Night and Dracula are removed and fall back to the new default',
+            'Refined colors for the Terminal theme',
+            'File names in messages are truncated only when they do not fit',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['远程项目附件偶发一直「处理中」', '进程启动期间点终止杀不掉进程', '含空格的文件路径不能点击'],
+          en: ['Remote attachments sometimes stayed in "processing"', 'Stopping during process startup did not end the process', 'File paths containing spaces could not be clicked'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.2',
     date: '2026-10-29',
     highlights: {
