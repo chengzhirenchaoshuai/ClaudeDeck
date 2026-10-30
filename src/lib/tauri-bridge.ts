@@ -237,6 +237,14 @@ export interface CleanupResult {
   skipped: { path: string; reason: string }[];
 }
 
+export interface ClaudeAccount {
+  loggedIn: boolean;
+  authMethod?: string | null;
+  email?: string | null;
+  orgName?: string | null;
+  subscriptionType?: string | null;
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   unknown?: boolean;
@@ -693,6 +701,10 @@ export const bridge = {
 
   openTerminalLogin: () =>
     invoke<void>('open_terminal_login'),
+
+  /** 本机 CLI 的登录信息（claude auth status） */
+  getClaudeAccount: () =>
+    invoke<ClaudeAccount>('get_claude_account'),
 
   /** Open a folder in the default terminal application (Windows Terminal on Windows) */
   openFolderInTerminal: (path: string) =>

@@ -5,7 +5,7 @@ import { useSettingsStore, MODEL_OPTIONS } from '../../stores/settingsStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useCommandStore } from '../../stores/commandStore';
 import { useProviderStore } from '../../stores/providerStore';
-import { bridge } from '../../lib/tauri-bridge';
+import { bridge, isRemotePath } from '../../lib/tauri-bridge';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { getContextUsedTokens } from '../../lib/context-usage';
 import { t } from '../../lib/i18n';
@@ -30,7 +30,7 @@ export async function executeImmediateCommand(
 
   // Helper: add a structured command feedback message
   const feedback = (
-    commandType: 'mode' | 'info' | 'help' | 'action' | 'error',
+    commandType: 'mode' | 'info' | 'help' | 'action' | 'error' | 'login',
     content: string,
     commandData?: Record<string, any>,
   ) => {
@@ -72,6 +72,20 @@ export async function executeImmediateCommand(
 
     case 'rewind':
       window.dispatchEvent(new CustomEvent('tokenicode:rewind'));
+      return;
+
+    case 'login':
+      // 远程项目的 CLI 在远端，本机登录对它无效
+      if (isRemotePath(useSettingsStore.getState().workingDirectory)) {
+        feedback('error', t('cmd.loginRemote'));
+        return;
+      }
+      try {
+        await bridge.openTerminalLogin();
+        feedback('login', t('cmd.loginOpened'));
+      } catch (err) {
+        feedback('error', `${t('cmd.loginFailed')}: ${err}`);
+      }
       return;
 
     // /compact is handled in the session stdin commands group below

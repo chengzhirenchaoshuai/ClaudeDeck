@@ -5,7 +5,7 @@ import { useSettingsStore, mapSessionModeToPermissionMode, getContextWindowForMo
 import { useSessionStore } from '../../stores/sessionStore';
 import { RemotePathInput } from '../layout/EnvSwitcher';
 import { useFileStore } from '../../stores/fileStore';
-import { bridge, onClaudeStream, onClaudeStderr } from '../../lib/tauri-bridge';
+import { bridge, isRemotePath, onClaudeStream, onClaudeStderr } from '../../lib/tauri-bridge';
 import { setStreamListener } from '../../lib/stream-listeners';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../../lib/i18n';
@@ -13,6 +13,7 @@ import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveThinking
 import { useProviderStore } from '../../stores/providerStore';
 import { SetupWizard } from '../setup/SetupWizard';
 import { AiAvatar } from '../shared/AiAvatar';
+import { AccountStatus } from '../shared/AccountStatus';
 import { APP_NAME } from '../../lib/edition';
 
 /** Start a new draft conversation for the given folder and pre-warm the CLI process */
@@ -172,9 +173,16 @@ export function WelcomeScreen() {
       <h2 className="text-xl font-semibold text-accent mb-2">
         {t('chat.welcome')}
       </h2>
-      <p className="text-sm text-text-muted max-w-sm leading-relaxed mb-6">
+      <p className="text-sm text-text-muted max-w-sm leading-relaxed mb-3">
         {t('welcome.subtitle')}
       </p>
+
+      {/* 远程环境用的是远端账号，这里只有本机的登录信息 */}
+      {!isRemoteEnv && (
+        <div className="mb-6">
+          <AccountStatus />
+        </div>
+      )}
 
       {isRemoteEnv && (
         <div className="w-full max-w-sm mb-8">
@@ -268,6 +276,11 @@ export function EmptyReadyState() {
         <p className="text-xs text-text-tertiary mt-2 truncate max-w-xs">
           {workingDirectory}
         </p>
+      )}
+      {!isRemotePath(workingDirectory) && (
+        <div className="mt-4">
+          <AccountStatus />
+        </div>
       )}
     </div>
   );

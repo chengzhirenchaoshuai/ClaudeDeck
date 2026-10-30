@@ -1303,7 +1303,54 @@ pub(crate) async fn check_claude_auth() -> Result<AuthStatus, String> {
     }
 }
 
-/// 打开一个 cmd.exe 终端窗口运行 `claude login`（带补全后的 PATH）。
+/// 本机 CLI 的登录信息（`claude auth status` 的输出）
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClaudeAccount {
+    logged_in: bool,
+    auth_method: Option<String>,
+    email: Option<String>,
+    org_name: Option<String>,
+    subscription_type: Option<String>,
+}
+
+fn parse_auth_status(stdout: &str) -> Option<ClaudeAccount> {
+    let value: Value = serde_json::from_str(stdout.trim()).ok()?;
+    let text = |key: &str| value[key].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+    Some(ClaudeAccount {
+        logged_in: value["loggedIn"].as_bool()?,
+        auth_method: text("authMethod"),
+        email: text("email"),
+        org_name: text("orgName"),
+        subscription_type: text("subscriptionType"),
+    })
+}
+
+/// 读取本机 CLI 的登录信息。没有登录时 CLI 可能以非零退出码结束，所以只看输出能否解析
+#[tauri::command]
+pub(crate) async fn get_claude_account() -> Result<ClaudeAccount, String> {
+    let binary = find_claude_binary().ok_or_else(|| "Claude CLI not found".to_string())?;
+    let mut cmd = if claude_needs_cmd_wrapper(&binary) {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(&binary);
+        c
+    } else {
+        Command::new(&binary)
+    };
+    cmd.args(["auth", "status"]);
+    cmd.env("PATH", build_enriched_path());
+    cmd.env_remove("CLAUDECODE");
+    cmd.stdin(Stdio::null());
+    cmd.creation_flags(0x08000000);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output())
+        .await
+        .map_err(|_| "claude auth status timed out".to_string())?
+        .map_err(|e| format!("Failed to run claude auth status: {}", e))?;
+    parse_auth_status(&String::from_utf8_lossy(&output.stdout))
+        .ok_or_else(|| "Unexpected claude auth status output".to_string())
+}
+
+/// 打开一个 cmd.exe 终端窗口运行 `claude auth login`（带补全后的 PATH）。
 #[tauri::command]
 pub(crate) async fn open_terminal_login() -> Result<(), String> {
     let claude_bin = find_claude_binary().ok_or_else(|| {
@@ -1312,14 +1359,69 @@ pub(crate) async fn open_terminal_login() -> Result<(), String> {
 
     // Spawn cmd /k with CREATE_NEW_CONSOLE to open a visible terminal window.
     // This avoids the `start` command's tricky quoting rules.
+    // 用 raw_arg：.arg() 会把引号转义成 \"，cmd 不认识，路径带空格时启动失败
     let enriched_path = build_enriched_path();
     std::process::Command::new("cmd")
-        .arg("/k")
-        .arg(format!("\"{}\" login", claude_bin))
+        .raw_arg(format!("/k \"\"{}\" auth login\"", claude_bin))
         .env("PATH", &enriched_path)
+        .env_remove("CLAUDECODE")
         .creation_flags(0x00000010) // CREATE_NEW_CONSOLE
         .spawn()
         .map_err(|e| format!("Failed to open terminal: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn target(current: Option<&str>) -> CliUpdateTarget {
+        let native = [
+            PathBuf::from("C:\\Users\\a\\.claude\\local"),
+            PathBuf::from("C:\\Users\\a\\AppData\\Roaming\\ClaudeDeck\\tools\\cli"),
+        ];
+        let npm = PathBuf::from("C:\\Users\\a\\AppData\\Roaming\\ClaudeDeck\\tools\\npm-global");
+        cli_update_target(current, &native, Some(&npm))
+    }
+
+    #[test]
+    fn 解析登录状态() {
+        let account = parse_auth_status(
+            r#"{"loggedIn":true,"authMethod":"claude.ai","email":"a@b.c","orgName":"","subscriptionType":"pro"}"#,
+        );
+        assert_eq!(account, Some(ClaudeAccount {
+            logged_in: true,
+            auth_method: Some("claude.ai".to_string()),
+            email: Some("a@b.c".to_string()),
+            org_name: None,
+            subscription_type: Some("pro".to_string()),
+        }));
+        assert!(!parse_auth_status(r#"{"loggedIn":false}"#).unwrap().logged_in);
+        assert_eq!(parse_auth_status("Not logged in"), None);
+        assert_eq!(parse_auth_status(r#"{"email":"a@b.c"}"#), None);
+    }
+
+    #[test]
+    fn 官方安装和系统_npm_都用自带更新() {
+        assert_eq!(target(Some("C:\\Users\\a\\.local\\bin\\claude.exe")), CliUpdateTarget::SelfUpdate);
+        assert_eq!(target(Some("C:\\Users\\a\\AppData\\Roaming\\npm\\claude.cmd")), CliUpdateTarget::SelfUpdate);
+    }
+
+    #[test]
+    fn 应用自己的副本只更新那一份() {
+        assert_eq!(target(Some("C:\\Users\\a\\.claude\\local\\claude.exe")), CliUpdateTarget::AppNative);
+        assert_eq!(target(Some("c:/users/a/.claude/local/claude.exe")), CliUpdateTarget::AppNative);
+        assert_eq!(
+            target(Some("C:\\Users\\a\\AppData\\Roaming\\ClaudeDeck\\tools\\npm-global\\claude.cmd")),
+            CliUpdateTarget::AppNpm,
+        );
+    }
+
+    #[test]
+    fn 没有_cli_时走应用下载_目录名前缀相同不算在内() {
+        assert_eq!(target(None), CliUpdateTarget::AppNative);
+        assert_eq!(target(Some("C:\\Users\\a\\.claude\\local2\\claude.exe")), CliUpdateTarget::SelfUpdate);
+    }
 }

@@ -615,6 +615,7 @@ pub fn run() {
             commands::cli_setup::start_claude_login,
             commands::cli_setup::check_claude_auth,
             commands::cli_setup::open_terminal_login,
+            commands::cli_setup::get_claude_account,
             commands::files::open_folder_in_terminal,
             commands::files::open_folder_in_terminal_admin,
             commands::sessions::load_custom_previews,

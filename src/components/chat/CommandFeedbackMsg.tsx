@@ -1,5 +1,7 @@
 // 斜杠命令结果的反馈卡片：模式切换、信息卡、帮助列表、操作反馈。
 import { useT } from '../../lib/i18n';
+import { useAccountStore } from '../../stores/accountStore';
+import { AccountStatus } from '../shared/AccountStatus';
 import { safeContent, type MessageProps } from './messageShared';
 
 /* ================================================================
@@ -10,6 +12,7 @@ export function CommandFeedbackMsg({ message }: MessageProps) {
   const t = useT();
   const cType = message.commandType;
   const data = message.commandData || {};
+  const refreshAccount = useAccountStore((s) => s.refresh);
 
   // --- Mode switch: animated pill with icon ---
   if (cType === 'mode') {
@@ -165,6 +168,25 @@ export function CommandFeedbackMsg({ message }: MessageProps) {
             <span className="text-sm">✓</span>
           )}
           <span>{safeContent(message.content)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // --- /login：已打开终端，显示当前账号，可手动重新检查 ---
+  if (cType === 'login') {
+    return (
+      <div className="flex justify-center my-1.5 animate-fade-in">
+        <div className="flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-lg
+          bg-bg-secondary/60 border border-border-subtle text-[11px] text-text-muted">
+          <span>{safeContent(message.content)}</span>
+          <AccountStatus />
+          <button
+            onClick={() => { refreshAccount(true); }}
+            className="text-accent hover:underline"
+          >
+            {t('account.refresh')}
+          </button>
         </div>
       </div>
     );
