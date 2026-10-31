@@ -9,6 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useFileStore } from '../../stores/fileStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { rehypeKatexFix } from '../../lib/rehype-katex-fix';
+import remarkCjkAutolink from '../../lib/remark-cjk-autolink';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
 import { KNOWN_FILE_EXTENSIONS, isBareFileMissing, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { useT } from '../../lib/i18n';
@@ -277,7 +278,8 @@ async function loadRemarkPlugins(): Promise<RemarkPlugin[]> {
       import('remark-math'),
     ])
       .then(([gfmMod, cjkMod, mathMod]) => {
-        cachedRemarkPlugins = [gfmMod.default, cjkMod.default, mathMod.default];
+        // remarkCjkAutolink 要在 remark-gfm 之后，截断它识别出的裸网址
+        cachedRemarkPlugins = [gfmMod.default, cjkMod.default, mathMod.default, remarkCjkAutolink];
         return cachedRemarkPlugins;
       })
       .catch((error) => {
