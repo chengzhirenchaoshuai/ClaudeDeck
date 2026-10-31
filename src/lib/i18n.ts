@@ -439,6 +439,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'activity.more': '等 {n} 项',
     'chat.tokenWarning': '上下文即将满载，建议 /compact',
     'chat.autoCompacting': '上下文接近上限，自动压缩中...',
+    'chat.usageLimitWaiting': '⏳ 额度已用完，将在 {time} 自动继续。在此之前发送消息会取消自动继续。',
+    'chat.usageLimitResumeManual': '额度已恢复，但会话进程已结束，请手动发送消息继续。',
+    'chat.usageLimitContinueText': '继续',
     'chat.stallWarning': '任务仍在运行中，复杂任务可能需要较长时间。若界面持续无任何变化，可停止后重试',
 
     // Agent panel
@@ -1413,6 +1416,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'activity.more': '+{n} more',
     'chat.tokenWarning': 'Context nearly full — try /compact',
     'chat.autoCompacting': 'Context near limit, auto-compacting...',
+    'chat.usageLimitWaiting': '⏳ Usage limit reached. Continuing automatically at {time}. Sending a message before then cancels it.',
+    'chat.usageLimitResumeManual': 'Usage limit has reset, but the session process has ended. Send a message to continue.',
+    'chat.usageLimitContinueText': 'Continue',
     'chat.stallWarning': 'Task still running — complex tasks may take a while. If no activity appears, try stopping and retrying',
 
     // Agent panel

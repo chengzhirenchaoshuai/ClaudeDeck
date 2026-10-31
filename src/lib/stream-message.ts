@@ -182,6 +182,8 @@ export interface IgnoredMessage extends StreamMessageBase {
 
 /** rate_limit_event.rate_limit_info：utilization 为 0~1 小数，resetsAt 为 Unix 秒 */
 export interface RateLimitInfo {
+  /** allowed / allowed_warning / rejected；rejected 表示额度已用完，resetsAt 为恢复时间 */
+  status?: string;
   rateLimitType?: string;
   utilization?: number;
   resetsAt?: number;

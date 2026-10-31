@@ -13,6 +13,7 @@ import { type StreamMessage, type ResultMessage } from '../../../lib/stream-mess
 import { resolveSessionContextWindow } from '../../../lib/context-window';
 import { persistTokenState } from '../token-state';
 import { commitPartialText } from '../buffer';
+import { scheduleUsageLimitResume, takeRejectedResetsAt } from '../usage-limit-resume';
 import { type StreamContext } from '../context';
 
 export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): void {
@@ -33,6 +34,8 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
   // Preserve delta-only replies before clearing streaming state.
   commitPartialText(tabId, msgStdinId);
   clearPartial();
+  // 本轮记下的额度恢复时间只属于本轮，先取出，免得留到下一轮
+  const limitResetsAt = takeRejectedResetsAt(tabId);
 
   if (retryAfterThinkingSignatureError(ctx, msg)) return;
   if (restartAfterExitPlanMode(ctx, msg)) return;
@@ -40,7 +43,19 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
   finalizeTurn(ctx, msg);
   maybeGenerateTitle(ctx, msg);
   if (maybeAutoCompact(ctx, msg)) return;
+  // 额度用完：排队的消息发出去也会被拒，留到自动继续之后由用户处理
+  if (maybeScheduleUsageLimitResume(ctx, msg, limitResetsAt)) return;
   sendNextPendingMessage(ctx);
+}
+
+/** 本轮因额度用完而结束：到恢复时间后自动继续。已安排时返回 true。 */
+function maybeScheduleUsageLimitResume(ctx: StreamContext, msg: ResultMessage, resetsAt?: number): boolean {
+  if (!resetsAt || resetsAt * 1000 <= Date.now()) return false;
+  // 被拒后本轮仍正常完成（例如切到了备用额度）时不处理
+  const limitHit = msg.is_error || msg.subtype !== 'success' || /hit your .*limit/i.test(msg.result ?? '');
+  if (!limitHit) return false;
+  scheduleUsageLimitResume(ctx.tabId, resetsAt);
+  return true;
 }
 
 /** 切换服务商/模型后旧思考块签名被拒：放弃 resume，用新进程重发。已接管时返回 true。 */

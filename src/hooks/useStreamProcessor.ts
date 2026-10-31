@@ -3,6 +3,7 @@ import { useChatStore, generateMessageId, type ChatMessage, type SessionStatus, 
 import { useSessionStore } from '../stores/sessionStore';
 import { useAgentStore, resolveAgentId, getAgentDepth } from '../stores/agentStore';
 import { useRateLimitsStore } from '../stores/rateLimitsStore';
+import { noteRateLimitEvent } from './stream/usage-limit-resume';
 import type { StreamMessage } from '../lib/stream-message';
 import { formatErrorForUser } from './stream/errors';
 import { persistClaudeUuid } from './stream/token-state';
@@ -199,7 +200,10 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         break;
       // 5h/7d 用量是账户级数据：任何会话（含后台标签页）收到都更新同一份全局缓存
       case 'rate_limit_event':
-        if (msg.rate_limit_info) useRateLimitsStore.getState().setFromEvent(msg.rate_limit_info);
+        if (msg.rate_limit_info) {
+          useRateLimitsStore.getState().setFromEvent(msg.rate_limit_info);
+          noteRateLimitEvent(tabId, msg.rate_limit_info);
+        }
         break;
       case 'result':
         handleResultMessage(ctx, msg);
