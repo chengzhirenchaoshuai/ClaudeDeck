@@ -18,6 +18,30 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.4',
+    date: '2026-10-31',
+    highlights: {
+      zh: ['额度用完后到恢复时间自动继续会话'],
+      en: ['Sessions continue automatically when the usage limit resets'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: ['额度用完时显示恢复时间，到点自动发送「继续」；等待期间自己发消息即取消'],
+          en: ['When the usage limit is hit, shows the reset time and sends "Continue" automatically; sending a message yourself cancels it'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['裸网址后面紧跟中文或全角标点时被一起识别成链接'],
+          en: ['Bare URLs followed by Chinese text or full-width punctuation swallowed the following text'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.3',
     date: '2026-10-30',
     highlights: {
