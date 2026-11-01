@@ -18,6 +18,38 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.5',
+    date: '2026-11-01',
+    highlights: {
+      zh: ['排队中的消息可以撤回编辑；上下键翻看已发消息；修复主目录下 CPU 占满'],
+      en: ['Queued messages can be taken back for editing; Up/Down browses sent messages; fixed high CPU in the home folder'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '运行中发出、还没被处理的消息可以撤回编辑',
+            '输入框按上下键翻看已发消息，空输入框按上键撤回排队中的消息',
+            '文件预览可在资源管理器中显示文件',
+          ],
+          en: [
+            'Messages sent while running can be taken back for editing until the CLI picks them up',
+            'Up/Down in the input browses sent messages; Up in an empty input takes back the last queued message',
+            'Reveal the previewed file in Explorer',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['在主目录发消息时反复扫描文件树导致 CPU 占满'],
+          en: ['Repeated file tree scans in the home folder pegged the CPU'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.4',
     date: '2026-10-31',
     highlights: {
