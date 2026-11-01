@@ -9,6 +9,9 @@ function hostOfPath(p: string): string | undefined {
 
 // Persist custom session names in localStorage as fast cache,
 // and sync to disk via Tauri backend for durability.
+/** 两次发消息间隔达到这个时长（毫秒）算开始新一轮使用，与后端 ACTIVE_GAP_MS 一致 */
+export const ACTIVE_GAP_MS = 30 * 60 * 1000;
+
 const CUSTOM_PREVIEWS_KEY = 'tokenicode_custom_previews';
 const LAST_SESSION_KEY = 'tokenicode_last_session';
 const STDIN_TO_TAB_KEY = 'tokenicode_stdinToTab';
@@ -398,7 +401,12 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   getTabForStdin: (stdinId) => get().stdinToTab[stdinId],
 
   touchSession: (id, at) => set((state) => {
-    const touch = (s: SessionListItem) => (s.id === id && (s.lastPromptAt ?? 0) < at ? { ...s, lastPromptAt: at } : s);
+    const touch = (s: SessionListItem) => {
+      if (s.id !== id || (s.lastPromptAt ?? 0) >= at) return s;
+      // 与上一条间隔不到 ACTIVE_GAP_MS 时还在同一轮使用，排序时间不变（规则同后端 last_prompt_at）
+      const sameRound = !!s.lastPromptAt && at - s.lastPromptAt < ACTIVE_GAP_MS;
+      return { ...s, lastPromptAt: at, activeSince: sameRound ? (s.activeSince || s.lastPromptAt) : at };
+    };
     if (!state.sessions.some((s) => s.id === id)) return {};
     return { sessions: state.sessions.map(touch), remoteSessions: state.remoteSessions.map(touch) };
   }),

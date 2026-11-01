@@ -324,18 +324,41 @@ fn prompt_time_of_line(line: &[u8]) -> Option<u64> {
     parse_iso_millis(record["timestamp"].as_str()?)
 }
 
-/// 最后一条用户消息时间的缓存：路径 → (已扫描到的位置（最后一个换行之后），结果)。
+/// 两次发消息间隔达到这个时长（毫秒），算开始新一轮使用
+pub(crate) const ACTIVE_GAP_MS: u64 = 30 * 60 * 1000;
+
+/// 会话里用户亲自发出的消息的时间（Unix 毫秒），用于会话列表排序
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PromptTimes {
+    /// 最后一条用户消息的时间
+    pub(crate) last: u64,
+    /// 这一轮连续使用开始的时间：往前数，第一条与上一条间隔达到 ACTIVE_GAP_MS 的用户消息。
+    /// 列表按它排序，连续使用期间位置不动，隔一段时间再回来才上移
+    pub(crate) active_since: u64,
+}
+
+impl PromptTimes {
+    /// 按时间顺序追加一条新的用户消息
+    fn push(prev: Option<PromptTimes>, t: u64) -> PromptTimes {
+        match prev {
+            Some(p) if t.saturating_sub(p.last) < ACTIVE_GAP_MS => PromptTimes { last: t.max(p.last), active_since: p.active_since },
+            _ => PromptTimes { last: t, active_since: t },
+        }
+    }
+}
+
+/// 用户消息时间的缓存：路径 → (已扫描到的位置（最后一个换行之后），结果)。
 /// JSONL 只追加写入，文件变大时只需扫描新追加的完整行。
-type LastPromptCache = std::sync::Mutex<HashMap<std::path::PathBuf, (u64, Option<u64>)>>;
+type LastPromptCache = std::sync::Mutex<HashMap<std::path::PathBuf, (u64, Option<PromptTimes>)>>;
 static LAST_PROMPT_CACHE: std::sync::LazyLock<LastPromptCache> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 /// 从后往前最多扫描的字节数：超大会话里找不到时放弃，退回按修改时间排序
 const LAST_PROMPT_SCAN_LIMIT: u64 = 32 * 1024 * 1024;
 
-/// 会话里最后一条用户消息的时间（Unix 毫秒），用于会话列表排序：
+/// 会话里最后一条用户消息的时间和这一轮使用开始的时间：
 /// 正在回复的会话会持续写入文件，按修改时间排序会让几个同时运行的会话来回跳动。
-pub(crate) fn last_prompt_at(path: &std::path::Path) -> Option<u64> {
+pub(crate) fn last_prompt_at(path: &std::path::Path) -> Option<PromptTimes> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
@@ -344,26 +367,27 @@ pub(crate) fn last_prompt_at(path: &std::path::Path) -> Option<u64> {
     let (scanned_to, result) = match cached {
         // 文件没有新的完整行
         Some((pos, value)) if pos == len => return value,
-        // 增量：只看新追加的部分，没有新的用户消息就沿用缓存
+        // 增量：按时间顺序处理新追加的部分
         Some((pos, value)) if pos < len => {
             file.seek(SeekFrom::Start(pos)).ok()?;
             let mut buf = Vec::new();
             file.read_to_end(&mut buf).ok()?;
             let Some(last_nl) = buf.iter().rposition(|b| *b == b'\n') else { return value };
-            let found = buf[..last_nl]
+            let result = buf[..last_nl]
                 .split(|b| *b == b'\n')
-                .rev()
-                .find_map(prompt_time_of_line);
-            (pos + last_nl as u64 + 1, found.or(value))
+                .filter_map(prompt_time_of_line)
+                .fold(value, |acc, t| Some(PromptTimes::push(acc, t)));
+            (pos + last_nl as u64 + 1, result)
         }
-        // 首次或文件被截断：从文件末尾按块往前找
+        // 首次或文件被截断：从文件末尾按块往前找，直到遇到间隔达到 ACTIVE_GAP_MS 的两条用户消息
         _ => {
             const CHUNK: u64 = 256 * 1024;
             let mut pos = len;
             let mut carry: Vec<u8> = Vec::new();
             let mut scanned_to = None;
-            let mut found = None;
-            while pos > 0 && len - pos < LAST_PROMPT_SCAN_LIMIT {
+            let mut found: Option<PromptTimes> = None;
+            let mut done = false;
+            while !done && pos > 0 && len - pos < LAST_PROMPT_SCAN_LIMIT {
                 let start = pos.saturating_sub(CHUNK);
                 file.seek(SeekFrom::Start(start)).ok()?;
                 let mut buf = vec![0u8; (pos - start) as usize];
@@ -378,9 +402,15 @@ pub(crate) fn last_prompt_at(path: &std::path::Path) -> Option<u64> {
                 let mut segs: Vec<&[u8]> = buf.split(|b| *b == b'\n').collect();
                 // 块开头可能是不完整的行，留到下一块拼接
                 let head = if start > 0 { segs.remove(0).to_vec() } else { Vec::new() };
-                found = segs.into_iter().rev().find_map(prompt_time_of_line);
-                if found.is_some() {
-                    break;
+                for t in segs.into_iter().rev().filter_map(prompt_time_of_line) {
+                    match found.as_mut() {
+                        None => found = Some(PromptTimes { last: t, active_since: t }),
+                        Some(p) if p.active_since.saturating_sub(t) < ACTIVE_GAP_MS => p.active_since = p.active_since.min(t),
+                        Some(_) => {
+                            done = true;
+                            break;
+                        }
+                    }
                 }
                 carry = head;
                 pos = start;
@@ -442,14 +472,17 @@ fn list_sessions_blocking() -> Result<Vec<Value>, String> {
                                 let project_dir = entry.file_name().to_string_lossy().to_string();
                                 let project_name = resolve_project_path(&cwd, &project_dir);
 
+                                let prompts = last_prompt_at(&path);
                                 sessions.push(serde_json::json!({
                                     "id": id,
                                     "path": path.to_string_lossy(),
                                     "project": project_name,
                                     "projectDir": project_dir,
                                     "modifiedAt": modified,
-                                    // 最后一条用户消息的时间，列表按它排序；找不到时为 0，前端退回修改时间
-                                    "lastPromptAt": last_prompt_at(&path).unwrap_or(0),
+                                    // 最后一条用户消息的时间、这一轮使用开始的时间（列表按后者排序）；
+                                    // 找不到时为 0，前端退回修改时间
+                                    "lastPromptAt": prompts.map_or(0, |p| p.last),
+                                    "activeSince": prompts.map_or(0, |p| p.active_since),
                                     "preview": preview,
                                 }));
                             }
@@ -1699,7 +1732,7 @@ mod terminal_session_tests {
 
 #[cfg(test)]
 mod last_prompt_tests {
-    use super::{is_user_prompt, last_prompt_at, parse_iso_millis};
+    use super::{is_user_prompt, last_prompt_at, parse_iso_millis, ACTIVE_GAP_MS};
     use serde_json::json;
     use std::io::Write;
 
@@ -1735,23 +1768,55 @@ mod last_prompt_tests {
         let prompt = |ts: &str| line(json!({ "type": "user", "timestamp": ts, "message": { "content": "问" } }));
         let reply = |ts: &str| line(json!({ "type": "assistant", "timestamp": ts, "message": { "content": "答" } }));
         std::fs::write(&path, prompt("1970-01-01T00:00:01Z") + &reply("1970-01-01T00:00:02Z")).unwrap();
-        assert_eq!(last_prompt_at(&path), Some(1000));
+        assert_eq!(last_prompt_at(&path).map(|p| p.last), Some(1000));
 
         // 追加回复和写到一半的行：结果不变
         let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
         write!(f, "{}{{\"type\":\"user\"", reply("1970-01-01T00:00:03Z")).unwrap();
-        assert_eq!(last_prompt_at(&path), Some(1000));
+        assert_eq!(last_prompt_at(&path).map(|p| p.last), Some(1000));
 
         // 补完那一行，并追加新的用户消息
         write!(f, ",\"timestamp\":\"1970-01-01T00:00:04Z\",\"message\":{{\"content\":\"半行\"}}}}\n").unwrap();
-        assert_eq!(last_prompt_at(&path), Some(4000));
+        assert_eq!(last_prompt_at(&path).map(|p| p.last), Some(4000));
         write!(f, "{}", prompt("1970-01-01T00:00:05Z")).unwrap();
-        assert_eq!(last_prompt_at(&path), Some(5000));
+        assert_eq!(last_prompt_at(&path).map(|p| p.last), Some(5000));
         drop(f);
 
         // 文件被截断后从头重新扫描
         std::fs::write(&path, prompt("1970-01-01T00:00:09Z")).unwrap();
-        assert_eq!(last_prompt_at(&path), Some(9000));
+        assert_eq!(last_prompt_at(&path).map(|p| p.last), Some(9000));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_active_since() {
+        let path = std::env::temp_dir().join(format!("claudedeck_active_{}.jsonl", std::process::id()));
+        // 秒数转成 ISO 时间
+        let iso = |secs: u64| {
+            let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
+            format!("1970-01-01T{:02}:{:02}:{:02}Z", h, m, s)
+        };
+        let prompt = |secs: u64| line(json!({ "type": "user", "timestamp": iso(secs), "message": { "content": "问" } }));
+        let reply = |secs: u64| line(json!({ "type": "assistant", "timestamp": iso(secs), "message": { "content": "答" } }));
+        let gap = ACTIVE_GAP_MS / 1000;
+
+        // 首次扫描：0 秒一轮；隔了 gap 之后 gap+10、gap+20 连续使用，这一轮从 gap+10 开始
+        let content = prompt(0) + &prompt(gap + 10) + &reply(gap + 15) + &prompt(gap + 20);
+        std::fs::write(&path, &content).unwrap();
+        let p = last_prompt_at(&path).unwrap();
+        assert_eq!((p.last, p.active_since), ((gap + 20) * 1000, (gap + 10) * 1000));
+
+        // 增量：间隔不到 gap 的新消息不改变 active_since
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        write!(f, "{}", prompt(2 * gap)).unwrap();
+        let p = last_prompt_at(&path).unwrap();
+        assert_eq!((p.last, p.active_since), (2 * gap * 1000, (gap + 10) * 1000));
+
+        // 增量：间隔达到 gap 后开始新一轮
+        write!(f, "{}", prompt(3 * gap)).unwrap();
+        let p = last_prompt_at(&path).unwrap();
+        assert_eq!((p.last, p.active_since), (3 * gap * 1000, 3 * gap * 1000));
+        drop(f);
         std::fs::remove_file(&path).ok();
     }
 }

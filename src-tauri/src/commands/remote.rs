@@ -273,6 +273,7 @@ if (Test-Path -LiteralPath $proj) {
       # 遇到几 MB 的工具结果行（截图）都极慢。只用正则匹配原始文本，
       # 键名后紧跟 ": 的模式不会匹配到消息正文里被转义的文字。
       $lastPrompt = [int64]0
+      $activeSince = [int64]0
       $tail = @()
       try {
         $fs = [IO.File]::Open($f.FullName, 'Open', 'Read', 'ReadWrite')
@@ -296,12 +297,14 @@ if (Test-Path -LiteralPath $proj) {
         if ($line -cmatch '"(toolUseResult|tool_use_id)":') { continue }
         if ($line -cmatch '"origin":\{"kind":"([^"]*)"' -and $Matches[1] -cne 'human') { continue }
         if ($line -cmatch '"(content|text)":"<local-command-std') { continue }
-        if ($line -cmatch '"timestamp":"([^"]+)"') {
-          try { $lastPrompt = [DateTimeOffset]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds() } catch {}
-        }
-        break
+        if ($line -cnotmatch '"timestamp":"([^"]+)"') { continue }
+        try { $t = [DateTimeOffset]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds() } catch { continue }
+        # 继续往前找这一轮使用开始的时间：遇到间隔达到 30 分钟（与本机 ACTIVE_GAP_MS 一致）的上一条为止
+        if ($lastPrompt -eq 0) { $lastPrompt = $t; $activeSince = $t }
+        elseif ($activeSince - $t -lt 1800000) { $activeSince = $t }
+        else { break }
       }
-      $out += [pscustomobject]@{ id = $f.BaseName; path = $f.FullName; projectDir = $d.Name; modifiedAt = $ms; lastPromptAt = $lastPrompt; cwd = $cwd; preview = $prev }
+      $out += [pscustomobject]@{ id = $f.BaseName; path = $f.FullName; projectDir = $d.Name; modifiedAt = $ms; lastPromptAt = $lastPrompt; activeSince = $activeSince; cwd = $cwd; preview = $prev }
     }
   }
 }
@@ -814,6 +817,7 @@ pub async fn list_remote_sessions(host_id: String) -> Result<Vec<Value>, String>
                 "projectDir": project_dir,
                 "modifiedAt": item["modifiedAt"].as_u64().unwrap_or(0),
                 "lastPromptAt": item["lastPromptAt"].as_u64().unwrap_or(0),
+                "activeSince": item["activeSince"].as_u64().unwrap_or(0),
                 "preview": item["preview"].as_str().unwrap_or(""),
                 "host": host_id,
             }))

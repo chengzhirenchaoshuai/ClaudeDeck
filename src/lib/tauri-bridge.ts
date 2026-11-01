@@ -50,8 +50,10 @@ export interface SessionListItem {
   project: string;
   projectDir: string;
   modifiedAt: number;
-  /** 最后一条用户亲自发出的消息的时间（Unix 毫秒），列表按它排序；未知时为 0 或缺失 */
+  /** 最后一条用户亲自发出的消息的时间（Unix 毫秒），列表右侧显示它；未知时为 0 或缺失 */
   lastPromptAt?: number;
+  /** 这一轮连续使用开始的时间（两次发消息间隔 30 分钟以上算新一轮），列表按它排序；未知时为 0 或缺失 */
+  activeSince?: number;
   preview: string;
   /** 远程会话所属主机 id；本机会话为空 */
   host?: string;

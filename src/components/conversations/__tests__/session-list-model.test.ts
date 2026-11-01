@@ -7,7 +7,8 @@ function item(id: string, modifiedAt: number, lastPromptAt?: number, project = '
 }
 
 describe('sessionSortTime', () => {
-  it('优先用最后发言时间，未知时退回修改时间', () => {
+  it('优先用这一轮开始的时间，其次最后发言时间，再退回修改时间', () => {
+    expect(sessionSortTime({ ...item('x', 900, 100), activeSince: 60 })).toBe(60);
     expect(sessionSortTime(item('a', 900, 100))).toBe(100);
     expect(sessionSortTime(item('b', 900, 0))).toBe(900);
     expect(sessionSortTime(item('c', 900))).toBe(900);
@@ -20,6 +21,12 @@ describe('groupByProject', () => {
     const sessions = [item('a', 100, 100), item('b', 200, 200), item('c', 999, 50)];
     const groups = groupByProject(sessions, new Set());
     expect(groups[0][1].map((s) => s.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('连续使用中的会话最后发言时间更新，但这一轮开始的时间不变，位置不动', () => {
+    // a 这一轮开始得更早，即使刚给它发过消息（最后发言时间最新）也排在 b 后面
+    const sessions = [{ ...item('a', 0, 500), activeSince: 100 }, { ...item('b', 0, 300), activeSince: 200 }];
+    expect(groupByProject(sessions, new Set())[0][1].map((s) => s.id)).toEqual(['b', 'a']);
   });
 
   it('项目之间也按最后发言时间排序', () => {
