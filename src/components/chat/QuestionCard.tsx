@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useFloatingMaxHeight } from '../../hooks/useFloatingMaxHeight';
 import { type ChatMessage, useChatStore, getActiveTabState } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { bridge } from '../../lib/tauri-bridge';
@@ -65,6 +66,9 @@ export function QuestionCard({ message, floating }: Props) {
   const [otherText, setOtherText] = useState<Record<number, string>>({});
   const [useOther, setUseOther] = useState<Record<number, boolean>>({});
   const [answeredMap, setAnsweredMap] = useState<Record<number, string>>({});
+  // 悬浮时可以收起，只留标题栏，方便查看后面的会话消息
+  const [collapsed, setCollapsed] = useState(false);
+  const floatingMaxHeight = useFloatingMaxHeight(!!floating);
 
   const currentQ = questions[currentIdx];
   const isFullyResolved = message.resolved;
@@ -225,12 +229,14 @@ export function QuestionCard({ message, floating }: Props) {
 
   return (
     <div className={`${floating ? '' : 'ml-13'} max-w-[50rem] animate-scale-in`}>
-      {/* 悬浮在消息区上方时限制高度，选项很多时在卡片内滚动 */}
+      {/* 悬浮在消息区上方时最高到消息区顶部：卡片头和底部按钮固定，选项很多时只有中间部分滚动 */}
       <div className={`rounded-2xl border border-accent/25 bg-bg-card shadow-[0_4px_18px_-6px_rgba(0,0,0,0.12)]
-        ${floating ? 'max-h-[65vh] overflow-y-auto' : 'overflow-hidden'}`}>
+        overflow-hidden ${floating ? 'flex flex-col max-h-[80vh]' : ''}`}
+        style={floating && floatingMaxHeight ? { maxHeight: floatingMaxHeight } : undefined}>
 
         {/* 卡片头：标题 + 问题分类 + 进度 */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle bg-accent/[0.04]">
+        <div className={`flex items-center gap-2 px-4 py-2.5 bg-accent/[0.04] flex-shrink-0
+          ${collapsed ? '' : 'border-b border-border-subtle'}`}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
             strokeLinecap="round" strokeLinejoin="round" className="text-accent flex-shrink-0">
             <circle cx="8" cy="8" r="6.25" />
@@ -256,9 +262,27 @@ export function QuestionCard({ message, floating }: Props) {
               </span>
             </div>
           )}
+          {floating && (
+            <button
+              onClick={() => setCollapsed((v) => !v)}
+              title={collapsed ? t('msg.questionExpand') : t('msg.questionCollapse')}
+              className={`${questions.length > 1 ? '' : 'ml-auto'} -mr-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md
+                text-[11px] text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary
+                transition-smooth cursor-pointer`}
+            >
+              {collapsed ? t('msg.questionExpand') : t('msg.questionCollapse')}
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                className={`transition-transform duration-150 ${collapsed ? 'rotate-180' : ''}`}>
+                <path d="M2.5 6.5L5 4l2.5 2.5" />
+              </svg>
+            </button>
+          )}
         </div>
 
-        <div className="px-4 pt-3.5 pb-3">
+        {!collapsed && (<>
+
+        <div className={`px-4 pt-3.5 pb-3 ${floating ? 'min-h-0 overflow-y-auto' : ''}`}>
           {/* 已回答的问题 */}
           {Object.keys(answeredMap).length > 0 && (
             <div className="mb-3 space-y-1">
@@ -372,7 +396,7 @@ export function QuestionCard({ message, floating }: Props) {
         </div>
 
         {/* 底部操作 */}
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-subtle bg-bg-secondary/30">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-subtle bg-bg-secondary/30 flex-shrink-0">
           {currentIdx > 0 && (
             <button
               onClick={handleBack}
@@ -415,6 +439,7 @@ export function QuestionCard({ message, floating }: Props) {
                 : isLast ? t('msg.questionSubmit') : t('msg.questionNext')}
           </button>
         </div>
+        </>)}
       </div>
     </div>
   );
