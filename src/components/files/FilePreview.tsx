@@ -426,6 +426,21 @@ export function FilePreview() {
             </button>
           )}
 
+          {/* 在资源管理器中定位：远程文件在远端，本机无法打开 */}
+          {!isRemoteFile && (
+            <button
+              onClick={() => bridge.revealInFinder(selectedFile).catch((err) => showToast(String(err), 'error'))}
+              className="p-2 rounded-lg hover:bg-bg-tertiary
+                text-text-tertiary transition-smooth cursor-pointer"
+              title={t('files.revealInFinder')}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+                stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+                <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z" />
+              </svg>
+            </button>
+          )}
+
           {/* 另存为 */}
           <button
             onClick={handleSaveAs}
