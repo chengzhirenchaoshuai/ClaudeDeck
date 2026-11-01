@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react';
 import { AppShell } from './components/layout/AppShell';
 import { Sidebar } from './components/layout/Sidebar';
 import { ChatPanel } from './components/chat/ChatPanel';
@@ -35,6 +35,7 @@ import {
 } from './lib/context-usage';
 import { skinForMode } from './lib/themes';
 import { resolveProjectPath } from './components/conversations/session-list-model';
+import { isHomeDirectory } from './lib/home-dir';
 import './App.css';
 
 // 设置面板、用量统计打开时才加载
@@ -120,8 +121,6 @@ function App() {
   const refreshTree = useFileStore((s) => s.refreshTree);
   const markFileChanged = useFileStore((s) => s.markFileChanged);
   const prevDirRef = useRef<string | null>(null);
-  const homeDirRef = useRef<string>('');
-  const [homeDirReady, setHomeDirReady] = useState(false);
 
   const t = useT();
 
@@ -376,7 +375,6 @@ function App() {
   useEffect(() => {
     useSessionStore.getState().loadCustomPreviewsFromDisk();
     useProviderStore.getState().load();
-    bridge.getHomeDir().then((dir) => { homeDirRef.current = dir; setHomeDirReady(true); }).catch(() => setHomeDirReady(true));
     // Notification permission is requested lazily on first need (see useStreamProcessor.ts)
   }, []);
 
@@ -510,14 +508,6 @@ function App() {
   useEffect(() => {
     if (!workingDirectory) return;
 
-    // Never watch the user's home directory — it has too many system file changes
-    const normalizedHome = homeDirRef.current.replace(/\\/g, '/').replace(/\/$/, '');
-    const normalizedWorkdir = workingDirectory.replace(/\\/g, '/').replace(/\/$/, '');
-    if (normalizedWorkdir === normalizedHome) {
-      console.log('[ClaudeDeck] Skipping file watch on home directory:', workingDirectory);
-      return;
-    }
-
     // 远程项目（ssh://）：经 ssh 读取文件树。远端没有文件监听，只在切换时加载一次，
     // 之后在会话回合结束时刷新（见下方 effect）或由用户手动刷新
     if (isRemotePath(workingDirectory)) {
@@ -531,14 +521,21 @@ function App() {
     }
     prevDirRef.current = workingDirectory;
 
-    // Load tree and start watching
+    // loadTree 自己会跳过主目录；监听要等确认不是主目录后再开始（主目录系统文件变化太频繁）
     loadTree(workingDirectory);
-    bridge.watchDirectory(workingDirectory).catch(console.error);
+    let cancelled = false;
+    let watching = false;
+    isHomeDirectory(workingDirectory).then((isHome) => {
+      if (cancelled || isHome) return;
+      watching = true;
+      bridge.watchDirectory(workingDirectory).catch(console.error);
+    });
 
     return () => {
-      bridge.unwatchDirectory(workingDirectory).catch(() => {});
+      cancelled = true;
+      if (watching) bridge.unwatchDirectory(workingDirectory).catch(() => {});
     };
-  }, [workingDirectory, homeDirReady]);
+  }, [workingDirectory]);
 
   // 远程项目没有文件监听：会话回合结束（running → 非 running）时刷新一次文件树，反映 claude 刚改动的文件
   const activeSessionStatus = useActiveTab((t) => t.sessionStatus);

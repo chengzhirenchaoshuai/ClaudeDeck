@@ -108,8 +108,13 @@ pub(crate) async fn read_file_tree(path: String, depth: Option<u32>) -> Result<V
     if !root.exists() {
         return Err("Directory does not exist".to_string());
     }
-    Ok(read_dir_recursive(root, 0, max_depth))
+    let mut budget = MAX_TREE_ENTRIES;
+    Ok(read_dir_recursive(root, 0, max_depth, &mut budget))
 }
+
+/// 文件树最多返回的条目数。超大目录（例如误选了盘符根目录）全量遍历要几十秒、
+/// 传给前端的数据有几十 MB，达到上限后不再读取，没读到的目录显示为空
+const MAX_TREE_ENTRIES: usize = 20_000;
 
 /// 远端读回来的节点转成 FileNode，同一层内目录在前、名称小写比较，与本机 read_dir_recursive 的顺序一致
 fn nodes_from_remote(value: &Value) -> Vec<FileNode> {
@@ -135,27 +140,32 @@ fn nodes_from_remote(value: &Value) -> Vec<FileNode> {
     nodes
 }
 
-pub(crate) fn read_dir_recursive(dir: &std::path::Path, current_depth: u32, max_depth: u32) -> Vec<FileNode> {
+pub(crate) fn read_dir_recursive(
+    dir: &std::path::Path,
+    current_depth: u32,
+    max_depth: u32,
+    budget: &mut usize,
+) -> Vec<FileNode> {
     let mut nodes = vec![];
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return nodes,
     };
 
-    let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by(|a, b| {
-        let a_dir = a.path().is_dir();
-        let b_dir = b.path().is_dir();
-        b_dir.cmp(&a_dir).then_with(|| {
-            a.file_name()
-                .to_string_lossy()
-                .to_lowercase()
-                .cmp(&b.file_name().to_string_lossy().to_lowercase())
+    // 每个条目只判断一次是否为目录（is_dir 要读一次文件属性，排序比较里反复调用很慢）
+    let mut entries: Vec<_> = entries
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            let is_dir = path.is_dir();
+            (entry.file_name().to_string_lossy().to_string(), path, is_dir)
         })
+        .collect();
+    entries.sort_by(|(a_name, _, a_dir), (b_name, _, b_dir)| {
+        b_dir.cmp(a_dir).then_with(|| a_name.to_lowercase().cmp(&b_name.to_lowercase()))
     });
 
-    for entry in entries {
-        let name = entry.file_name().to_string_lossy().to_string();
+    for (name, path, is_dir) in entries {
         // Skip specific ignored dirs (but show dotfiles like .claude, .github, .vscode)
         if name == "node_modules"
             || name == "target"
@@ -178,10 +188,13 @@ pub(crate) fn read_dir_recursive(dir: &std::path::Path, current_depth: u32, max_
             continue;
         }
 
-        let path = entry.path();
-        let is_dir = path.is_dir();
+        if *budget == 0 {
+            break;
+        }
+        *budget -= 1;
+
         let children = if is_dir && current_depth < max_depth {
-            Some(read_dir_recursive(&path, current_depth + 1, max_depth))
+            Some(read_dir_recursive(&path, current_depth + 1, max_depth, budget))
         } else if is_dir {
             Some(vec![]) // Placeholder for unexpanded dirs
         } else {
@@ -354,11 +367,11 @@ pub(crate) async fn watch_directory(
     use std::sync::Mutex;
     use std::time::Duration;
 
-    // Stop existing watcher for this path if any
-    {
-        let mut watchers = state.watchers.lock().await;
-        watchers.remove(&path);
-    }
+    // Stop existing watcher for this path if any.
+    // 锁一直持有到新 watcher 存入表中：否则同一路径的 unwatch 可能在中途执行，什么也删不掉，
+    // 随后存入的 watcher 就再也没有人停止
+    let mut watchers = state.watchers.lock().await;
+    watchers.remove(&path);
 
     // Directories whose changes are noise for the UI (high-frequency writes by CLI, git, etc.)
     const IGNORED_SEGMENTS: &[&str] = &[
@@ -493,7 +506,6 @@ pub(crate) async fn watch_directory(
         .watch(std::path::Path::new(&path), RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch: {}", e))?;
 
-    let mut watchers = state.watchers.lock().await;
     watchers.insert(
         path,
         WatchHandle {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { bridge, FileNode, RecentProject, isRemotePath } from '../lib/tauri-bridge';
+import { isHomeDirectory } from '../lib/home-dir';
 
 export type FileChangeKind = 'created' | 'modified' | 'removed';
 export type PreviewMode = 'preview' | 'source' | 'edit';
@@ -109,6 +110,13 @@ export const useFileStore = create<FileState>()((set, get) => ({
       // Clear stale tree immediately when switching directories
       ...(isNewDir ? { tree: [] } : {}),
     });
+    // 主目录不加载文件树（原因见 lib/home-dir.ts），只清掉上一个项目留下的树
+    if (await isHomeDirectory(path)) {
+      if (get().rootPath === path) {
+        set({ tree: [], isLoading: false, changedFiles: new Map(), directoryMissing: false });
+      }
+      return;
+    }
     try {
       const tree = await bridge.readFileTree(path, 8);
       // Guard: only apply if rootPath hasn't changed during async load
@@ -132,6 +140,11 @@ export const useFileStore = create<FileState>()((set, get) => ({
   refreshTree: async (overridePath?: string) => {
     const dir = overridePath || get().rootPath;
     if (!dir) return;
+    // 工具执行完、文件变化、手动刷新都会走到这里，主目录一律不扫描
+    if (await isHomeDirectory(dir)) {
+      if (overridePath && overridePath !== get().rootPath) set({ tree: [], rootPath: overridePath });
+      return;
+    }
     try {
       const tree = await bridge.readFileTree(dir, 8);
       // Sync rootPath if override was used and differs
