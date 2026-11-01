@@ -28,12 +28,46 @@ pub struct ProcessManager {
 #[derive(Debug, Default, Clone)]
 pub struct StdinManager {
     handles: Arc<Mutex<HashMap<String, ChildStdin>>>,
+    /// 等待 CLI 回 control_response 的请求：request_id → 接收 response 内容
+    pending_responses: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>>,
 }
 
 impl StdinManager {
     pub fn new() -> Self {
-        Self {
-            handles: Arc::new(Mutex::new(HashMap::new())),
+        Self::default()
+    }
+
+    /// 写入控制请求并等待 CLI 的 control_response（超时返回错误）
+    pub async fn request(
+        &self,
+        id: &str,
+        request_id: &str,
+        message: &str,
+        timeout: std::time::Duration,
+    ) -> Result<serde_json::Value, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending_responses.lock().await.insert(request_id.to_string(), tx);
+        if let Err(e) = self.send(id, message).await {
+            self.pending_responses.lock().await.remove(request_id);
+            return Err(e);
+        }
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(v)) => Ok(v),
+            _ => {
+                self.pending_responses.lock().await.remove(request_id);
+                Err("CLI did not respond to control request".into())
+            }
+        }
+    }
+
+    /// stdout 读到 control_response：交给等待它的请求，返回是否有人在等
+    pub async fn resolve_response(&self, request_id: &str, response: serde_json::Value) -> bool {
+        match self.pending_responses.lock().await.remove(request_id) {
+            Some(tx) => {
+                let _ = tx.send(response);
+                true
+            }
+            None => false,
         }
     }
 

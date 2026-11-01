@@ -90,6 +90,8 @@ export interface ChatMessage {
 }
 
 export interface SessionMeta {
+  /** 本轮已结束，CLI 还没开始处理已写入 stdin 的排队消息（收到其回显时清除） */
+  awaitingQueuedTurn?: boolean;
   model?: string;
   cost?: number;
   duration?: number;
@@ -194,6 +196,8 @@ export interface PendingUserMessage {
   message?: ChatMessage;
   /** 已写入 stdin：CLI 会在下一个工具调用间隙或本轮结束后处理，收到它的回显时插入气泡 */
   sent?: boolean;
+  /** 写入 stdin 时带的 uuid：CLI 回显原样带回，撤回时按它取消 */
+  uuid?: string;
 }
 
 // --- Store State & Actions ---
@@ -227,7 +231,9 @@ interface ChatState {
   /** 取出第一条还没写入 stdin 的排队消息（FIFO），没有时返回 undefined */
   shiftPendingMessage: (tabId: string) => PendingUserMessage | undefined;
   /** 取出第一条已写入 stdin、文本与 CLI 回显一致的消息，没有时返回 undefined */
-  takeSentPendingMessage: (tabId: string, text: string) => PendingUserMessage | undefined;
+  takeSentPendingMessage: (tabId: string, text: string, uuid?: string) => PendingUserMessage | undefined;
+  /** 撤回：按气泡 id 移除一条排队/已发送消息，返回被移除的那条 */
+  removePendingMessage: (tabId: string, messageId: string) => PendingUserMessage | undefined;
   /** 写入 stdin 失败或进程被替换：把这条（不传 id 时为全部）已发送消息改回排队，等本轮结束再发送 */
   markPendingUnsent: (tabId: string, messageId?: string) => void;
   flushPendingMessages: (tabId: string) => PendingUserMessage[];
@@ -525,10 +531,26 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     return first;
   },
 
-  takeSentPendingMessage: (tabId, text) => {
+  takeSentPendingMessage: (tabId, text, uuid) => {
     const tab = get().tabs.get(tabId);
     const target = normalizePendingText(text);
-    const match = tab?.pendingUserMessages.find((p) => p.sent && normalizePendingText(p.text) === target);
+    // 回显带着写入时的 uuid 时按 uuid 匹配，否则按文本
+    const match = (uuid ? tab?.pendingUserMessages.find((p) => p.sent && p.uuid === uuid) : undefined)
+      ?? tab?.pendingUserMessages.find((p) => p.sent && normalizePendingText(p.text) === target);
+    if (!match) return undefined;
+    set((state) => {
+      const r = updateTab(state.tabs, tabId, (t) => ({
+        ...t,
+        pendingUserMessages: t.pendingUserMessages.filter((p) => p !== match),
+      }));
+      return r ?? {};
+    });
+    return match;
+  },
+
+  removePendingMessage: (tabId, messageId) => {
+    const tab = get().tabs.get(tabId);
+    const match = tab?.pendingUserMessages.find((p) => p.message?.id === messageId);
     if (!match) return undefined;
     set((state) => {
       const r = updateTab(state.tabs, tabId, (t) => ({

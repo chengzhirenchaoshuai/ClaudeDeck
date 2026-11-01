@@ -93,6 +93,9 @@ pub enum SdkControlRequestPayload {
     },
     #[serde(rename = "rewind_files")]
     RewindFiles { user_message_id: String },
+    /// 按 uuid 撤回已写入 stdin、还在 CLI 队列里的用户消息
+    #[serde(rename = "cancel_async_message")]
+    CancelAsyncMessage { message_uuid: String },
     /// SDK 初始化请求：目前只用来开启提示建议
     #[serde(rename = "initialize")]
     Initialize {
@@ -139,6 +142,14 @@ impl ControlRequest {
             r#type: "control_request",
             request_id: Self::random_id(),
             request: SdkControlRequestPayload::RewindFiles { user_message_id },
+        }
+    }
+
+    pub fn cancel_async_message(message_uuid: String) -> Self {
+        Self {
+            r#type: "control_request",
+            request_id: Self::random_id(),
+            request: SdkControlRequestPayload::CancelAsyncMessage { message_uuid },
         }
     }
 

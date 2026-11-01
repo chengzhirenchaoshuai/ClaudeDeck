@@ -31,6 +31,7 @@ import { ProjectFolderPicker } from './ProjectFolderPicker';
 import { executeImmediateCommand as runImmediateCommand } from './immediate-commands';
 import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
+import { showToast } from '../shared/Toast';
 // drag-state import removed — tree drag handled by ChatPanel
 
 /* PlanApprovalBar removed — PlanReviewCard (triggered by ExitPlanMode detection)
@@ -184,6 +185,67 @@ export function InputBar() {
     lastSyncedRef.current = pendingAttachments;
     setFiles(pendingAttachments);
   }, [pendingAttachments, setFiles]);
+
+  // 撤回的消息放回输入框时，恢复发送时的技能/命令前缀、回退摘要和附件（文本由调用方放回）
+  const restoreSendExtras = useCallback((tabId: string, message: ChatMessage) => {
+    const ctx = message.sendContext;
+    if (ctx?.prefixes.length) {
+      ctx.prefixes.forEach((cmd) => useCommandStore.getState().addPrefix(cmd));
+    }
+    if (ctx?.pendingSummary) {
+      useChatStore.getState().setSessionMeta(tabId, { pendingSummary: ctx.pendingSummary });
+    }
+    const restoredFiles = (message.attachments ?? []).map((a, i) => ({
+      id: `withdrawn_${message.id}_${i}`,
+      name: a.name,
+      path: a.path,
+      size: a.size ?? 0,
+      type: a.type ?? 'application/octet-stream',
+      isImage: a.isImage,
+      preview: a.preview,
+    }));
+    if (restoredFiles.length > 0) setFiles((prev) => [...restoredFiles, ...prev]);
+  }, [setFiles]);
+
+  // 运行中发出、CLI 还没处理的消息：撤回并放回输入框编辑（ChatPanel 里排队气泡上的按钮触发）
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const messageId = (e as CustomEvent<string>).detail;
+      const tabId = useSessionStore.getState().selectedSessionId;
+      if (!tabId || !messageId) return;
+      const tabState = getActiveTabState();
+      const pending = tabState.pendingUserMessages.find((p) => p.message?.id === messageId);
+      if (!pending?.message) return;
+      if (pending.sent) {
+        // 已写入 stdin：先让 CLI 从队列里取消，CLI 已经取走时不能撤回
+        const sid = tabState.sessionMeta.stdinId;
+        const cancelled = !!sid && !!pending.uuid
+          && await bridge.cancelQueuedMessage(sid, pending.uuid).catch((err) => {
+            console.warn('[ClaudeDeck] cancel queued message failed:', err);
+            return false;
+          });
+        if (!cancelled) {
+          showToast(t('chat.withdrawFailed'), 'error');
+          return;
+        }
+      }
+      if (!useChatStore.getState().removePendingMessage(tabId, messageId)) return;
+      // 本轮已结束、只是在等这条消息开始下一轮：撤回后不会再有下一轮，回到空闲
+      const after = useChatStore.getState().getTab(tabId);
+      if (after?.sessionMeta.awaitingQueuedTurn && !after.pendingUserMessages.some((p) => p.sent)) {
+        useChatStore.getState().setSessionMeta(tabId, { awaitingQueuedTurn: undefined });
+        useChatStore.getState().setSessionStatus(tabId, 'completed');
+        useChatStore.getState().setActivityStatus(tabId, { phase: 'completed' });
+      }
+      const restoredText = pending.message.sendContext?.rawInput ?? pending.message.content;
+      const draft = useChatStore.getState().getTab(tabId)?.inputDraft.trim() ?? '';
+      setInputSync(draft ? `${restoredText}\n${draft}` : restoredText);
+      restoreSendExtras(tabId, pending.message);
+      textareaRef.current?.focus();
+    };
+    window.addEventListener('tokenicode:withdraw-pending', handler);
+    return () => window.removeEventListener('tokenicode:withdraw-pending', handler);
+  }, [setInputSync, restoreSendExtras, t]);
 
   // Inline file insertion: drop or drag → insert a file chip at cursor
   useEffect(() => {
@@ -554,9 +616,10 @@ export function InputBar() {
         // 斜杠命令仍等本轮结束再发送
         const midTurnStdinId = currentTabState.sessionMeta.stdinId;
         if (midTurnStdinId && !text.startsWith('/')) {
-          useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble, sent: true });
+          const uuid = crypto.randomUUID();
+          useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble, sent: true, uuid });
           try {
-            await bridge.sendStdin(midTurnStdinId, text);
+            await bridge.sendStdin(midTurnStdinId, text, uuid);
           } catch (err) {
             console.warn('[ClaudeDeck] mid-turn sendStdin failed, queued instead:', err);
             useChatStore.getState().markPendingUnsent(tabId, userBubble.id);
@@ -583,6 +646,7 @@ export function InputBar() {
       lastProgressAt: turnStartedAt,
       inputTokens: 0,
       outputTokens: 0,
+      awaitingQueuedTurn: undefined,
     });
     useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
     lastStderrRef.current = ''; // Clear stale stderr before new turn
@@ -1273,22 +1337,7 @@ export function InputBar() {
                     true,
                   );
                   if (withdrawn) {
-                    if (ctx?.prefixes.length) {
-                      ctx.prefixes.forEach((cmd) => useCommandStore.getState().addPrefix(cmd));
-                    }
-                    if (ctx?.pendingSummary) {
-                      useChatStore.getState().setSessionMeta(stopTabId, { pendingSummary: ctx.pendingSummary });
-                    }
-                    const restoredFiles = (lastMessage.attachments ?? []).map((a, i) => ({
-                      id: `withdrawn_${lastMessage.id}_${i}`,
-                      name: a.name,
-                      path: a.path,
-                      size: a.size ?? 0,
-                      type: a.type ?? 'application/octet-stream',
-                      isImage: a.isImage,
-                      preview: a.preview,
-                    }));
-                    if (restoredFiles.length > 0) setFiles((prev) => [...restoredFiles, ...prev]);
+                    restoreSendExtras(stopTabId, lastMessage);
                     return;
                   }
                 }

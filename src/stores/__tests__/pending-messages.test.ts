@@ -58,4 +58,23 @@ describe('运行中发出的消息', () => {
     expect(pending().some((p) => p.sent)).toBe(false);
     expect(store.takeSentPendingMessage(TAB, '一')).toBeUndefined();
   });
+
+  it('回显带 uuid 时按 uuid 取出，文本相同的两条也不会取错', () => {
+    const store = useChatStore.getState();
+    store.addPendingMessage(TAB, { text: '继续', message: bubble('a', '继续'), sent: true, uuid: 'u-a' });
+    store.addPendingMessage(TAB, { text: '继续', message: bubble('b', '继续'), sent: true, uuid: 'u-b' });
+
+    expect(store.takeSentPendingMessage(TAB, '继续', 'u-b')?.message?.id).toBe('b');
+    expect(pending().map((p) => p.message?.id)).toEqual(['a']);
+  });
+
+  it('撤回按气泡 id 移除一条消息', () => {
+    const store = useChatStore.getState();
+    store.addPendingMessage(TAB, { text: '一', message: bubble('a', '一'), sent: true, uuid: 'u-a' });
+    store.addPendingMessage(TAB, { text: '二', message: bubble('b', '二') });
+
+    expect(store.removePendingMessage(TAB, 'a')?.uuid).toBe('u-a');
+    expect(store.removePendingMessage(TAB, 'a')).toBeUndefined();
+    expect(pending().map((p) => p.message?.id)).toEqual(['b']);
+  });
 });

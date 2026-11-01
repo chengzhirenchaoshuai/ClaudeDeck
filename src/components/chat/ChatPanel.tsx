@@ -602,9 +602,21 @@ export function ChatPanel() {
             )}
             {/* 运行中发出的消息：CLI 真正处理（已发送）或本轮结束后发送（排队）时才进入消息列表 */}
             {pendingUserMessages.map((p, i) => p.message && (
-              <div key={`queued_${p.message.id}`} className="mt-5 opacity-60" title={t(p.sent ? 'chat.sentWaiting' : 'chat.queued')}>
-                <MessageBubble message={p.message} isFirstInGroup={i === 0} />
-                <div className="mt-1 text-right text-[11px] text-text-tertiary">{t(p.sent ? 'chat.sentWaiting' : 'chat.queued')}</div>
+              <div key={`queued_${p.message.id}`} className="mt-5">
+                <div className="opacity-60" title={t(p.sent ? 'chat.sentWaiting' : 'chat.queued')}>
+                  <MessageBubble message={p.message} isFirstInGroup={i === 0} />
+                </div>
+                <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-text-tertiary">
+                  <span className="opacity-60">{t(p.sent ? 'chat.sentWaiting' : 'chat.queued')}</span>
+                  {/* CLI 还没处理时可以撤回，放回输入框修改（逻辑在 InputBar） */}
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('tokenicode:withdraw-pending', { detail: p.message!.id }))}
+                    className="px-1.5 py-0.5 rounded text-accent hover:bg-bg-secondary transition-smooth"
+                  >
+                    {t('chat.withdrawPending')}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

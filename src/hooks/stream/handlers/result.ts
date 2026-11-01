@@ -505,6 +505,7 @@ function sendNextPendingMessage(ctx: StreamContext): void {
       lastProgressAt: nextTurnStartedAt,
       inputTokens: 0,
       outputTokens: 0,
+      awaitingQueuedTurn: true,
     });
     setActivityStatus({ phase: 'thinking' });
     agentActions?.clearAgents();

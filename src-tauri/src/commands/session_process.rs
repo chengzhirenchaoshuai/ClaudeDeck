@@ -425,6 +425,15 @@ pub(crate) async fn start_claude_session(
                 );
             }
 
+            // CLI 对我们控制请求的回应：有人在等就交给它，不再转发前端
+            if let Some("control_response") = json.get("type").and_then(|v| v.as_str()) {
+                if let Some(rid) = json["response"]["request_id"].as_str() {
+                    if stdin_clone.resolve_response(rid, json["response"].clone()).await {
+                        continue;
+                    }
+                }
+            }
+
             // Intercept control_request messages for SDK control protocol routing.
             // All modes use --permission-prompt-tool stdio. In bypass mode, we
             // auto-approve tool permissions here (zero frontend overhead) but route
@@ -677,16 +686,37 @@ pub(crate) async fn send_stdin(
     stdin_mgr: State<'_, StdinManager>,
     session_id: String,
     message: String,
+    uuid: Option<String>,
 ) -> Result<(), String> {
     // Wrap user text in stream-json NDJSON format
-    let json_msg = serde_json::json!({
+    let mut json_msg = serde_json::json!({
         "type": "user",
         "message": {
             "role": "user",
             "content": message
         }
     });
+    // 运行中写入的消息带上 uuid：回显里原样带回，也用于撤回
+    if let Some(uuid) = uuid {
+        json_msg["uuid"] = Value::String(uuid);
+    }
     stdin_mgr.send(&session_id, &json_msg.to_string()).await
+}
+
+/// 撤回已写入 stdin、CLI 还没开始处理的消息。返回 false 表示 CLI 已取走（或旧版 CLI 不支持）
+#[tauri::command]
+pub(crate) async fn cancel_queued_message(
+    stdin_mgr: State<'_, StdinManager>,
+    session_id: String,
+    message_uuid: String,
+) -> Result<bool, String> {
+    let req = protocol::ControlRequest::cancel_async_message(message_uuid);
+    let json_str = serde_json::to_string(&req)
+        .map_err(|e| format!("Failed to serialize control request: {}", e))?;
+    let resp = stdin_mgr
+        .request(&session_id, &req.request_id, &json_str, std::time::Duration::from_secs(5))
+        .await?;
+    Ok(resp["subtype"] == "success" && resp["response"]["cancelled"] == true)
 }
 
 #[tauri::command]

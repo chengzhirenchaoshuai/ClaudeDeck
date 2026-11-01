@@ -632,6 +632,7 @@ pub fn run() {
             commands::providers::test_provider_connection,
             commands::session_process::respond_permission,
             commands::session_process::send_control_request,
+            commands::session_process::cancel_queued_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

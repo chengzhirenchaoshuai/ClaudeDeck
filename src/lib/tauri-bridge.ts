@@ -367,8 +367,12 @@ export const bridge = {
   sendMessage: (sessionId: string, message: string) =>
     invoke<void>('send_message', { sessionId, message }),
 
-  sendStdin: (sessionId: string, message: string) =>
-    invoke<void>('send_stdin', { sessionId, message }),
+  sendStdin: (sessionId: string, message: string, uuid?: string) =>
+    invoke<void>('send_stdin', { sessionId, message, uuid }),
+
+  /** 撤回已写入 stdin、CLI 还没开始处理的消息；false 表示已被 CLI 取走 */
+  cancelQueuedMessage: (sessionId: string, messageUuid: string) =>
+    invoke<boolean>('cancel_queued_message', { sessionId, messageUuid }),
 
   sendRawStdin: (sessionId: string, message: string) =>
     invoke<void>('send_raw_stdin', { sessionId, message }),
