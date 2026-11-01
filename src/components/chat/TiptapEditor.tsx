@@ -135,7 +135,14 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
           orderedList: false,
           listItem: false,
           horizontalRule: false,
-          // Keep bold/italic/code inline marks
+          // 行内格式也全部关掉：发送的是纯文本，格式本身没有意义；
+          // 从网页等处复制带格式的文本时会把加粗带进来，之后输入的字也跟着加粗
+          bold: false,
+          italic: false,
+          code: false,
+          strike: false,
+          underline: false,
+          link: false,
         }),
         Placeholder.configure({ placeholder: () => placeholderRef.current }),
         FileChipWithView,
