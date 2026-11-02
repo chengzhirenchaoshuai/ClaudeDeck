@@ -18,6 +18,37 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.6',
+    date: '2026-11-02',
+    highlights: {
+      zh: ['目录路径可点击打开；会话列表连续使用时不再跳动；选择框可收起'],
+      en: ['Clickable folder paths; the session list stays put while you work; collapsible question cards'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: ['消息里的目录路径可点击，在资源管理器中打开', '选择框可收起，查看后面的消息'],
+          en: ['Folder paths in messages open in Explorer when clicked', 'Question cards can be collapsed to read the messages behind them'],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['会话列表连续使用期间不换位置，隔 30 分钟以上再发消息才上移', '选择框高度跟随消息区，选项区单独滚动'],
+          en: ['Sessions keep their place while in continuous use and move up only after a 30-minute gap', 'Question cards fit the message area and scroll only the options'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['粘贴带格式文本后输入的字跟着加粗'],
+          en: ['Text typed after pasting formatted content stayed bold'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.5',
     date: '2026-11-01',
     highlights: {
