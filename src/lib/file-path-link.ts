@@ -58,6 +58,28 @@ export function parseInlineFilePath(text: string): InlineFilePath | null {
   return { path: s, line };
 }
 
+/**
+ * 判断一段行内代码是不是目录路径（渲染成可点击打开目录的链接）。
+ * 只认带盘符的绝对路径（C:\x、C:/x）和 Git Bash 风格的 /f/x：
+ * 以斜杠结尾的一定是目录；不以斜杠结尾时，最后一段没有扩展名才算（有扩展名的交给 parseInlineFilePath）。
+ */
+export function parseInlineDirPath(text: string): string | null {
+  const s = text.trim().replace(/^(["'])(.*)\1$/, '$2');
+  if (!s || s.length > 400) return null;
+  const m = s.match(/^([a-zA-Z]:|\/[a-zA-Z](?=\/))([\\/].*)?$/);
+  if (!m) return null;
+  const body = m[2] ?? '';
+  // 盘符根目录（C:\）也算；裸盘符（C:）不算
+  if (!body) return null;
+  // 带盘符的路径允许空格；排除命令行（空格后是选项）
+  if (/(^| )-/.test(body) || !PATH_BODY.test(body.replace(/ /g, '_'))) return null;
+  if (/[\\/]$/.test(body)) return s;
+  const name = body.split(/[\\/]/).pop() ?? '';
+  // .claude、.git 这类以点开头的也是目录
+  if (!name || name.slice(1).includes('.')) return null;
+  return s;
+}
+
 /** 把 a/b/../c、a/./b 规整成 a/c、a/b：本机和远程的读取接口都拒绝含 .. 的路径 */
 function normalizeSegments(path: string): string {
   const prefix = path.match(/^(ssh:\/\/[^/]+\/)?([a-zA-Z]:\/|\/)?/)?.[0] ?? '';

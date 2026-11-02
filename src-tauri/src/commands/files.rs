@@ -45,6 +45,27 @@ pub(crate) async fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 消息里的目录路径：是目录就在资源管理器中打开；其实是文件时在所在目录中选中它
+#[tauri::command]
+pub(crate) async fn open_directory(path: String) -> Result<(), String> {
+    reject_remote_path(&path)?;
+    // explorer 不认正斜杠
+    let path = path.replace('/', "\\");
+    let target = std::path::Path::new(&path);
+    let mut cmd = Command::new("explorer");
+    if target.is_dir() {
+        cmd.arg(&path);
+    } else if target.exists() {
+        cmd.args(["/select,", &path]);
+    } else {
+        return Err(format!("目录不存在：{}", path));
+    }
+    cmd.creation_flags(0x08000000);
+    cmd.spawn()
+        .map_err(|e| format!("Failed to open Explorer: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) async fn open_with_default_app(path: String) -> Result<(), String> {
     reject_remote_path(&path)?;

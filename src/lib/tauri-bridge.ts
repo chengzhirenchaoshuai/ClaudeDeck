@@ -452,6 +452,10 @@ export const bridge = {
   revealInFinder: (path: string) =>
     invoke<void>('reveal_in_finder', { path }),
 
+  /** 在资源管理器中打开目录（其实是文件时选中它） */
+  openDirectory: (path: string) =>
+    invoke<void>('open_directory', { path }),
+
   openWithDefaultApp: (path: string) =>
     invoke<void>('open_with_default_app', { path }),
 

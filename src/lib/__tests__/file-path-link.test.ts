@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { isBareFileMissing, parseInlineFilePath, resolveSessionPath } from '../file-path-link';
+import { isBareFileMissing, parseInlineDirPath, parseInlineFilePath, resolveSessionPath } from '../file-path-link';
 
 describe('parseInlineFilePath', () => {
   it('识别原先漏掉的路径（例子取自真实会话）', () => {
@@ -88,5 +88,31 @@ describe('isBareFileMissing', () => {
   it('远程项目同样按目录树判断', () => {
     const remote = { rootPath: 'ssh://mylocal/F:/AI/mywork/GaussDB', nodes };
     expect(isBareFileMissing('package.json', 'ssh://mylocal/F:/AI/mywork/GaussDB', remote)).toBe(true);
+  });
+});
+
+describe('parseInlineDirPath', () => {
+  it('以斜杠结尾的绝对路径是目录', () => {
+    expect(parseInlineDirPath('F:\\AI\\mywork\\WeiXinText\\private\\tmp\\voices\\')).toBe('F:\\AI\\mywork\\WeiXinText\\private\\tmp\\voices\\');
+    expect(parseInlineDirPath('F:/AI/my work/')).toBe('F:/AI/my work/');
+    expect(parseInlineDirPath('C:\\')).toBe('C:\\');
+    expect(parseInlineDirPath('/f/AI/mywork/')).toBe('/f/AI/mywork/');
+    expect(parseInlineDirPath('F:\\AI\\版本 v1.2\\')).toBe('F:\\AI\\版本 v1.2\\');
+  });
+
+  it('不以斜杠结尾时，最后一段没有扩展名才算目录', () => {
+    expect(parseInlineDirPath('F:\\AI\\mywork\\ClaudeDock')).toBe('F:\\AI\\mywork\\ClaudeDock');
+    expect(parseInlineDirPath('C:\\Users\\Administrator\\.claude')).toBe('C:\\Users\\Administrator\\.claude');
+    expect(parseInlineDirPath('F:\\AI\\a.md')).toBeNull();
+    expect(parseInlineDirPath('F:\\AI\\v1.2')).toBeNull();
+  });
+
+  it('相对路径、命令行、普通文字不算', () => {
+    expect(parseInlineDirPath('src/components/')).toBeNull();
+    expect(parseInlineDirPath('C:')).toBeNull();
+    expect(parseInlineDirPath('C:\\tools\\app -v')).toBeNull();
+    expect(parseInlineDirPath('/usr/bin')).toBeNull();
+    expect(parseInlineDirPath('npm run dev')).toBeNull();
+    expect(parseInlineDirPath('https://a.com/')).toBeNull();
   });
 });

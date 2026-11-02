@@ -11,7 +11,8 @@ import { bridge } from '../../lib/tauri-bridge';
 import { rehypeKatexFix } from '../../lib/rehype-katex-fix';
 import remarkCjkAutolink from '../../lib/remark-cjk-autolink';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
-import { KNOWN_FILE_EXTENSIONS, isBareFileMissing, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
+import { KNOWN_FILE_EXTENSIONS, isBareFileMissing, parseInlineDirPath, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
+import { InlineDirChip } from './InlineDirChip';
 import { useT } from '../../lib/i18n';
 
 /* ================================================================
@@ -187,6 +188,12 @@ function extractText(node: ReactNode): string {
  */
 const BARE_PATH_RE = /(^|[^`\w:@#/\\])((?:[a-zA-Z]:[\\/][\w.@+\\/-]+\.\w{1,10}|(?:\/|\.\.?\/)[\w.@/+-]+\.\w{1,10}|(?:src|lib|components|stores|hooks|utils|tests|__tests__|app|pages|public|assets|styles|config|scripts|docs)\/[\w.@/+-]+\.\w{1,10}))(?![`\w])/g;
 
+/**
+ * 正文里的裸目录路径：只认带盘符、以斜杠结尾的（F:\a\b\），不含空格，
+ * 后面紧跟空白、标点或行尾。不以斜杠结尾的在正文里很难和普通文字区分，只在行内代码里识别。
+ */
+const BARE_DIR_RE = /(^|[^`\w:@#/\\])([a-zA-Z]:[\\/](?:[\p{L}\p{N}_.@+-]+[\\/])*)(?=$|[\s，。、；：！？）》」,;:!?)\]])/gmu;
+
 function wrapBareFilePaths(content: string): string {
   // Split by fenced code blocks (``` ... ```) — don't touch code blocks
   const fenced = content.split(/(```[\s\S]*?```)/g);
@@ -207,6 +214,10 @@ function wrapBareFilePaths(content: string): string {
         // TK-323: Only wrap if extension is a known code/config file type
         const ext = path.split('.').pop()?.toLowerCase();
         if (!ext || !KNOWN_FILE_EXTENSIONS.has(ext)) return match;
+        return `${prefix}\`${path}\``;
+      }).replace(BARE_DIR_RE, (match, prefix, path, offset, str) => {
+        const before = str.slice(Math.max(0, offset + prefix.length - 2), offset + prefix.length);
+        if (before.endsWith('(')) return match;
         return `${prefix}\`${path}\``;
       });
     }).join('');
@@ -653,6 +664,12 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
       const filePath = parseInlineFilePath(text);
       if (filePath) {
         return <InlineFileChip path={filePath.path} line={filePath.line} base={resolveBase} copyText={text} />;
+      }
+      // 本机目录路径：点击在资源管理器中打开（远程会话里的路径在远端，不处理）
+      const dirPath = parseInlineDirPath(text);
+      if (dirPath) {
+        const resolved = resolveSessionPath(dirPath, resolveBase);
+        if (isLocalSessionFile(resolved)) return <InlineDirChip path={resolved} copyText={text} />;
       }
       return <code>{children}</code>;
     },

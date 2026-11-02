@@ -566,6 +566,7 @@ pub fn run() {
             commands::files::create_directory,
             commands::files::open_in_vscode,
             commands::files::reveal_in_finder,
+            commands::files::open_directory,
             commands::files::open_with_default_app,
             commands::sessions::export_session_markdown,
             commands::sessions::export_session_json,

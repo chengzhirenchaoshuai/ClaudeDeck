@@ -7,7 +7,8 @@ import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
 import { useRewind } from '../../hooks/useRewind';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
-import { parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
+import { parseInlineDirPath, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
+import { InlineDirChip } from '../shared/InlineDirChip';
 import { UserAvatar } from '../shared/UserAvatar';
 import { safeContent, type MessageProps } from './messageShared';
 
@@ -60,6 +61,12 @@ function renderCodeSegment(inner: string, key: number): ReactNode {
         <span className="max-w-[180px] truncate">{fileName}</span>
       </button>
     );
+  }
+  // 本机目录路径：点击在资源管理器中打开（远程会话里的路径在远端，不处理）
+  const dirPath = parseInlineDirPath(inner);
+  if (dirPath) {
+    const resolved = resolveSessionPath(dirPath, useSettingsStore.getState().workingDirectory || '');
+    if (isLocalSessionFile(resolved)) return <InlineDirChip key={key} path={resolved} copyText={inner} variant="user" />;
   }
   return (
     <code key={key} className="px-1.5 py-0.5 mx-0.5 rounded-md text-[13px]
