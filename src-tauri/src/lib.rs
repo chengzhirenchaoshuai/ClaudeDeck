@@ -576,7 +576,6 @@ pub fn run() {
             commands::files::open_directory,
             commands::files::open_with_default_app,
             commands::sessions::export_session_markdown,
-            commands::sessions::export_session_json,
             commands::sessions::list_recent_projects,
             commands::files::watch_directory,
             commands::files::unwatch_directory,

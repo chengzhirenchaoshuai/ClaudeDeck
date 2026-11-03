@@ -3,7 +3,6 @@ import { useActiveTab, type ChatMessage } from '../../stores/chatStore';
 import { MessageBubble } from './MessageBubble';
 import { ToolGroup } from './ToolGroup';
 import { InputBar } from './InputBar';
-import { ExportMenu } from '../conversations/ExportMenu';
 import { UpdateButton } from '../shared/UpdateButton';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -71,7 +70,6 @@ export function ChatPanel() {
     return s.providers.find((p) => p.id === s.activeProviderId) ?? null;
   });
   const selectedSessionId = useSessionStore((s) => s.selectedSessionId);
-  const sessions = useSessionStore((s) => s.sessions);
   const isFilePreviewMode = !!useFileStore((s) => s.selectedFile);
 
   // Agent activity for floating button badge
@@ -160,11 +158,6 @@ export function ChatPanel() {
     () => messages.filter((m) => m.type === 'plan_review' || m.type === 'plan' || m.planContent),
     [messages],
   );
-
-  // Find the path of the currently selected session for export
-  const currentSessionPath = sessions.find(
-    (s) => s.id === selectedSessionId
-  )?.path;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const thinkingPreRef = useRef<HTMLPreElement>(null);
@@ -455,7 +448,6 @@ export function ChatPanel() {
             <UpdateButton />
           </div>
           <div className="flex items-center gap-0.5">
-            <ExportMenu sessionPath={currentSessionPath} />
             <button onClick={toggleSecondaryPanel}
               className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
                 transition-smooth" title={t('chat.toggleFiles')}>

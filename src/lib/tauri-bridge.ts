@@ -547,11 +547,8 @@ export const bridge = {
   getClaudeConfigPaths: () =>
     invoke<{ configDir: string; claudeJson: string }>('get_claude_config_paths'),
 
-  exportSessionMarkdown: (path: string, outputPath: string, conversationOnly = false) =>
-    invoke<void>('export_session_markdown', { path, outputPath, conversationOnly }),
-
-  exportSessionJson: (path: string, outputPath: string) =>
-    invoke<void>('export_session_json', { path, outputPath }),
+  exportSessionMarkdown: (path: string, outputPath: string) =>
+    invoke<void>('export_session_markdown', { path, outputPath }),
 
   listRecentProjects: () =>
     invoke<RecentProject[]>('list_recent_projects'),

@@ -217,11 +217,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'conv.openInTerminal': '在终端中打开',
     'conv.openInTerminalAdmin': '以管理员身份在终端中打开',
 
-    // ExportMenu
-    'export.title': '导出任务',
-    'export.markdown': '导出为 Markdown',
-    'export.markdownConversation': '导出纯对话',
-    'export.json': '导出为 JSON',
+    // 导出会话（/export 命令、会话右键菜单）
     'export.success': '已导出到',
 
     // SecondaryPanel
@@ -1212,11 +1208,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'conv.openInTerminal': 'Open in Terminal',
     'conv.openInTerminalAdmin': 'Open in Terminal as Admin',
 
-    // ExportMenu
-    'export.title': 'Export task',
-    'export.markdown': 'Export as Markdown',
-    'export.markdownConversation': 'Export conversation only',
-    'export.json': 'Export as JSON',
+    // 导出会话（/export 命令、会话右键菜单）
     'export.success': 'Exported to',
 
     // SecondaryPanel

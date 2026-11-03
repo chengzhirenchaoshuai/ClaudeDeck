@@ -1226,7 +1226,7 @@ fn get_session_tokens_blocking(session_id: String) -> Result<Value, String> {
     Ok(compute_session_tokens(std::io::BufReader::new(file)))
 }
 #[tauri::command]
-pub(crate) async fn export_session_markdown(path: String, output_path: String, conversation_only: bool) -> Result<(), String> {
+pub(crate) async fn export_session_markdown(path: String, output_path: String) -> Result<(), String> {
     use std::io::Write;
     // 远程会话（ssh:// URI）经 ssh 读取，和 load_session 保持一致
     let records: Vec<Value> = if path.starts_with(commands::remote::REMOTE_SCHEME) {
@@ -1258,23 +1258,19 @@ pub(crate) async fn export_session_markdown(path: String, output_path: String, c
                         }
                     }
                 }
-                if !conversation_only || !text_buf.trim().is_empty() {
-                    md.push_str("## User\n\n");
-                    md.push_str(&text_buf);
-                }
+                md.push_str("## User\n\n");
+                md.push_str(&text_buf);
             }
             "assistant" => {
-                let mut has_text = false;
                 let mut text_buf = String::new();
                 if let Some(content) = json["message"]["content"].as_array() {
                     for block in content {
                         if block["type"].as_str() == Some("text") {
                             if let Some(text) = block["text"].as_str() {
-                                has_text = true;
                                 text_buf.push_str(text);
                                 text_buf.push_str("\n\n");
                             }
-                        } else if !conversation_only && block["type"].as_str() == Some("tool_use") {
+                        } else if block["type"].as_str() == Some("tool_use") {
                             let name = block["name"].as_str().unwrap_or("Tool");
                             text_buf.push_str(&format!("**Tool: {}**\n\n", name));
                             if let Some(input) = block.get("input") {
@@ -1288,10 +1284,8 @@ pub(crate) async fn export_session_markdown(path: String, output_path: String, c
                         }
                     }
                 }
-                if !conversation_only || has_text {
-                    md.push_str("## Assistant\n\n");
-                    md.push_str(&text_buf);
-                }
+                md.push_str("## Assistant\n\n");
+                md.push_str(&text_buf);
             }
             _ => {}
         }
@@ -1300,26 +1294,6 @@ pub(crate) async fn export_session_markdown(path: String, output_path: String, c
     let mut out = std::fs::File::create(&output_path)
         .map_err(|e| format!("Failed to create output: {}", e))?;
     out.write_all(md.as_bytes())
-        .map_err(|e| format!("Failed to write: {}", e))?;
-    Ok(())
-}
-
-#[tauri::command]
-pub(crate) async fn export_session_json(path: String, output_path: String) -> Result<(), String> {
-    use std::io::Write;
-    let file = std::fs::File::open(&path).map_err(|e| format!("Failed to open session: {}", e))?;
-    let reader = std::io::BufReader::new(file);
-    let mut messages = vec![];
-    for line in jsonl_lines(reader) {
-        if let Ok(json) = serde_json::from_str::<Value>(&line) {
-            messages.push(json);
-        }
-    }
-    let json_str = serde_json::to_string_pretty(&messages)
-        .map_err(|e| format!("Failed to serialize: {}", e))?;
-    let mut out = std::fs::File::create(&output_path)
-        .map_err(|e| format!("Failed to create output: {}", e))?;
-    out.write_all(json_str.as_bytes())
         .map_err(|e| format!("Failed to write: {}", e))?;
     Ok(())
 }

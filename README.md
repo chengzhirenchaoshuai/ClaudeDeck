@@ -7,7 +7,7 @@ Claude Code CLI 的桌面图形界面（个人自用版）。
 ## 功能
 
 - **对话**：多会话标签页并发运行，流式输出，思考过程与工具调用实时展示，`Ctrl+Tab` 快速切换最近两个会话
-- **会话管理**：会话列表直接读取 CLI 的 `projects` 目录（支持 `CLAUDE_CONFIG_DIR`），按项目分组，自动同步 CLI 侧的变化；支持置顶、归档、搜索、导出 Markdown/JSON、自动生成标题
+- **会话管理**：会话列表直接读取 CLI 的 `projects` 目录（支持 `CLAUDE_CONFIG_DIR`），按项目分组，自动同步 CLI 侧的变化；支持置顶、归档、搜索、导出 Markdown、自动生成标题
 - **权限控制**：基于 SDK 控制协议的权限审批卡片，四种模式（code / ask / plan / bypass），运行中可切换模式与模型
 - **回溯**：利用 CLI 检查点回退到任意轮次，可只恢复对话、只恢复代码或全部恢复
 - **API 服务商**：多服务商配置，内置 Anthropic、DeepSeek、智谱 GLM、Kimi、MiniMax、通义千问、OpenRouter、小米 MiMo 等预设，支持导入导出
@@ -61,7 +61,7 @@ gh release create v1.1.1 --verify-tag --title "ClaudeDeck v1.1.1" --notes "..." 
 
 ### 架构说明
 
-- **后端模块**：`src-tauri/src/lib.rs` 只留公共辅助（找 CLI、PATH、配置目录、JSON 截断）、托盘与 `run()`；命令按领域分在 `commands/`：`session_process`（启动会话/stdin/权限/控制请求）、`claude_process`（ProcessManager/StdinManager）、`sessions`（会话列表/搜索/导出/元数据/标题）、`files`、`providers`、`skills`、`cli_setup`（CLI 安装/更新/登录）、`cli_resolver`（CLI 查找/诊断/固定版本）、`toolchain`（Node/Git 部署）、`network`（代理与 HTTP 客户端）、`usage`、`git`、`local_models`、`preview`、`remote`（SSH 远程）、`updater`（应用更新环境）；`protocol.rs` 为 SDK 控制协议类型。
+- **后端模块**：`src-tauri/src/lib.rs` 只留公共辅助（找 CLI、PATH、配置目录、JSON 截断）、托盘与 `run()`；命令按领域分在 `commands/`：`session_process`（启动会话/stdin/权限/控制请求）、`claude_process`（ProcessManager/StdinManager）、`sessions`（会话列表/搜索/导出/元数据/标题）、`files`、`drag_out`（文件树拖出窗口、远程文件后台拉取）、`providers`、`skills`、`cli_setup`（CLI 安装/更新/登录）、`cli_resolver`（CLI 查找/诊断/固定版本）、`toolchain`（Node/Git 部署）、`network`（代理与 HTTP 客户端）、`usage`、`git`、`local_models`、`preview`、`remote`（SSH 远程）、`updater`（应用更新环境）；`protocol.rs` 为 SDK 控制协议类型。
 - **CLI 启动参数**：`--input-format/--output-format stream-json --verbose --include-partial-messages --replay-user-messages --permission-mode <mode> --permission-prompt-tool stdio --settings <JSON>`，可选 `--resume` / `--resume-session-at --fork-session` / `--model`。
 - **环境注入**：`CLAUDE_CODE_EFFORT_LEVEL`、`CLAUDE_CODE_MAX_OUTPUT_TOKENS`、`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW`（≥1M 上下文）、`CLAUDE_CODE_GIT_BASH_PATH`、服务商的 `ANTHROPIC_*` 及自定义变量。
 - **回溯流程**：`useRewind.ts` → 终止进程 → `rewindFiles`（控制协议，失败时另起 CLI）→ 截断消息 → `--resume`。
