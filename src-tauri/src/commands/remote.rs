@@ -251,10 +251,17 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $root = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
 $proj = Join-Path $root 'projects'
+# 远端自己的隐藏名单（回退产生的被替换旧分支，每行一个 ID），与本机 HIDDEN_SESSIONS_FILE 同名
+$hidden = @{}
+$hiddenFile = Join-Path $root 'tokenicode_hidden_sessions.txt'
+if (Test-Path -LiteralPath $hiddenFile) {
+  foreach ($h in (Get-Content -LiteralPath $hiddenFile -Encoding UTF8)) { $h = $h.Trim(); if ($h) { $hidden[$h] = $true } }
+}
 $out = @()
 if (Test-Path -LiteralPath $proj) {
   foreach ($d in Get-ChildItem -LiteralPath $proj -Directory) {
     foreach ($f in Get-ChildItem -LiteralPath $d.FullName -Filter *.jsonl -File) {
+      if ($hidden.ContainsKey($f.BaseName)) { continue }
       $cwd = ''; $prev = ''
       foreach ($line in (Get-Content -LiteralPath $f.FullName -TotalCount 100 -Encoding UTF8)) {
         try { $j = $line | ConvertFrom-Json } catch { continue }
@@ -631,6 +638,37 @@ pub async fn load_remote_archived_sessions(host_id: String) -> Result<Value, Str
 pub async fn save_remote_archived_sessions(host_id: String, data: Value) -> Result<(), String> {
     let host = find_host(&host_id)?;
     write_remote_json_file(&host, REMOTE_ARCHIVED_FILE, &data).await
+}
+
+/// 在远端主机自己的隐藏名单里追加一个会话 ID（回退后隐藏被替换的旧分支）。
+/// 名单放在远端的 CLAUDE_CONFIG_DIR 下，连到这台主机的所有客户端以及它本机都按它过滤。
+#[tauri::command]
+pub async fn hide_remote_session(host_id: String, session_id: String) -> Result<(), String> {
+    // 会话 ID 是 UUID，只允许十六进制与连字符，拼进脚本前先校验
+    if session_id.is_empty() || !session_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Ok(());
+    }
+    let host = find_host(&host_id)?;
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; \
+         $root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }}; \
+         if (-not (Test-Path -LiteralPath $root)) {{ New-Item -ItemType Directory -Path $root -Force | Out-Null }}; \
+         $p = Join-Path $root '{file}'; \
+         $ids = if (Test-Path -LiteralPath $p) {{ @(Get-Content -LiteralPath $p -Encoding UTF8 | ForEach-Object {{ $_.Trim() }}) }} else {{ @() }}; \
+         if ($ids -notcontains '{id}') {{ [System.IO.File]::AppendAllText($p, '{id}' + \"`n\", (New-Object System.Text.UTF8Encoding($false))) }}",
+        file = crate::commands::sessions::HIDDEN_SESSIONS_FILE,
+        id = session_id,
+    );
+    let (_, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(20)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("写入远端隐藏名单失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    Ok(())
 }
 
 /// 把远端 Windows 路径转为 URI 里的路径部分（反斜杠改为正斜杠）。

@@ -13,27 +13,55 @@ where
         .map_err(|e| format!("blocking task failed: {}", e))?
 }
 
-/// 隐藏名单文件：只记录“回退”产生的被替换旧分支。
+/// 隐藏名单文件名：只记录“回退”产生的被替换旧分支，每行一个会话 ID。
+/// 放在 CLI 配置目录下（与改名文件同处），远程客户端经 ssh 读写的也是这个文件，
+/// 这样在任何一台电脑上回退，连到这台主机的所有客户端都会隐藏旧分支。
+pub(crate) const HIDDEN_SESSIONS_FILE: &str = "tokenicode_hidden_sessions.txt";
+
+/// 隐藏名单：<CLI 配置目录>/tokenicode_hidden_sessions.txt。
 /// 会话列表以 CLI 的 projects 目录为准，这里的 ID 仅在列表中不显示，jsonl 文件保留以便恢复。
 pub(crate) fn hidden_sessions_path() -> Result<std::path::PathBuf, String> {
+    Ok(claude_config_dir()?.join(HIDDEN_SESSIONS_FILE))
+}
+
+/// 旧版隐藏名单（<数据目录>/config/hidden_sessions.txt），只存在本机，远程客户端读不到。
+/// 仍然读取它，并在新文件不存在时把内容迁移过去。
+fn legacy_hidden_sessions_path() -> Result<std::path::PathBuf, String> {
     app_paths::config_path("hidden_sessions.txt")
 }
 
-/// 读取隐藏名单。文件不存在或读取失败时视为空。
+/// 解析隐藏名单文本：每行一个 ID，忽略空行。
+fn parse_hidden_ids(content: &str) -> impl Iterator<Item = String> + '_ {
+    content
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+}
+
+/// 读取隐藏名单（新旧两个文件的并集）。文件不存在或读取失败时视为空。
 pub(crate) fn load_hidden_sessions() -> std::collections::HashSet<String> {
-    let Ok(path) = hidden_sessions_path() else {
-        return std::collections::HashSet::new();
-    };
-    std::fs::read_to_string(&path)
-        .map(|content| {
-            content
-                .lines()
-                .map(|l| l.trim())
-                .filter(|l| !l.is_empty())
-                .map(String::from)
-                .collect()
-        })
-        .unwrap_or_default()
+    let mut hidden = std::collections::HashSet::new();
+    let legacy = legacy_hidden_sessions_path()
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    if let Ok(path) = hidden_sessions_path() {
+        match std::fs::read_to_string(&path) {
+            Ok(content) => hidden.extend(parse_hidden_ids(&content)),
+            // 新文件还不存在：把旧名单迁移过去，让远程客户端也能读到以前隐藏的旧分支
+            Err(_) => {
+                if let Some(content) = legacy.as_deref() {
+                    if !content.trim().is_empty() && path.parent().is_some_and(|d| d.is_dir()) {
+                        let _ = std::fs::write(&path, content);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(content) = legacy.as_deref() {
+        hidden.extend(parse_hidden_ids(content));
+    }
+    hidden
 }
 
 /// 会话是否应出现在列表中：排除 desk_* 临时 ID 与被回退隐藏的旧分支。
@@ -49,6 +77,9 @@ pub(crate) async fn hide_session(session_id: String) -> Result<(), String> {
     }
     use std::io::Write;
     let path = hidden_sessions_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create config dir: {}", e))?;
+    }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

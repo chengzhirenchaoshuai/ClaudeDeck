@@ -13,7 +13,7 @@ import { findWithdrawableTurn } from '../../lib/turns';
 import { useStreamProcessor } from '../../hooks/useStreamProcessor';
 import { flushStreamBuffer } from '../../hooks/stream/buffer';
 import { useAgentStore } from '../../stores/agentStore';
-import { useSessionStore } from '../../stores/sessionStore';
+import { useSessionStore, hostOfPath } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
 import { SlashCommandPopover, getFilteredCommandList } from './SlashCommandPopover';
 import { useCommandStore } from '../../stores/commandStore';
@@ -839,7 +839,12 @@ export function InputBar() {
             useChatStore.setState({ tabs: newTabs });
           }
           useSessionStore.getState().promoteDraft(tabId, session.session_id);
-          bridge.hideSession(rewoundFromSessionId).catch((error) => {
+          // 远程会话写到远端主机的隐藏名单，本机会话写到本机的；都放在会话所在主机的 CLI 配置目录
+          const rewindHost = hostOfPath(cwd);
+          (rewindHost
+            ? bridge.hideRemoteSession(rewindHost, rewoundFromSessionId)
+            : bridge.hideSession(rewoundFromSessionId)
+          ).catch((error) => {
             console.warn('[ClaudeDeck:rewind] failed to hide superseded session:', error);
           });
           tabId = session.session_id;

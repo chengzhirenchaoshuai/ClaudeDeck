@@ -550,6 +550,7 @@ pub fn run() {
             commands::remote::save_remote_custom_previews,
             commands::remote::load_remote_archived_sessions,
             commands::remote::save_remote_archived_sessions,
+            commands::remote::hide_remote_session,
             commands::sessions::delete_session,
             commands::sessions::list_sessions,
             commands::usage::get_profile_stats,

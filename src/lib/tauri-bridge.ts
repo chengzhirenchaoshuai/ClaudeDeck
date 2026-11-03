@@ -396,6 +396,9 @@ export const bridge = {
   /** 从列表隐藏被回退替换的旧分支（不删除 JSONL 文件） */
   hideSession: (sessionId: string) =>
     invoke<void>('hide_session', { sessionId }),
+  /** 远程会话：隐藏名单写在远端主机自己的 CLI 配置目录里，连到它的所有客户端都会隐藏 */
+  hideRemoteSession: (hostId: string, sessionId: string) =>
+    invoke<void>('hide_remote_session', { hostId, sessionId }),
 
   listRemoteHosts: () => invoke<RemoteHost[]>('list_remote_hosts'),
   saveRemoteHost: (host: RemoteHost) => invoke<void>('save_remote_host', { host }),

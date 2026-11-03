@@ -3,7 +3,7 @@ import { bridge, SessionListItem, ContentSearchResult, RemoteHost, type Terminal
 import { useSettingsStore } from './settingsStore';
 
 /** 从 ssh://<主机>/<路径> 中取出主机 id；本机路径返回 undefined */
-function hostOfPath(p: string): string | undefined {
+export function hostOfPath(p: string): string | undefined {
   return p.match(/^ssh:\/\/([^/]+)\//)?.[1];
 }
 
