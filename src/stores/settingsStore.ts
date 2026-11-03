@@ -142,6 +142,12 @@ interface SettingsState {
   cliUpdateAvailable: boolean;
   /** Latest CLI version string (for display) */
   cliLatestVersion: string;
+  /** 打开设置时已看过的 CLI 新版本号：左下角红点只对没看过的版本显示 */
+  seenCliUpdate: string;
+  /** 打开设置时已看过的应用新版本号 */
+  seenAppUpdate: string;
+  /** 记下已看过的更新版本（打开设置时调用） */
+  markUpdatesSeen: (cliVersion: string, appVersion: string) => void;
   /** Custom AI avatar image (data URL or empty string for default </> icon) */
   aiAvatarUrl: string;
   /** Custom user avatar image (data URL or empty string for default initials) */
@@ -290,6 +296,13 @@ export const useSettingsStore = create<SettingsState>()(
       autoCompactThresholdTokens: null,
       cliUpdateAvailable: false,
       cliLatestVersion: '',
+      seenCliUpdate: '',
+      seenAppUpdate: '',
+      markUpdatesSeen: (cliVersion, appVersion) =>
+        set((state) => ({
+          seenCliUpdate: cliVersion || state.seenCliUpdate,
+          seenAppUpdate: appVersion || state.seenAppUpdate,
+        })),
       aiAvatarUrl: '',
       userAvatarUrl: '',
       userDisplayName: '',
@@ -451,7 +464,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 22,
+      version: 23,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -563,6 +576,11 @@ export const useSettingsStore = create<SettingsState>()(
           // 新增提示建议，默认开启
           persisted.promptSuggestions = true;
         }
+        if (version < 23) {
+          // 新增：已看过的更新版本，用于点开设置后隐藏左下角红点
+          persisted.seenCliUpdate = '';
+          persisted.seenAppUpdate = '';
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -601,6 +619,8 @@ export const useSettingsStore = create<SettingsState>()(
         customBgImage: state.customBgImage,
         glassBlur: state.glassBlur,
         glassOpacity: state.glassOpacity,
+        seenCliUpdate: state.seenCliUpdate,
+        seenAppUpdate: state.seenAppUpdate,
       }),
     },
   ),

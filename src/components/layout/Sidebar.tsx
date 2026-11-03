@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUpdateStore } from '../../stores/updateStore';
@@ -20,9 +20,18 @@ export function Sidebar() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const toggleSettings = useSettingsStore((s) => s.toggleSettings);
   const toggleUsage = useSettingsStore((s) => s.toggleUsage);
-  // 发现应用新版本、尚未开始下载时，设置按钮上显示绿点
-  const updateAvailable = useUpdateStore((s) => s.phase === 'available');
-  const cliUpdateAvailable = useSettingsStore((s) => s.cliUpdateAvailable);
+  // 设置按钮上的提示点：CLI 有新版本显示红点，应用有新版本（尚未开始下载）显示绿点。
+  // 打开设置后记为已看过，同一版本不再提示，出现更新的版本时再亮
+  const appUpdateVersion = useUpdateStore((s) => (s.phase === 'available' ? s.version : ''));
+  const cliLatestVersion = useSettingsStore((s) => (s.cliUpdateAvailable ? s.cliLatestVersion || 'unknown' : ''));
+  const seenCliUpdate = useSettingsStore((s) => s.seenCliUpdate);
+  const seenAppUpdate = useSettingsStore((s) => s.seenAppUpdate);
+  const settingsOpen = useSettingsStore((s) => s.settingsOpen);
+  const updateAvailable = !!appUpdateVersion && appUpdateVersion !== seenAppUpdate;
+  const cliUpdateAvailable = !!cliLatestVersion && cliLatestVersion !== seenCliUpdate;
+  useEffect(() => {
+    if (settingsOpen) useSettingsStore.getState().markUpdatesSeen(cliLatestVersion, appUpdateVersion);
+  }, [settingsOpen, cliLatestVersion, appUpdateVersion]);
   const t = useT();
   const appVersion = useAppVersion();
 
