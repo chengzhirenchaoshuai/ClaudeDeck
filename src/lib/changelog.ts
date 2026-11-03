@@ -18,6 +18,53 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.5.7',
+    date: '2026-11-03',
+    highlights: {
+      zh: ['远程项目可用 VS Code / 终端打开；文件可复制到剪贴板或下载'],
+      en: ['Open remote projects in VS Code or a terminal; copy files to the clipboard or download them'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '远程项目可用 VS Code（Remote-SSH）或远程终端打开',
+            '文件可复制到剪贴板，直接粘贴为附件；远程文件可下载到本机',
+          ],
+          en: [
+            'Remote projects open in VS Code (Remote-SSH) or a remote terminal',
+            'Copy files to the clipboard to paste as attachments; download remote files',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['远程文件的「打开位置」改为在文件树中定位'],
+          en: ['"Open location" for remote files now reveals the file in the file tree'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '在资源管理器中显示文件时打开了「此电脑」',
+            '本机「在 VS Code 中打开」无法启动',
+            '回退隐藏的旧分支在远程模式下仍然显示',
+            '历史会话从斜杠菜单选 /compact 报错',
+          ],
+          en: [
+            'Revealing a file in Explorer opened "This PC" instead',
+            '"Open in VS Code" failed to start locally',
+            'Branches hidden by rewind still appeared in remote mode',
+            'Picking /compact from the slash menu failed in past sessions',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.6',
     date: '2026-11-02',
     highlights: {
