@@ -346,6 +346,22 @@ export function setPermissionAnsweredHook(fn: ((stdinId: string) => void) | null
   permissionAnsweredHook = fn;
 }
 
+/** 从文件树拖出窗口的结果。pulling：远程文件下载完成前松开了鼠标，后台继续拉取 */
+export type DragOutcome =
+  | { kind: 'dropped' }
+  | { kind: 'cancelled' }
+  | { kind: 'pulling'; id: number; name: string; target: string | null };
+
+/** 后台拉取进度 */
+export interface PullStatus {
+  received: number;
+  /** 远端文件大小，0 表示还不知道 */
+  total: number;
+  downloaded: boolean;
+  savedTo: string | null;
+  error: string | null;
+}
+
 export const bridge = {
   previewOpenUrl: (url: string) =>
     invoke<string>('preview_open_url', { url }),
@@ -455,9 +471,21 @@ export const bridge = {
   revealInFinder: (path: string) =>
     invoke<void>('reveal_in_finder', { path }),
 
-  /** 以文件形式复制到系统剪贴板（远程文件先下载到本机缓存） */
-  copyFileToClipboard: (path: string) =>
-    invoke<void>('copy_file_to_clipboard', { path }),
+  /** 从文件树拖出窗口：发起系统级拖拽（远程文件先下载到本机缓存） */
+  startFileDrag: (path: string) =>
+    invoke<DragOutcome>('start_file_drag', { path }),
+
+  /** 拖出远程文件时松开太快、后台继续拉取的进度 */
+  pullStatus: (id: number) =>
+    invoke<PullStatus>('pull_status', { id }),
+
+  /** 目标位置识别不出时：下载完成后保存到用户选择的位置 */
+  savePull: (id: number, dest: string) =>
+    invoke<void>('save_pull', { id, dest }),
+
+  /** 关闭拉取任务（还在下载就取消） */
+  closePull: (id: number) =>
+    invoke<void>('close_pull', { id }),
 
   /** 用 VS Code Remote-SSH 打开远程目录（uri 为 ssh://<主机>/<目录>） */
   openRemoteInVscode: (uri: string) =>

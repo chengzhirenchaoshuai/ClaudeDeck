@@ -154,6 +154,24 @@ export function endTreeDrag(): TreeDragResult | null {
   return path ? { sourcePath: path, targetFolder, droppedInTree } : null;
 }
 
+/**
+ * 内部拖拽移出窗口、改由系统拖拽接手：收起幽灵元素，返回被拖的路径。
+ * 系统拖拽结束前保持 _treeDragActive（调用 finishSystemDrag 清除），
+ * 这样拖回本窗口放下时不会被当成外部文件加为附件。
+ */
+export function handOffTreeDrag(): string | null {
+  const path = _pendingTreeDragPath;
+  _pendingTreeDragPath = null;
+  removeGhost(); // 同时取消 5 秒保护定时器，避免中途把 _treeDragActive 清掉
+  if (!path) _treeDragActive = false;
+  return path;
+}
+
+/** 系统拖拽结束（放下、取消或失败） */
+export function finishSystemDrag() {
+  _treeDragActive = false;
+}
+
 export function isTreeDragActive(): boolean {
   return _treeDragActive;
 }

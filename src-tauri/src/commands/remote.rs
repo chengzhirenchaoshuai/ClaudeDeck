@@ -1111,6 +1111,45 @@ fn scp_command(host: &RemoteHost) -> Command {
     cmd
 }
 
+/// 校验远端文件路径：不能含换行、NUL，不能有 `..` 段
+fn check_remote_file_path(path: &str) -> Result<(), String> {
+    if path.chars().any(|c| matches!(c, '\n' | '\r' | '\0'))
+        || path.split(['/', '\\']).any(|seg| seg == "..")
+    {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    Ok(())
+}
+
+/// 用 scp 把远端文件下载到本机路径的命令（边下边写文件，可按本地文件大小算进度）。
+/// 远端路径用正斜杠，Windows OpenSSH 的 sftp 服务端可直接识别，空格、中文无需加引号。
+pub fn scp_download_command(uri: &str, local: &std::path::Path) -> Result<Command, String> {
+    let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
+    check_remote_file_path(&path)?;
+    let host = find_host(&host_id)?;
+    let mut cmd = scp_command(&host);
+    cmd.arg(format!("{}:{}", host.destination.trim(), path.replace('\\', "/")))
+        .arg(local);
+    Ok(cmd)
+}
+
+/// 远端文件大小（字节）。是目录或不存在时报错
+pub async fn remote_file_size(uri: &str) -> Result<u64, String> {
+    let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
+    check_remote_file_path(&path)?;
+    let host = find_host(&host_id)?;
+    let script = format!(
+        "try {{ $fi = Get-Item -LiteralPath {} -ErrorAction Stop; \
+           if ($fi.PSIsContainer) {{ 'DIR' }} else {{ $fi.Length }} }} catch {{ 'ERR' }}",
+        ps_quote(&path.replace('/', "\\"))
+    );
+    let (stdout, _, _) = run_remote(&host, &powershell_command(&script), Duration::from_secs(30)).await?;
+    match stdout.trim() {
+        "DIR" => Err("这是一个目录，不是文件".to_string()),
+        s => s.parse().map_err(|_| "读取远端文件大小失败".to_string()),
+    }
+}
+
 /// 粘贴、选择的附件只有内容没有本机文件：先写到本机临时目录，上传后删除
 pub async fn save_remote_temp_file(cwd_uri: &str, file_name: &str, data: &[u8]) -> Result<String, String> {
     let dir = std::env::temp_dir().join("tokenicode").join("upload");

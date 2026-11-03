@@ -4,6 +4,7 @@ pub mod remote;
 pub mod network;
 pub mod session_process;
 pub mod files;
+pub mod drag_out;
 pub mod sessions;
 pub mod toolchain;
 pub mod local_models;

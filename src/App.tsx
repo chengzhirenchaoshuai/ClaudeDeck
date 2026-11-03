@@ -6,6 +6,7 @@ import { SecondaryPanel } from './components/layout/SecondaryPanel';
 import { CommandPalette } from './components/commands/CommandPalette';
 import { ImageLightbox } from './components/shared/ImageLightbox';
 import { Toast } from './components/shared/Toast';
+import { PullProgress } from './components/files/PullProgress';
 import { useSettingsStore } from './stores/settingsStore';
 import { useProviderStore } from './stores/providerStore';
 import type { FontFamily } from './stores/settingsStore';
@@ -597,6 +598,7 @@ function App() {
       <Overlays />
       <ImageLightbox />
       <Toast />
+      <PullProgress />
     </>
   );
 }

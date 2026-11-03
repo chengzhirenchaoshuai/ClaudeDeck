@@ -39,7 +39,9 @@ flate2 = "1"
 zip = "2"
 sha2 = "0.10"
 aes-gcm = "0.10"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+# 从窗口把文件拖到桌面 / 资源管理器（系统级拖拽）
+drag = "2.1.1"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,9 +1,11 @@
-// 把文件“拿到本机”的两种方式：另存为、以文件形式复制到系统剪贴板（可直接粘贴为邮件附件）。
-// 本机文件和远程文件（ssh:// URI，后端经 ssh 下载，上限 100MB）都支持。
+// 把文件“拿到本机”：另存为，或从文件树拖出窗口（系统级拖拽）。
+// 本机文件和远程文件（ssh:// URI）都支持。
 import { save } from '@tauri-apps/plugin-dialog';
-import { bridge, isRemotePath } from './tauri-bridge';
+import { bridge } from './tauri-bridge';
 import { showToast } from '../components/shared/Toast';
 import { t } from './i18n';
+import { finishSystemDrag } from './drag-state';
+import { usePullStore } from '../stores/pullStore';
 
 function fileNameOf(path: string): string {
   return path.split(/[\/]/).pop() || 'file';
@@ -28,14 +30,20 @@ export async function saveFileAsWithDialog(path: string): Promise<boolean> {
   return true;
 }
 
-/** 以文件形式复制到系统剪贴板，之后可在邮件、聊天软件、资源管理器里粘贴 */
-export async function copyFileToClipboard(path: string): Promise<void> {
-  // 远程文件要先下载，可能要几秒，先给个提示
-  if (isRemotePath(path)) showToast(t('files.downloadingForClipboard'), 'info');
+/**
+ * 把文件树里的文件拖出窗口（系统级拖拽），放到桌面、资源管理器等处。
+ * 远程文件要先经 scp 下载：按住到下载完成就正常拖拽；提前松开则转为后台拉取，
+ * 由 PullProgress 显示进度，完成后保存到松开位置的文件夹。
+ */
+export async function dragOutToSystem(path: string): Promise<void> {
   try {
-    await bridge.copyFileToClipboard(path);
-    showToast(t('files.copiedToClipboard').replace('{name}', fileNameOf(path)), 'success');
+    const outcome = await bridge.startFileDrag(path);
+    if (outcome.kind === 'pulling') {
+      usePullStore.getState().addPull(outcome.id, outcome.name, outcome.target);
+    }
   } catch (err) {
-    showToast(`${t('files.copyToClipboardFailed')}: ${err}`, 'error');
+    showToast(`${t('files.dragOutFailed')}: ${err}`, 'error');
+  } finally {
+    finishSystemDrag();
   }
 }

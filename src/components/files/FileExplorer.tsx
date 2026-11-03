@@ -6,13 +6,13 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { bridge, isRemotePath } from '../../lib/tauri-bridge';
 import { remoteNativePath } from '../../lib/remote';
 import { useT } from '../../lib/i18n';
-import { startTreeDrag, moveTreeDrag, endTreeDrag } from '../../lib/drag-state';
+import { startTreeDrag, moveTreeDrag, endTreeDrag, handOffTreeDrag } from '../../lib/drag-state';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { FileIcon } from '../shared/FileIcon';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { showToast } from '../shared/Toast';
-import { copyFileToClipboard, saveFileAsWithDialog } from '../../lib/file-transfer';
+import { saveFileAsWithDialog, dragOutToSystem } from '../../lib/file-transfer';
 
 function getChangeBadge(kind: FileChangeKind | undefined) {
   if (!kind) return null;
@@ -133,13 +133,8 @@ function ContextMenu({ menu, onClose, callbacks }: {
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="5" width="9" height="9" rx="1.5" /><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5" /></svg>,
       action: () => { callbacks.onCopyFile(menu.path); onClose(); },
     }] as MenuItem[] : []),
-    // 拿到本机：以文件形式复制到系统剪贴板（可粘贴为邮件附件）；远程文件还可以下载到指定位置
+    // 远程文件下载到本机指定位置
     ...(!menu.isDir ? [{
-      label: t('files.copyToClipboard'),
-      icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2.5H6a1 1 0 00-1 1V4H4a1.5 1.5 0 00-1.5 1.5v7A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5v-7A1.5 1.5 0 0012 4h-1v-.5a1 1 0 00-1-1z" /><path d="M6 9.5l1.5 1.5L10.5 8" /></svg>,
-      action: () => { onClose(); void copyFileToClipboard(menu.path); },
-      remoteOk: true,
-    }, {
       label: t('files.downloadTo'),
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5" /><path d="M2.5 11v1.5A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5V11" /></svg>,
       action: () => { onClose(); void saveFileAsWithDialog(menu.path); },
@@ -385,6 +380,18 @@ function TreeNode({
               if (dx * dx + dy * dy < 25) return; // 5px threshold
               started = true;
               startTreeDrag(node.path, node.is_dir);
+            }
+            // 拖出窗口：交给系统拖拽，可以放到桌面、资源管理器等处。
+            // 远程目录不支持（需要递归下载），继续按内部拖拽处理
+            const outside = me.clientX < 0 || me.clientY < 0
+              || me.clientX >= window.innerWidth || me.clientY >= window.innerHeight;
+            if (outside && !(node.is_dir && isRemotePath(node.path))) {
+              // 系统拖拽会吞掉之后的 mouseup，这里先把监听拆掉
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+              const path = handOffTreeDrag();
+              if (path) void dragOutToSystem(path);
+              return;
             }
             moveTreeDrag(me.clientX, me.clientY);
           };

@@ -31,7 +31,7 @@ import { FileIcon } from '../shared/FileIcon';
 import { tokenicodeTheme, tokenicodeHighlight } from '../../lib/codemirror-theme';
 import { useT } from '../../lib/i18n';
 import { showToast } from '../shared/Toast';
-import { saveFileAsWithDialog, copyFileToClipboard } from '../../lib/file-transfer';
+import { saveFileAsWithDialog } from '../../lib/file-transfer';
 
 /* ================================================================
    Helpers
@@ -284,18 +284,6 @@ export function FilePreview() {
     }
   }, [selectedFile]);
 
-  // 以文件形式复制到系统剪贴板（远程文件要先下载，期间禁用按钮）
-  const [isCopyingFile, setIsCopyingFile] = useState(false);
-  const handleCopyFileToClipboard = useCallback(async () => {
-    if (!selectedFile) return;
-    setIsCopyingFile(true);
-    try {
-      await copyFileToClipboard(selectedFile);
-    } finally {
-      setIsCopyingFile(false);
-    }
-  }, [selectedFile]);
-
   /* Mode tabs for the header */
   const modeTabs = useMemo(() => {
     if (isMarkdown) {
@@ -449,21 +437,6 @@ export function FilePreview() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
               stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
               <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z" />
-            </svg>
-          </button>
-
-          {/* 复制文件到剪贴板：可直接粘贴为邮件附件 */}
-          <button
-            onClick={handleCopyFileToClipboard}
-            disabled={isCopyingFile}
-            className="p-2 rounded-lg hover:bg-bg-tertiary
-              text-text-tertiary transition-smooth cursor-pointer disabled:opacity-50 disabled:cursor-wait"
-            title={t('files.copyToClipboard')}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 2.5H6a1 1 0 00-1 1V4H4a1.5 1.5 0 00-1.5 1.5v7A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5v-7A1.5 1.5 0 0012 4h-1v-.5a1 1 0 00-1-1z" />
-              <path d="M6 9.5l1.5 1.5L10.5 8" />
             </svg>
           </button>
 
