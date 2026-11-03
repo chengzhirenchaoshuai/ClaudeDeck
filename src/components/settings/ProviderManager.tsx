@@ -204,21 +204,30 @@ export function ProviderManager({ alwaysExpanded = false }: { alwaysExpanded?: b
 
       {isExpanded && (
         <div className="space-y-3 ml-0">
-          {/* Inherit system config option */}
-          <div className={`rounded-lg text-[13px] transition-smooth border
-            ${!activeProviderId
-              ? 'bg-accent/10 border-accent/30'
-              : 'border-border-subtle hover:bg-bg-secondary'
-            }`}
+          {/* 继承系统配置：布局与下方服务商卡片（ProviderCard）一致，两行、同样的内边距与选中圆点 */}
+          <button
+            onClick={() => setActive(null)}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-smooth border
+              ${!activeProviderId
+                ? 'bg-accent/5 border-accent/20'
+                : 'border-border-subtle hover:bg-bg-secondary'
+              }`}
           >
-            <button
-              onClick={() => setActive(null)}
-              className={`text-left w-full px-3 py-2 ${!activeProviderId ? 'text-accent' : 'text-text-muted'}`}
-            >
-              {t('provider.inherit')}
-              <span className="text-xs text-text-tertiary ml-2">{t('provider.inheritDesc')}</span>
-            </button>
-          </div>
+            <span className={`shrink-0 block w-2.5 h-2.5 rounded-full transition-smooth
+              ${!activeProviderId
+                ? 'bg-accent shadow-[0_0_4px_rgba(var(--accent-rgb,99,102,241),0.4)]'
+                : 'border-[1.5px] border-text-tertiary'
+              }`}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-medium text-text-primary truncate">
+                {t('provider.inherit')}
+              </div>
+              <div className="mt-0.5 text-[11px] text-text-tertiary truncate">
+                {t('provider.inheritDesc')}
+              </div>
+            </div>
+          </button>
 
           {/* Provider cards + inline forms */}
           <div className="space-y-1.5">
