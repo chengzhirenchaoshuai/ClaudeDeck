@@ -212,7 +212,7 @@ export function UsageStatusBar() {
   if (!five && !seven) return null;
 
   return (
-    <div className="hidden md:flex items-center gap-3 px-2 py-1 rounded-lg
+    <div className="hidden md:flex items-center gap-2.5 h-6 px-2 rounded-lg whitespace-nowrap
       bg-bg-secondary/60 border border-border-subtle text-[10px]">
       <RateLimitWindowView label="5h" entry={five} t={t} />
       <RateLimitWindowView label={t('chat.weekly')} entry={seven} t={t} />

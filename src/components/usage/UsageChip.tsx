@@ -42,7 +42,7 @@ export function UsageChip() {
   return (
     <button
       onClick={() => toggleUsage('usage')}
-      className="hidden lg:inline-flex items-center gap-1.5 ml-2 px-2 py-1 rounded-lg
+      className="hidden lg:inline-flex items-center gap-1.5 h-6 px-2 rounded-lg whitespace-nowrap
         bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary
         hover:text-text-primary hover:bg-bg-secondary transition-smooth"
       title={t('usage.title')}

@@ -113,11 +113,11 @@ export function GitChip() {
   };
 
   return (
-    <div className="relative hidden md:block ml-2">
+    <div className="relative hidden md:block">
       <button
         ref={buttonRef}
         onClick={toggle}
-        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg
+        className="inline-flex items-center gap-1.5 h-6 px-2 rounded-lg
           bg-bg-secondary/60 border border-border-subtle text-[10px] text-text-tertiary
           hover:text-text-primary hover:bg-bg-secondary transition-smooth"
         title={t('git.title')}

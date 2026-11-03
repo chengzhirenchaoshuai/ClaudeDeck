@@ -38,12 +38,12 @@ export function UpdateButton() {
     <button
       onClick={handleClick}
       disabled={busy}
-      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium
-        transition-smooth mr-1
+      className={`flex items-center gap-1.5 h-6 px-2 rounded-lg text-[10px] font-medium whitespace-nowrap
+        transition-smooth
         ${phase === 'ready'
           ? 'bg-success/15 text-success border border-success/30 hover:bg-success/25'
           : busy
-            ? 'bg-accent/10 text-accent cursor-wait'
+            ? 'bg-accent/10 text-accent border border-accent/20 cursor-wait'
             : 'bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20'
         }`}
       title={title}

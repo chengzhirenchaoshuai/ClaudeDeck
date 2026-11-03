@@ -446,22 +446,27 @@ export function ChatPanel() {
         )}
         </div>
 
-        {/* Spacer + right-side actions */}
-        <div className="ml-auto flex items-center" />
-        <GitChip />
-        <UsageStatusBar />
-        <UsageChip />
-        <UpdateButton />
-        <ExportMenu sessionPath={currentSessionPath} />
-        <button onClick={toggleSecondaryPanel}
-          className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
-            transition-smooth" title={t('chat.toggleFiles')}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5">
-            <rect x="1" y="2" width="14" height="12" rx="2" />
-            <path d="M10 2v12" />
-          </svg>
-        </button>
+        {/* 右侧：状态胶囊一组、图标按钮一组，间距统一由容器的 gap 控制，子组件不再各自加外边距 */}
+        <div className="ml-auto flex items-center gap-2 pl-3">
+          <div className="flex items-center gap-1.5">
+            <GitChip />
+            <UsageStatusBar />
+            <UsageChip />
+            <UpdateButton />
+          </div>
+          <div className="flex items-center gap-0.5">
+            <ExportMenu sessionPath={currentSessionPath} />
+            <button onClick={toggleSecondaryPanel}
+              className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-tertiary
+                transition-smooth" title={t('chat.toggleFiles')}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                stroke="currentColor" strokeWidth="1.5">
+                <rect x="1" y="2" width="14" height="12" rx="2" />
+                <path d="M10 2v12" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-1 min-h-0 relative">
