@@ -29,7 +29,10 @@ export function EnvSwitcher() {
 
   if (hosts.length === 0) return null;
   const isRemote = activeEnv !== LOCAL_ENV;
-  const options = [{ id: LOCAL_ENV, label: t('env.local') }, ...hosts.map((h) => ({ id: h.id, label: h.id }))];
+  const options = [
+    { id: LOCAL_ENV, label: t('env.local') },
+    ...hosts.map((h) => ({ id: h.id, label: `${t('env.remoteMode')} · ${h.id}` })),
+  ];
   const current = options.find((o) => o.id === activeEnv) ?? options[0];
 
   return (
@@ -37,7 +40,7 @@ export function EnvSwitcher() {
       <div ref={boxRef} className="relative">
         <button
           onClick={() => setOpen((v) => !v)}
-          className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs
+          className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs
             bg-bg-secondary border transition-smooth
             ${open ? 'border-accent' : 'border-border-subtle hover:border-border-default'}`}
           title={current.label}
@@ -57,7 +60,7 @@ export function EnvSwitcher() {
               <button
                 key={o.id}
                 onClick={() => { setOpen(false); if (o.id !== activeEnv) switchEnv(o.id); }}
-                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-left transition-smooth
+                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-left transition-smooth
                   ${activeEnv === o.id
                     ? 'bg-accent/15 text-accent font-medium'
                     : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'}`}
