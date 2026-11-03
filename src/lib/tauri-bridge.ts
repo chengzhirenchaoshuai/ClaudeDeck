@@ -455,6 +455,18 @@ export const bridge = {
   revealInFinder: (path: string) =>
     invoke<void>('reveal_in_finder', { path }),
 
+  /** 以文件形式复制到系统剪贴板（远程文件先下载到本机缓存） */
+  copyFileToClipboard: (path: string) =>
+    invoke<void>('copy_file_to_clipboard', { path }),
+
+  /** 用 VS Code Remote-SSH 打开远程目录（uri 为 ssh://<主机>/<目录>） */
+  openRemoteInVscode: (uri: string) =>
+    invoke<void>('open_remote_in_vscode', { uri }),
+
+  /** 打开 ssh 到远端并已进入该目录的终端窗口 */
+  openRemoteTerminal: (uri: string) =>
+    invoke<void>('open_remote_terminal', { uri }),
+
   /** 在资源管理器中打开目录（其实是文件时选中它） */
   openDirectory: (path: string) =>
     invoke<void>('open_directory', { path }),

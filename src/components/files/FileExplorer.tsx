@@ -11,6 +11,8 @@ import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { FileIcon } from '../shared/FileIcon';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { showToast } from '../shared/Toast';
+import { copyFileToClipboard, saveFileAsWithDialog } from '../../lib/file-transfer';
 
 function getChangeBadge(kind: FileChangeKind | undefined) {
   if (!kind) return null;
@@ -50,7 +52,18 @@ interface ContextMenuCallbacks {
   remote: boolean;
 }
 
-type MenuItem = { label: string; icon: React.ReactNode; action: () => void; danger?: boolean; remoteOk?: boolean } | 'separator';
+type MenuItem = { label: string; icon: React.ReactNode; action: () => void; danger?: boolean; remoteOk?: boolean; remoteOnly?: boolean } | 'separator';
+
+/** 远程文件的所在目录：目录本身直接返回，文件取父目录（ssh:// URI 一律用正斜杠） */
+function remoteDirOf(path: string, isDir: boolean): string {
+  return isDir ? path : path.slice(0, path.lastIndexOf('/'));
+}
+
+/** 在本机打开远程目录（VS Code Remote-SSH / 远程终端），失败时提示原因 */
+export function openRemoteDir(kind: 'vscode' | 'terminal', uri: string) {
+  const run = kind === 'vscode' ? bridge.openRemoteInVscode : bridge.openRemoteTerminal;
+  run(uri).catch((err) => showToast(String(err), 'error'));
+}
 
 function ContextMenu({ menu, onClose, callbacks }: {
   menu: ContextMenuState;
@@ -120,6 +133,19 @@ function ContextMenu({ menu, onClose, callbacks }: {
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="5" width="9" height="9" rx="1.5" /><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-6A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V5" /></svg>,
       action: () => { callbacks.onCopyFile(menu.path); onClose(); },
     }] as MenuItem[] : []),
+    // 拿到本机：以文件形式复制到系统剪贴板（可粘贴为邮件附件）；远程文件还可以下载到指定位置
+    ...(!menu.isDir ? [{
+      label: t('files.copyToClipboard'),
+      icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2.5H6a1 1 0 00-1 1V4H4a1.5 1.5 0 00-1.5 1.5v7A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5v-7A1.5 1.5 0 0012 4h-1v-.5a1 1 0 00-1-1z" /><path d="M6 9.5l1.5 1.5L10.5 8" /></svg>,
+      action: () => { onClose(); void copyFileToClipboard(menu.path); },
+      remoteOk: true,
+    }, {
+      label: t('files.downloadTo'),
+      icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5" /><path d="M2.5 11v1.5A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5V11" /></svg>,
+      action: () => { onClose(); void saveFileAsWithDialog(menu.path); },
+      remoteOk: true,
+      remoteOnly: true,
+    }] as MenuItem[] : []),
     ...(menu.isDir && callbacks.clipboardPath ? [{
       label: t('files.paste'),
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M10 2H6a1 1 0 00-1 1v1H3a1 1 0 00-1 1v8a1 1 0 001 1h10a1 1 0 001-1V5a1 1 0 00-1-1h-2V3a1 1 0 00-1-1z" /></svg>,
@@ -153,6 +179,20 @@ function ContextMenu({ menu, onClose, callbacks }: {
       icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 3l8 5-8 5V3z" /></svg>,
       action: () => { bridge.openInVscode(menu.path); onClose(); },
     },
+    {
+      label: t('files.openRemoteVscode'),
+      icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 3l8 5-8 5V3z" /></svg>,
+      action: () => { openRemoteDir('vscode', remoteDirOf(menu.path, menu.isDir)); onClose(); },
+      remoteOk: true,
+      remoteOnly: true,
+    },
+    {
+      label: t('files.openRemoteTerminal'),
+      icon: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" /><path d="M4.5 6l2 2-2 2M8 10h3.5" /></svg>,
+      action: () => { openRemoteDir('terminal', remoteDirOf(menu.path, menu.isDir)); onClose(); },
+      remoteOk: true,
+      remoteOnly: true,
+    },
   ];
 
   return createPortal(
@@ -162,7 +202,10 @@ function ContextMenu({ menu, onClose, callbacks }: {
         bg-bg-card shadow-lg animate-fade-in whitespace-nowrap"
       style={{ left: pos.x, top: pos.y }}
     >
-      {(callbacks.remote ? items.filter((item) => item !== 'separator' && item.remoteOk) : items).map((item, i) =>
+      {(callbacks.remote
+        ? items.filter((item) => item !== 'separator' && item.remoteOk)
+        : items.filter((item) => item === 'separator' || !item.remoteOnly)
+      ).map((item, i) =>
         item === 'separator' ? (
           <div key={i} className="my-1 border-t border-border-subtle" />
         ) : (
@@ -288,7 +331,11 @@ function TreeNode({
   onCreateSubmit: () => void;
   onCreateCancel: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // 展开状态放在 fileStore，便于“在文件树中定位”从外部展开父目录
+  const isExpanded = useFileStore((s) => node.is_dir && s.expandedDirs.has(node.path));
+  const toggleDir = useFileStore((s) => s.toggleDir);
+  const isRevealTarget = useFileStore((s) => s.revealTarget === node.path);
+  const rowRef = useRef<HTMLButtonElement>(null);
   const selectedFile = useFileStore((s) => s.selectedFile);
   const selectFile = useFileStore((s) => s.selectFile);
   const changeKind = useFileStore((s) => s.changedFiles.get(node.path));
@@ -300,11 +347,17 @@ function TreeNode({
   );
   const isSelected = selectedFile === node.path;
 
-  const isExpanded = expanded;
+  // 被定位时滚动到可见处，高亮 1.5 秒后清除定位标记
+  useEffect(() => {
+    if (!isRevealTarget) return;
+    rowRef.current?.scrollIntoView({ block: 'center' });
+    const timer = setTimeout(() => useFileStore.getState().clearRevealTarget(), 1500);
+    return () => clearTimeout(timer);
+  }, [isRevealTarget]);
 
   const handleClick = (e: React.MouseEvent) => {
     if (node.is_dir) {
-      setExpanded(!expanded);
+      toggleDir(node.path);
     } else {
       if ((e.ctrlKey || e.metaKey) && useSettingsStore.getState().ctrlClickOpenExternally && !isRemotePath(node.path)) {
         bridge.openWithDefaultApp(node.path);
@@ -317,6 +370,7 @@ function TreeNode({
   return (
     <div>
       <button
+        ref={rowRef}
         onClick={handleClick}
         onMouseDown={(e) => {
           if (e.button !== 0) return;
@@ -382,6 +436,7 @@ function TreeNode({
         {...(node.is_dir ? { 'data-dir-path': node.path } : {})}
         className={`w-full flex items-center gap-2 py-1.5 px-2 rounded-lg
           text-left text-[13px] transition-smooth group
+          ${isRevealTarget ? 'ring-1 ring-accent ring-inset' : ''}
           ${isSelected
             ? 'bg-accent/10 text-accent'
             : changeKind
@@ -493,6 +548,11 @@ export function FileExplorer() {
   const toggleHiddenFiles = useSettingsStore((s) => s.toggleHiddenFiles);
 
   const [searchQuery, setSearchQuery] = useState('');
+  // 定位文件时退出搜索：搜索结果是平铺列表，目标节点不在树视图里
+  const revealTarget = useFileStore((s) => s.revealTarget);
+  useEffect(() => {
+    if (revealTarget) setSearchQuery('');
+  }, [revealTarget]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -714,6 +774,30 @@ export function FileExplorer() {
               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <path d="M2 4h4l2 2h6v7H2V4z" />
               <path d="M7 8v3M5.5 9.5h3" />
+            </svg>
+          </button>
+            </>
+          )}
+          {/* 远程项目：用本机 VS Code（Remote-SSH）或终端打开远端项目目录 */}
+          {isRemote && workingDirectory && (
+            <>
+          <button onClick={() => openRemoteDir('vscode', workingDirectory)}
+            className="p-1.5 rounded-lg hover:bg-bg-secondary active:bg-bg-tertiary
+              text-text-tertiary hover:text-text-secondary transition-smooth"
+            title={t('files.openRemoteVscode')}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5" />
+            </svg>
+          </button>
+          <button onClick={() => openRemoteDir('terminal', workingDirectory)}
+            className="p-1.5 rounded-lg hover:bg-bg-secondary active:bg-bg-tertiary
+              text-text-tertiary hover:text-text-secondary transition-smooth"
+            title={t('files.openRemoteTerminal')}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+              <path d="M4.5 6l2 2-2 2M8 10h3.5" />
             </svg>
           </button>
             </>

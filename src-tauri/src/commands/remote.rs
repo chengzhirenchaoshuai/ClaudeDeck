@@ -1467,9 +1467,146 @@ pub async fn test_remote_connection(id: String) -> Result<Value, String> {
     }))
 }
 
+// ---------------------------------------------------------------------------
+// 用本机程序打开远程目录：VS Code Remote-SSH、远程终端
+// ---------------------------------------------------------------------------
+
+/// 远端 Windows 路径转成 vscode-remote URI 的路径部分：`C:\Users\me` → `/c:/Users/me`。
+/// 盘符小写、冒号不转义（转成 %3A 后 VS Code 认不出盘符，会打开空窗口），
+/// 其余非安全字符按 UTF-8 百分号编码。`%` `&` 也会被编码，避免经 cmd /C 传参时被解释。
+fn vscode_remote_path(remote_path: &str) -> String {
+    let mut path = remote_path.replace('\\', "/");
+    let bytes = path.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        path = format!("{}{}", (bytes[0] as char).to_ascii_lowercase(), &path[1..]);
+    }
+    if !path.starts_with('/') {
+        path.insert(0, '/');
+    }
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'/' | b':' | b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
+/// 构造 `code --folder-uri` 用的 URI。VS Code 的 ssh-remote 授权部分只能写 ssh 目标，
+/// 带不了端口和私钥参数：配置了非默认端口或私钥时，要求改用 ~/.ssh/config 里的 Host 别名。
+fn vscode_remote_uri(host: &RemoteHost, remote_path: &str) -> Result<String, String> {
+    let custom_port = host.port.is_some_and(|p| p != 22);
+    let custom_identity = host.identity_file.as_deref().is_some_and(|f| !f.trim().is_empty());
+    if custom_port || custom_identity {
+        return Err(
+            "该主机配置了自定义端口或私钥，VS Code Remote-SSH 无法直接使用。\
+             请在 ~/.ssh/config 中为它写一个 Host 别名（含 Port / IdentityFile），并把连接目标改成该别名"
+                .to_string(),
+        );
+    }
+    let dest = host.destination.trim();
+    // 目标只允许 ssh 主机名常见字符，防止拼进 URI / 命令行后改变含义
+    if dest.is_empty()
+        || dest.starts_with('-')
+        || !dest.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@'))
+    {
+        return Err(format!("连接目标 {} 含有 VS Code 不支持的字符", dest));
+    }
+    Ok(format!("vscode-remote://ssh-remote+{}{}", dest, vscode_remote_path(remote_path)))
+}
+
+/// 用 VS Code（需安装 Remote-SSH 扩展）打开远程目录。`uri` 为 `ssh://<主机>/<远端目录>`。
+#[tauri::command]
+pub async fn open_remote_in_vscode(uri: String) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let (host_id, remote_path) = parse_remote_uri(&uri).ok_or("不是远程路径")?;
+    let host = find_host(&host_id)?;
+    let folder_uri = vscode_remote_uri(&host, &remote_path)?;
+    // code 实际是 code.cmd，必须经 cmd /C 启动；--folder-uri 要放在最后（Windows 上放前面会静默失败）
+    std::process::Command::new("cmd")
+        .args(["/C", "code", "--folder-uri", &folder_uri])
+        .creation_flags(0x08000000)
+        .spawn()
+        .map_err(|e| format!("无法启动 VS Code: {}", e))?;
+    Ok(())
+}
+
+/// 远程终端的 ssh 参数：-t 分配 pty，登录后用 PowerShell 进入目标目录并保持交互。
+/// 不加 BatchMode：终端里可以正常询问密码或确认主机指纹。
+fn remote_terminal_args(host: &RemoteHost, remote_path: &str) -> Result<Vec<String>, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    if remote_path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("远程路径含有不支持的字符".to_string());
+    }
+    let script = format!("Set-Location -LiteralPath {}", ps_quote(&remote_path.replace('/', "\\")));
+    let encoded: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let mut args = vec!["-t".to_string()];
+    if let Some(port) = host.port {
+        args.push("-p".to_string());
+        args.push(port.to_string());
+    }
+    if let Some(identity) = host.identity_file.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        args.push("-i".to_string());
+        args.push(identity.to_string());
+    }
+    args.push(host.destination.trim().to_string());
+    // 远端默认 shell 无论是 cmd 还是 PowerShell，这一行都能原样执行；编码后不用处理路径里的引号
+    args.push(format!("powershell -NoLogo -NoExit -EncodedCommand {}", STANDARD.encode(encoded)));
+    Ok(args)
+}
+
+/// 打开一个 ssh 到远端并已进入指定目录的终端窗口。优先 Windows Terminal，没有时用新控制台窗口。
+#[tauri::command]
+pub async fn open_remote_terminal(uri: String) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let (host_id, remote_path) = parse_remote_uri(&uri).ok_or("不是远程路径")?;
+    let host = find_host(&host_id)?;
+    validate_host(&host)?;
+    let args = remote_terminal_args(&host, &remote_path)?;
+    let wt = std::process::Command::new("wt")
+        .arg("ssh")
+        .args(&args)
+        .creation_flags(0x08000000)
+        .spawn();
+    if wt.is_err() {
+        std::process::Command::new("ssh")
+            .args(&args)
+            .creation_flags(0x00000010) // CREATE_NEW_CONSOLE
+            .spawn()
+            .map_err(|e| format!("无法启动 ssh（请确认系统已安装 OpenSSH 客户端）: {}", e))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vscode_uri_for_windows_path() {
+        let host = RemoteHost { id: "h".into(), destination: "me@win-pc".into(), port: Some(22), identity_file: None };
+        assert_eq!(
+            vscode_remote_uri(&host, "C:/Users/me/my proj").unwrap(),
+            "vscode-remote://ssh-remote+me@win-pc/c:/Users/me/my%20proj"
+        );
+        assert_eq!(vscode_remote_path("D:\\a&b\\中"), "/d:/a%26b/%E4%B8%AD");
+    }
+
+    #[test]
+    fn vscode_uri_rejects_custom_port() {
+        let host = RemoteHost { id: "h".into(), destination: "win-pc".into(), port: Some(2222), identity_file: None };
+        assert!(vscode_remote_uri(&host, "C:/p").is_err());
+    }
+
+    #[test]
+    fn terminal_args_include_port_and_cd() {
+        let host = RemoteHost { id: "h".into(), destination: "win-pc".into(), port: Some(2222), identity_file: None };
+        let args = remote_terminal_args(&host, "C:/p").unwrap();
+        assert_eq!(&args[..4], ["-t", "-p", "2222", "win-pc"]);
+        assert!(args[4].starts_with("powershell -NoLogo -NoExit -EncodedCommand "));
+    }
 
     #[test]
     fn parse_uri() {

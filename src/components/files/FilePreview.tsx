@@ -23,14 +23,15 @@ import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { useFileStore } from '../../stores/fileStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { bridge, isRemotePath } from '../../lib/tauri-bridge';
 import type { SkillTranslationConfig } from '../../lib/tauri-bridge';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { FileIcon } from '../shared/FileIcon';
 import { tokenicodeTheme, tokenicodeHighlight } from '../../lib/codemirror-theme';
 import { useT } from '../../lib/i18n';
-import { save } from '@tauri-apps/plugin-dialog';
 import { showToast } from '../shared/Toast';
+import { saveFileAsWithDialog, copyFileToClipboard } from '../../lib/file-transfer';
 
 /* ================================================================
    Helpers
@@ -275,24 +276,25 @@ export function FilePreview() {
   const [isSavingAs, setIsSavingAs] = useState(false);
   const handleSaveAs = useCallback(async () => {
     if (!selectedFile) return;
-    const name = getFileName(selectedFile);
-    const dot = name.lastIndexOf('.');
-    const ext = dot > 0 ? name.slice(dot + 1) : '';
-    const dest = await save({
-      defaultPath: name,
-      filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined,
-    });
-    if (!dest) return;
     setIsSavingAs(true);
     try {
-      await bridge.saveFileAs(selectedFile, dest);
-      showToast(t('files.savedAs').replace('{path}', dest), 'success');
-    } catch (err) {
-      showToast(`${t('files.saveAsFailed')}: ${err}`, 'error');
+      await saveFileAsWithDialog(selectedFile);
     } finally {
       setIsSavingAs(false);
     }
-  }, [selectedFile, t]);
+  }, [selectedFile]);
+
+  // 以文件形式复制到系统剪贴板（远程文件要先下载，期间禁用按钮）
+  const [isCopyingFile, setIsCopyingFile] = useState(false);
+  const handleCopyFileToClipboard = useCallback(async () => {
+    if (!selectedFile) return;
+    setIsCopyingFile(true);
+    try {
+      await copyFileToClipboard(selectedFile);
+    } finally {
+      setIsCopyingFile(false);
+    }
+  }, [selectedFile]);
 
   /* Mode tabs for the header */
   const modeTabs = useMemo(() => {
@@ -426,20 +428,44 @@ export function FilePreview() {
             </button>
           )}
 
-          {/* 在资源管理器中定位：远程文件在远端，本机无法打开 */}
-          {!isRemoteFile && (
-            <button
-              onClick={() => bridge.revealInFinder(selectedFile).catch((err) => showToast(String(err), 'error'))}
-              className="p-2 rounded-lg hover:bg-bg-tertiary
-                text-text-tertiary transition-smooth cursor-pointer"
-              title={t('files.revealInFinder')}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-                stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-                <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z" />
-              </svg>
-            </button>
-          )}
+          {/* 打开位置：本机文件在资源管理器中显示；远程文件在远端，改为在右侧文件树中定位 */}
+          <button
+            onClick={() => {
+              if (!isRemoteFile) {
+                bridge.revealInFinder(selectedFile).catch((err) => showToast(String(err), 'error'));
+                return;
+              }
+              if (!useFileStore.getState().revealInTree(selectedFile)) {
+                showToast(t('files.notInTree'), 'error');
+                return;
+              }
+              // 预览模式下右侧面板以浮层显示，不影响当前预览
+              useSettingsStore.getState().setSecondaryTab('files');
+            }}
+            className="p-2 rounded-lg hover:bg-bg-tertiary
+              text-text-tertiary transition-smooth cursor-pointer"
+            title={isRemoteFile ? t('files.revealInTree') : t('files.revealInFinder')}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+              <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z" />
+            </svg>
+          </button>
+
+          {/* 复制文件到剪贴板：可直接粘贴为邮件附件 */}
+          <button
+            onClick={handleCopyFileToClipboard}
+            disabled={isCopyingFile}
+            className="p-2 rounded-lg hover:bg-bg-tertiary
+              text-text-tertiary transition-smooth cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+            title={t('files.copyToClipboard')}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 2.5H6a1 1 0 00-1 1V4H4a1.5 1.5 0 00-1.5 1.5v7A1.5 1.5 0 004 14h8a1.5 1.5 0 001.5-1.5v-7A1.5 1.5 0 0012 4h-1v-.5a1 1 0 00-1-1z" />
+              <path d="M6 9.5l1.5 1.5L10.5 8" />
+            </svg>
+          </button>
 
           {/* 另存为 */}
           <button

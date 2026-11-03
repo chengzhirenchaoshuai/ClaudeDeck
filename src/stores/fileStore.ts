@@ -39,6 +39,11 @@ interface FileState {
   // External drag-drop state
   isDragOverTree: boolean;
 
+  /** 文件树中已展开的目录（node.path），切换项目时清空 */
+  expandedDirs: Set<string>;
+  /** 待定位的节点路径：对应节点渲染后滚动到可见处并短暂高亮，随后清空 */
+  revealTarget: string | null;
+
   loadTree: (path: string) => Promise<void>;
   /** 目录被判定为缺失时复查：确实存在就重新加载并清除“缺失”标记 */
   recheckDirectory: (path: string) => Promise<void>;
@@ -66,6 +71,30 @@ interface FileState {
   createFolder: (parentDir: string, name: string) => Promise<void>;
   // External drag state
   setDragOverTree: (v: boolean) => void;
+  /** 展开 / 收起文件树中的目录 */
+  toggleDir: (path: string) => void;
+  /** 在文件树中定位：展开各级父目录并标记待滚动的节点。树里找不到时返回 false */
+  revealInTree: (path: string) => boolean;
+  clearRevealTarget: () => void;
+}
+
+/** 路径比较用的规范形式：统一正斜杠、去掉末尾斜杠、忽略大小写（只支持 Windows，本机与远端都不区分大小写） */
+function normalizeTreePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+/** 在树中查找目标节点，返回从根到目标的节点路径链（含目标本身）；找不到返回 null */
+function findNodeChain(nodes: FileNode[], target: string): string[] | null {
+  for (const node of nodes) {
+    const key = normalizeTreePath(node.path);
+    if (key === target) return [node.path];
+    // 只进入目标所在的目录分支，避免遍历整棵树
+    if (node.is_dir && node.children && target.startsWith(key + '/')) {
+      const chain = findNodeChain(node.children, target);
+      if (chain) return [node.path, ...chain];
+    }
+  }
+  return null;
 }
 
 /** 再用 read_dir 确认一次目录是否真的不存在，避免一次瞬时失败就把目录判定为缺失 */
@@ -98,6 +127,8 @@ export const useFileStore = create<FileState>()((set, get) => ({
   changedFiles: new Map(),
   directoryMissing: false,
   isDragOverTree: false,
+  expandedDirs: new Set(),
+  revealTarget: null,
 
   loadTree: async (path: string) => {
     if (!path) return;
@@ -108,7 +139,7 @@ export const useFileStore = create<FileState>()((set, get) => ({
       rootPath: path,
       isLoading: true,
       // Clear stale tree immediately when switching directories
-      ...(isNewDir ? { tree: [] } : {}),
+      ...(isNewDir ? { tree: [], expandedDirs: new Set<string>(), revealTarget: null } : {}),
     });
     // 主目录不加载文件树（原因见 lib/home-dir.ts），只清掉上一个项目留下的树
     if (await isHomeDirectory(path)) {
@@ -344,4 +375,26 @@ export const useFileStore = create<FileState>()((set, get) => ({
   // --- External drag state ---
 
   setDragOverTree: (v: boolean) => set({ isDragOverTree: v }),
+
+  // --- 文件树展开与定位 ---
+
+  toggleDir: (path: string) => {
+    const next = new Set(get().expandedDirs);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    set({ expandedDirs: next });
+  },
+
+  revealInTree: (path: string) => {
+    const chain = findNodeChain(get().tree, normalizeTreePath(path));
+    if (!chain) return false;
+    const target = chain[chain.length - 1];
+    const next = new Set(get().expandedDirs);
+    // 只展开父目录；目标本身是目录时保持原样
+    for (const dir of chain.slice(0, -1)) next.add(dir);
+    set({ expandedDirs: next, revealTarget: target });
+    return true;
+  },
+
+  clearRevealTarget: () => set({ revealTarget: null }),
 }));
