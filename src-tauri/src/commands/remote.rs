@@ -785,7 +785,7 @@ foreach ($f in $files) {
 $rows = foreach ($a in $agg.Values) {
   [pscustomobject]@{ hour = $a[0]; model = $a[1]; project = $a[2]; input = $a[3]; output = $a[4]; cacheRead = $a[5]; cache5m = $a[6]; cache1h = $a[7]; messages = $a[8] }
 }
-Out-AsciiJson (ConvertTo-Json -InputObject @{ rows = @($rows); sessionCount = $files.Count } -Compress -Depth 4)
+Out-AsciiJson (ConvertTo-Json -InputObject @{ rows = @($rows); sessionCount = $files.Count; machine = [string]$env:COMPUTERNAME; projectsDir = [string]$proj } -Compress -Depth 4)
 "#;
 
 /// 读取远端主机上的用量统计，返回与本机 `get_usage_stats` 相同结构的行，
@@ -812,7 +812,27 @@ pub async fn get_remote_usage(host_id: String) -> Result<Value, String> {
             row["host"] = Value::String(host_id.clone());
         }
     }
+    // 远程主机其实就是本机（如 ssh 到 localhost）且读的是同一个会话目录时打上标记，
+    // 前端在“全部”视图里不再重复计入
+    let same = is_same_as_local(
+        result["machine"].as_str().unwrap_or(""),
+        result["projectsDir"].as_str().unwrap_or(""),
+    );
+    result["sameAsLocal"] = Value::Bool(same);
     Ok(result)
+}
+
+/// 判断远端读取的会话目录是否就是本机的会话目录：机器名相同且目录路径相同（不区分大小写和斜杠方向）
+fn is_same_as_local(machine: &str, projects_dir: &str) -> bool {
+    let local_machine = std::env::var("COMPUTERNAME").unwrap_or_default();
+    if machine.is_empty() || !machine.eq_ignore_ascii_case(&local_machine) {
+        return false;
+    }
+    let Ok(local_dir) = crate::claude_projects_dir() else {
+        return false;
+    };
+    let norm = |p: &str| p.replace('/', "\\").trim_end_matches('\\').to_lowercase();
+    !projects_dir.is_empty() && norm(projects_dir) == norm(&local_dir.to_string_lossy())
 }
 
 /// 列出远端主机上的 CLI 会话，返回结构与本机 `list_sessions` 一致，

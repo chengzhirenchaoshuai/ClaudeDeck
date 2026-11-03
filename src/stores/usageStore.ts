@@ -12,6 +12,8 @@ export interface ProviderBalance {
 export interface RemoteUsage {
   rows: UsageRow[];
   sessionCount: number;
+  /** 与本机是同一份会话数据，“全部”视图里不重复计入 */
+  sameAsLocal: boolean;
   loading: boolean;
   error: string;
   fetchedAt: number;
@@ -78,14 +80,17 @@ export const useUsageStore = create<UsageState>()((set, get) => ({
     const current = get().remote[hostId];
     if (current?.loading) return;
     if (!force && current && !current.error && Date.now() - current.fetchedAt < REMOTE_TTL) return;
-    const base: RemoteUsage = current ?? { rows: [], sessionCount: 0, loading: false, error: '', fetchedAt: 0 };
+    const base: RemoteUsage = current ?? { rows: [], sessionCount: 0, sameAsLocal: false, loading: false, error: '', fetchedAt: 0 };
     set((state) => ({ remote: { ...state.remote, [hostId]: { ...base, loading: true, error: '' } } }));
     try {
       const result = await bridge.getRemoteUsage(hostId);
       set((state) => ({
         remote: {
           ...state.remote,
-          [hostId]: { rows: result.rows, sessionCount: result.sessionCount, loading: false, error: '', fetchedAt: Date.now() },
+          [hostId]: {
+            rows: result.rows, sessionCount: result.sessionCount, sameAsLocal: !!result.sameAsLocal,
+            loading: false, error: '', fetchedAt: Date.now(),
+          },
         },
       }));
     } catch (e) {

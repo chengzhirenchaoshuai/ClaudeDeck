@@ -17,6 +17,8 @@ export interface UsageRow {
 export interface UsageStats {
   rows: UsageRow[];
   sessionCount: number;
+  /** 仅远程结果：远程主机读到的就是本机的会话目录（如 ssh 到 localhost） */
+  sameAsLocal?: boolean;
 }
 
 export type UsagePeriod = 'today' | 'week' | 'month' | 'all';

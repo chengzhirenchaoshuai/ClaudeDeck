@@ -27,10 +27,12 @@ function costText(cost: UsageTotals['cost']): string {
   return parts.length ? parts.join(' + ') : '—';
 }
 
-/** 项目路径只显示最后两段，完整路径放在 title 里 */
+/** 项目路径只显示最后两段，完整路径放在 title 里；远程项目前面加主机名，避免和本机同名项目看起来重复 */
 function shortProject(path: string): string {
-  const parts = path.replace(/^ssh:\/\//, '').split(/[\\/]/).filter(Boolean);
-  return parts.slice(-2).join('/') || path;
+  const remote = path.match(/^ssh:\/\/([^/]+)\/(.*)$/);
+  const rest = remote ? remote[2] : path;
+  const short = rest.split(/[\\/]/).filter(Boolean).slice(-2).join('/') || rest;
+  return remote ? `${remote[1]} · ${short}` : short;
 }
 
 function Card({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -174,7 +176,8 @@ export function UsageModal() {
   const rows = useMemo(() => {
     if (!stats) return null;
     const all = [...stats.rows, ...Object.values(remote).flatMap((r) => r.rows)];
-    if (source === 'all') return all;
+    // “全部”里跳过与本机是同一份数据的远程主机，否则同一批消息会算两遍
+    if (source === 'all') return all.filter((r) => !r.host || !remote[r.host]?.sameAsLocal);
     if (source === 'local') return all.filter((r) => !r.host);
     return all.filter((r) => r.host === source);
   }, [stats, remote, source]);
@@ -261,6 +264,7 @@ export function UsageModal() {
                     ) : r ? (
                       <span className="text-text-tertiary">
                         {t('usage.remoteUpdated')} {new Date(r.fetchedAt).toLocaleTimeString()} · {r.sessionCount} {t('usage.sessionsUnit')}
+                        {r.sameAsLocal && <span className="text-amber-500"> · {t('usage.remoteSameAsLocal')}</span>}
                       </span>
                     ) : (
                       <span className="text-text-tertiary">—</span>
