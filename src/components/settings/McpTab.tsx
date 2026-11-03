@@ -49,7 +49,7 @@ export function McpTab() {
           <span className={`relative w-8 h-4 rounded-full transition-smooth border
             ${enableMcp ? 'bg-accent/80 border-accent/30' : 'bg-bg-tertiary border-border-subtle'}`}
           >
-            <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+            <span className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-sm transition-all
               ${enableMcp ? 'right-0.5' : 'left-0.5'}`}
             />
           </span>

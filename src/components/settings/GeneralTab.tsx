@@ -74,7 +74,7 @@ function Toggle({ on, onClick, disabled }: { on: boolean; onClick: () => void; d
       className={`relative block w-8 h-4 rounded-full transition-smooth border disabled:opacity-50
         ${on ? 'bg-accent/80 border-accent/30' : 'bg-text-tertiary/30 border-transparent'}`}
     >
-      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all
+      <span className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-sm transition-all
         ${on ? 'right-0.5' : 'left-0.5'}`}
       />
     </button>
