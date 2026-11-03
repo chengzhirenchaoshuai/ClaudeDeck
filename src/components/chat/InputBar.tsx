@@ -828,27 +828,14 @@ export function InputBar() {
           spawnedModel: liveResolvedModel,
         });
 
-        // Rewind replaces the visible history instead of leaving old and new
-        // branches side-by-side. The old JSONL remains on disk for recovery.
-        if (rewoundFromSessionId && session.session_id !== tabId) {
-          const chatState = useChatStore.getState();
-          const tabData = chatState.getTab(tabId);
-          if (tabData) {
-            const newTabs = new Map(chatState.tabs);
-            newTabs.set(session.session_id, { ...tabData, tabId: session.session_id });
-            newTabs.delete(tabId);
-            useChatStore.setState({ tabs: newTabs });
-          }
-          useSessionStore.getState().promoteDraft(tabId, session.session_id);
-          // 远程会话写到远端主机的隐藏名单，本机会话写到本机的；都放在会话所在主机的 CLI 配置目录
-          const rewindHost = hostOfPath(cwd);
-          (rewindHost
-            ? bridge.hideRemoteSession(rewindHost, rewoundFromSessionId)
-            : bridge.hideSession(rewoundFromSessionId)
-          ).catch((error) => {
-            console.warn('[ClaudeDeck:rewind] failed to hide superseded session:', error);
-          });
-          tabId = session.session_id;
+        // 回退：新分支替换旧分支显示，旧 JSONL 留在磁盘上以便恢复。
+        // 标签页先保留旧 ID，等 CLI 回报新分支的真实会话 ID 后（useStreamProcessor）
+        // 再把标签页、列表行和会话名一起迁移过去。不能改用 session.session_id：
+        // 那是本应用生成的 desk_ 临时 ID，列表里永远对不上，原会话的行会消失、改的名字也会丢。
+        // 旧分支也等到那时再隐藏：提前隐藏的话，列表刷新会先删掉这一行（远程列表要等这轮结束才刷新），
+        // 启动失败时还会把仍然有效的旧会话藏起来。
+        if (rewoundFromSessionId) {
+          setSessionMeta(tabId, { forkFrom: { id: rewoundFromSessionId, host: hostOfPath(cwd) } });
         }
         // Note: stdinId → tabId mapping already registered before listener setup (TK-329)
 

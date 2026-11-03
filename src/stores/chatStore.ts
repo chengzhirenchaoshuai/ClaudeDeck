@@ -101,6 +101,11 @@ export interface SessionMeta {
   rewoundFromSessionId?: string;
   /** 回退后下一次启动会话时，续接到该助手消息（uuid）为止；只在下一次启动时使用一次 */
   resumeAtUuid?: string;
+  /**
+   * 回退分叉出的新会话已启动、还没收到 CLI 的真实会话 ID。收到后把标签页、列表行和会话名
+   * 迁移到新 ID，再隐藏被替换的旧分支（id；host 为远程主机，本机为空）。
+   */
+  forkFrom?: { id: string; host?: string };
   /** 回退时“总结”生成的摘要，附在下一条消息前发给模型（不显示在气泡里），发送后清除 */
   pendingSummary?: string;
   /** The desk-generated ID used as key in Rust StdinManager for sending follow-up messages */

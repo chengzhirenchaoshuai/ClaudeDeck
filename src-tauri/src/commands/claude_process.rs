@@ -127,6 +127,20 @@ impl ProcessManager {
         }
     }
 
+    /// 等待一个进程在 grace 时间内自行退出，超时则强制结束，并从进程表移除。
+    /// 调用前应已发出 interrupt 并关闭它的 stdin。
+    pub async fn wait_or_kill(&self, id: &str, grace: std::time::Duration) {
+        let proc = self.processes.lock().await.remove(id);
+        if let Some(proc) = proc {
+            let mut managed = proc.lock().await;
+            if tokio::time::timeout(grace, managed.child.wait()).await.is_err() {
+                if let Err(e) = managed.child.kill().await {
+                    eprintln!("[ClaudeDeck] Failed to kill process for session {}: {}", id, e);
+                }
+            }
+        }
+    }
+
     /// 等待所有进程在 grace 时间内自行退出，超时的强制结束，并清空进程表。
     /// 各进程并行等待；用于应用退出时的有序收尾（此前应已关闭各进程的 stdin）。
     pub async fn wait_or_kill_all(&self, grace: std::time::Duration) {

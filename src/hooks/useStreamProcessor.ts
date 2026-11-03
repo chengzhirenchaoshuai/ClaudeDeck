@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useChatStore, generateMessageId, type ChatMessage, type SessionStatus, type SessionMeta, type ActivityStatus } from '../stores/chatStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { bridge } from '../lib/tauri-bridge';
 import { useAgentStore, resolveAgentId, getAgentDepth } from '../stores/agentStore';
 import { useRateLimitsStore } from '../stores/rateLimitsStore';
 import { noteRateLimitEvent } from './stream/usage-limit-resume';
@@ -114,14 +115,19 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
     // Capture the CLI's own session ID from stream events (used for --resume)
     const cliSessionId = msg.session_id || msg.sessionId;
     if (cliSessionId) {
-      const currentId = useChatStore.getState().getTab(tabId)?.sessionMeta.sessionId;
+      const currentMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
+      const currentId = currentMeta?.sessionId;
       if (currentId !== cliSessionId) {
-        setSessionMeta({ sessionId: cliSessionId });
+        // 回退分叉出的新会话：标签页还用着旧分支的 ID，这里和草稿一样迁移到新 ID
+        const forkFrom = currentMeta?.forkFrom && currentMeta.forkFrom.id !== cliSessionId
+          ? currentMeta.forkFrom
+          : undefined;
+        setSessionMeta({ sessionId: cliSessionId, forkFrom: undefined });
         // Persist Claude session UUID for F5 recovery (token totals read from JSONL)
         persistClaudeUuid(tabId, cliSessionId);
 
         // Promote draft tab to real session ID so it merges with disk session
-        if (tabId.startsWith('draft_')) {
+        if (tabId.startsWith('draft_') || (forkFrom && tabId !== cliSessionId)) {
           // Migrate tab data under old draft key to new real key
           const chatState = useChatStore.getState();
           const tabData = chatState.getTab(tabId);
@@ -132,6 +138,12 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
             useChatStore.setState({ tabs: newTabs });
           }
           useSessionStore.getState().promoteDraft(tabId, cliSessionId);
+          // 会话名已随 promoteDraft 迁到新 ID；远程会话还要写回远端主机的改名文件，
+          // 否则其它客户端（以及重启后）看到的仍是首条消息而不是这个名字
+          const carriedName = useSessionStore.getState().customPreviews[cliSessionId];
+          if (forkFrom && carriedName) {
+            useSessionStore.getState().setCustomPreview(cliSessionId, carriedName);
+          }
           // Update UUID index: tab key changed from draft_* to the real UUID
           persistClaudeUuid(cliSessionId, cliSessionId);
           // 标签页已改用真实 ID，本条消息后续的写入也要跟着改
@@ -140,6 +152,18 @@ export function useStreamProcessor(config: StreamProcessorConfig) {
         }
 
         useSessionStore.getState().fetchSessions();
+
+        // 新分支已接管这一行，再隐藏被替换的旧分支（JSONL 保留以便恢复）。
+        // 隐藏名单在会话所在主机的 CLI 配置目录：远程会话写到远端，写完刷新远程列表让新分支出现
+        if (forkFrom) {
+          const hide = forkFrom.host
+            ? bridge.hideRemoteSession(forkFrom.host, forkFrom.id)
+                .then(() => useSessionStore.getState().fetchRemoteSessions())
+            : bridge.hideSession(forkFrom.id);
+          hide.catch((error: unknown) => {
+            console.warn('[ClaudeDeck:rewind] failed to hide superseded session:', error);
+          });
+        }
       }
     }
 

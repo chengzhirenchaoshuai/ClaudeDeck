@@ -834,8 +834,23 @@ pub(crate) async fn kill_session(
     stdin_mgr: State<'_, StdinManager>,
     session_id: String,
 ) -> Result<(), String> {
+    // 终止 = 先发 interrupt 中断当前回合，再关闭 stdin，等进程自行退出，超时才强制结束。
+    // 不能只杀进程：远程会话杀的是本机的 ssh，远端 claude 只会收到 stdin 关闭（EOF），
+    // 而 CLI 收到 EOF 后会把当前回合跑完才退出——实测被撤回的命令照样执行完；
+    // 本机经 cmd /C 启动时，只杀 cmd.exe 也可能留下仍在运行的 claude。
+    // 先发 interrupt，CLI 会立即中止正在执行的工具调用（实测约 2 秒内退出，命令未执行）。
+    let interrupted = match serde_json::to_string(&protocol::ControlRequest::interrupt()) {
+        Ok(interrupt) => stdin_mgr.send(&session_id, &interrupt).await.is_ok(),
+        Err(_) => false,
+    };
+    if interrupted {
+        // 给 interrupt 留出经 ssh 送达并被处理的时间，再关闭 stdin
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
     stdin_mgr.remove(&session_id).await;
-    state.remove(&session_id).await;
+    state
+        .wait_or_kill(&session_id, std::time::Duration::from_secs(5))
+        .await;
     Ok(())
 }
 /// 应用退出前有序终止所有会话进程（本地 claude 与经 ssh 启动的远端 claude 一视同仁）：
