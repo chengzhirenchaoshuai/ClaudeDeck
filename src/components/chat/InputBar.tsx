@@ -131,10 +131,11 @@ export function InputBar() {
     });
   }, [setInputSync]);
 
-  // 右上角“压缩”按钮：会话没有运行中的进程时，通过发送 /compact 续接会话并压缩
+  // 右上角“压缩”按钮、斜杠菜单选 /compact：会话没有运行中的进程时，通过发送 /compact 续接会话并压缩
   useEffect(() => {
-    const handler = () => {
-      setInputSync('/compact');
+    const handler = (e: Event) => {
+      const args = (e as CustomEvent<{ args?: string } | undefined>).detail?.args;
+      setInputSync(args ? `/compact ${args}` : '/compact');
       requestAnimationFrame(() => {
         handleSubmitRef.current();
       });
