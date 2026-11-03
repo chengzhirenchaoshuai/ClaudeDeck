@@ -37,8 +37,11 @@ pub(crate) async fn open_in_vscode(path: String) -> Result<(), String> {
 #[tauri::command]
 pub(crate) async fn reveal_in_finder(path: String) -> Result<(), String> {
     reject_remote_path(&path)?;
+    // explorer 不认正斜杠，路径里混了 / 会退回到“此电脑”
+    let path = path.replace('/', "\\");
     let mut cmd = Command::new("explorer");
-    cmd.args(["/select,", &path]);
+    // 写成一个整体参数 /select,"路径"，避免 Rust 自动加引号后 explorer 解析不对
+    cmd.raw_arg(format!("/select,\"{}\"", path));
     cmd.creation_flags(0x08000000);
     cmd.spawn()
         .map_err(|e| format!("Failed to reveal in Explorer: {}", e))?;
