@@ -62,11 +62,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             '终止或撤回后远端 claude 仍执行完被撤回的指令',
             '回退分叉后会话行消失、改的名字丢失',
             '更新提示点打开设置后不消失',
+            '设置页开关圆点没有垂直居中',
           ],
           en: [
             'Remote claude kept running a withdrawn command after stop or take-back',
             'Session rows disappeared and renames were lost after a rewind fork',
             'The update dot stayed after opening settings',
+            'Toggle knobs in settings were not vertically centered',
           ],
         },
       },
