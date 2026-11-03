@@ -18,6 +18,61 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.6.0',
+    date: '2026-11-03',
+    highlights: {
+      zh: ['文件可拖出窗口到桌面或资源管理器；远程终止不再把撤回的指令执行完'],
+      en: ['Drag files out to the desktop or Explorer; stopping a remote session no longer finishes the withdrawn command'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '文件树里的文件可拖到桌面或资源管理器，远程文件自动下载并显示进度',
+            '本地 / 远程环境切换改为下拉框',
+            '右侧轮次导航条可收起',
+          ],
+          en: [
+            'Drag files from the file tree to the desktop or Explorer; remote files download with progress',
+            'Local / remote environment switcher is now a dropdown',
+            'The turn navigator on the right can be collapsed',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '活动记录切换更快，统计口径与用量统计一致',
+            '指向本机的远程主机不再重复计入用量',
+            '移除「导出任务」菜单和「复制到剪贴板」，导出保留在 /export 与右键菜单',
+          ],
+          en: [
+            'Activity loads faster and counts the same way as usage stats',
+            'Remote hosts that point to this machine are no longer counted twice',
+            'Removed the Export menu and Copy to clipboard; export remains in /export and the context menu',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '终止或撤回后远端 claude 仍执行完被撤回的指令',
+            '回退分叉后会话行消失、改的名字丢失',
+            '更新提示点打开设置后不消失',
+          ],
+          en: [
+            'Remote claude kept running a withdrawn command after stop or take-back',
+            'Session rows disappeared and renames were lost after a rewind fork',
+            'The update dot stayed after opening settings',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.5.7',
     date: '2026-11-03',
     highlights: {
