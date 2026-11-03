@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { bridge } from '../lib/tauri-bridge';
+import { bridge, type ProfileStats } from '../lib/tauri-bridge';
 import type { UsageRow, UsageStats } from '../lib/usage';
 import { useProviderStore } from './providerStore';
 
@@ -31,6 +31,13 @@ interface UsageState {
   balance: ProviderBalance | null;
   balanceError: string;
   balanceLoading: boolean;
+  /** 活动记录统计；切换标签时保留，再次进入先显示上次结果 */
+  profile: ProfileStats | null;
+  profileLoading: boolean;
+  profileError: string;
+  profileFetched: number;
+  /** 刷新活动记录；force 为 false 时 30 秒内不重复读取 */
+  refreshProfile: (force?: boolean) => Promise<void>;
   /** 刷新用量；force 为 false 时 30 秒内不重复读取 */
   refresh: (force?: boolean) => Promise<void>;
   refreshBalance: () => Promise<void>;
@@ -63,6 +70,22 @@ export const useUsageStore = create<UsageState>()((set, get) => ({
   balance: null,
   balanceError: '',
   balanceLoading: false,
+  profile: null,
+  profileLoading: false,
+  profileError: '',
+  profileFetched: 0,
+
+  refreshProfile: async (force = false) => {
+    const { profileLoading, profileFetched } = get();
+    if (profileLoading || (!force && Date.now() - profileFetched < 30_000)) return;
+    set({ profileLoading: true, profileError: '' });
+    try {
+      const profile = await bridge.getProfileStats();
+      set({ profile, profileLoading: false, profileFetched: Date.now() });
+    } catch (e) {
+      set({ profileLoading: false, profileError: String(e) });
+    }
+  },
 
   refresh: async (force = false) => {
     const { loading, lastFetched } = get();

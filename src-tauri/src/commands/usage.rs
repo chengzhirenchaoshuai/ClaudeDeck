@@ -29,7 +29,6 @@ pub(crate) static USAGE_CACHE: std::sync::OnceLock<
 
 /// 解析一个会话文件。同一条消息可能按内容块重复写入多行，保留 output 最大（即最终）的那一条。
 pub(crate) fn parse_usage_file(path: &std::path::Path) -> (String, Vec<MsgUsage>) {
-    use std::io::BufRead;
     let mut cwd = String::new();
     let mut by_id: HashMap<String, MsgUsage> = HashMap::new();
     let mut anonymous: Vec<MsgUsage> = Vec::new();
@@ -37,7 +36,8 @@ pub(crate) fn parse_usage_file(path: &std::path::Path) -> (String, Vec<MsgUsage>
     let Ok(file) = std::fs::File::open(path) else {
         return (cwd, vec![]);
     };
-    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+    // 跳过非 UTF-8 的坏行继续读，不因一行损坏丢掉整个文件后面的用量
+    for line in jsonl_lines(std::io::BufReader::new(file)) {
         let Ok(value) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
@@ -103,15 +103,20 @@ pub(crate) fn parse_usage_file(path: &std::path::Path) -> (String, Vec<MsgUsage>
     (cwd, msgs)
 }
 
-pub(crate) fn compute_usage_stats() -> Result<Value, String> {
+/// 遍历本机全部会话文件里的助手消息用量（文件解析结果按修改时间和大小缓存）。
+/// 续聊 / 回退会把历史消息复制进新文件，同一消息 ID 只交给回调一次，归属最早的文件。
+/// 回调参数：会话 ID（文件名）、项目路径、消息用量。返回参与统计的文件数。
+pub(crate) fn for_each_usage_msg(
+    mut visit: impl FnMut(&str, &str, MsgUsage),
+) -> Result<u64, String> {
     let dir = claude_projects_dir()?;
     if !dir.exists() {
-        return Ok(serde_json::json!({ "rows": [], "sessionCount": 0u64 }));
+        return Ok(0);
     }
     let cache = USAGE_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
 
     // 收集全部会话文件。回退产生的旧分支同样是真实花费，因此不排除隐藏名单；只排除临时 ID。
-    let mut files: Vec<(std::path::PathBuf, String, std::time::SystemTime, u64)> = vec![];
+    let mut files: Vec<(std::path::PathBuf, String, String, std::time::SystemTime, u64)> = vec![];
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
             if !entry.path().is_dir() {
@@ -135,18 +140,16 @@ pub(crate) fn compute_usage_stats() -> Result<Value, String> {
                 }
                 let Ok(meta) = child.metadata() else { continue };
                 let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                files.push((path, dir_name.clone(), modified, meta.len()));
+                files.push((path, stem, dir_name.clone(), modified, meta.len()));
             }
         }
     }
     // 早的文件优先：续聊 / 回退会把历史消息复制进新文件，同一消息 ID 只计一次，归属最早的文件
-    files.sort_by_key(|f| f.2);
+    files.sort_by_key(|f| f.3);
 
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut agg: HashMap<(String, String, String), [u64; 6]> = HashMap::new();
-    let session_count = files.len() as u64;
 
-    for (path, dir_name, modified, len) in &files {
+    for (path, stem, dir_name, modified, len) in &files {
         let cached = {
             let guard = cache.lock().map_err(|_| "usage cache poisoned".to_string())?;
             guard
@@ -177,17 +180,25 @@ pub(crate) fn compute_usage_stats() -> Result<Value, String> {
             if !m.id.is_empty() && !seen.insert(m.id.clone()) {
                 continue;
             }
-            let slot = agg
-                .entry((m.hour, m.model, project.clone()))
-                .or_insert([0; 6]);
-            slot[0] += m.input;
-            slot[1] += m.output;
-            slot[2] += m.cache_read;
-            slot[3] += m.cache_5m;
-            slot[4] += m.cache_1h;
-            slot[5] += 1;
+            visit(stem, &project, m);
         }
     }
+    Ok(files.len() as u64)
+}
+
+pub(crate) fn compute_usage_stats() -> Result<Value, String> {
+    let mut agg: HashMap<(String, String, String), [u64; 6]> = HashMap::new();
+    let session_count = for_each_usage_msg(|_, project, m| {
+        let slot = agg
+            .entry((m.hour, m.model, project.to_string()))
+            .or_insert([0; 6]);
+        slot[0] += m.input;
+        slot[1] += m.output;
+        slot[2] += m.cache_read;
+        slot[3] += m.cache_5m;
+        slot[4] += m.cache_1h;
+        slot[5] += 1;
+    })?;
 
     let rows: Vec<Value> = agg
         .into_iter()
@@ -230,136 +241,47 @@ pub(crate) fn usage_u64(usage: &Value, key: &str) -> u64 {
     usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
 }
 
-pub(crate) fn cache_creation_tokens(usage: &Value) -> u64 {
-    let top_level = usage_u64(usage, "cache_creation_input_tokens");
-    let nested = usage.get("cache_creation").map(|v| {
-        usage_u64(v, "ephemeral_1h_input_tokens") + usage_u64(v, "ephemeral_5m_input_tokens")
-    }).unwrap_or(0);
-    top_level + nested
-}
-
-#[tauri::command]
-pub(crate) async fn get_profile_stats() -> Result<Value, String> {
-    use std::collections::{HashMap, HashSet};
-    let claude_dir = claude_projects_dir()?;
-    if !claude_dir.exists() {
-        return Ok(serde_json::json!({
-            "totalInputTokens": 0u64,
-            "totalOutputTokens": 0u64,
-            "totalCacheTokens": 0u64,
-            "totalTokens": 0u64,
-            "sessionCount": 0u64,
-            "messageCount": 0u64,
-            "activeDays": 0u64,
-            "peakDayTokens": 0u64,
-            "daily": [],
-            "models": [],
-        }));
-    }
-
+/// 活动记录统计：与用量统计共用文件解析缓存和跨文件去重，文件没变时不再重新解析。
+/// 会话数只计会话列表里可见的会话；token 与消息数和“用量与成本”口径一致（含回退产生的旧分支）。
+pub(crate) fn compute_profile_stats() -> Result<Value, String> {
     let hidden = load_hidden_sessions();
     let mut daily: HashMap<String, ProfileDailyStats> = HashMap::new();
     let mut models: HashMap<String, ProfileModelStats> = HashMap::new();
-    let mut counted_sessions: HashSet<String> = HashSet::new();
+    let mut sessions: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let (mut total_input, mut total_output, mut total_cache, mut message_count) = (0u64, 0u64, 0u64, 0u64);
 
-    let mut total_input = 0u64;
-    let mut total_output = 0u64;
-    let mut total_cache = 0u64;
-    let mut message_count = 0u64;
-
-    if let Ok(entries) = std::fs::read_dir(&claude_dir) {
-        for entry in entries.flatten() {
-            if !entry.path().is_dir() {
-                continue;
-            }
-            let Ok(files) = std::fs::read_dir(entry.path()) else {
-                continue;
-            };
-            for file in files.flatten() {
-                let path = file.path();
-                if !path.extension().is_some_and(|e| e == "jsonl") {
-                    continue;
-                }
-                let Some(name) = path.file_stem() else {
-                    continue;
-                };
-                let session_id = name.to_string_lossy().to_string();
-                if !is_listable_session(&session_id, &hidden) {
-                    continue;
-                }
-                counted_sessions.insert(session_id.clone());
-
-                let Ok(file) = std::fs::File::open(&path) else {
-                    continue;
-                };
-                let reader = std::io::BufReader::new(file);
-                let mut seen_message_ids: HashSet<String> = HashSet::new();
-
-                for line in jsonl_lines(reader) {
-                    let Ok(value) = serde_json::from_str::<Value>(&line) else {
-                        continue;
-                    };
-                    if value.get("type").and_then(|v| v.as_str()) != Some("assistant") {
-                        continue;
-                    }
-                    let Some(message) = value.get("message") else {
-                        continue;
-                    };
-                    let Some(usage) = message.get("usage") else {
-                        continue;
-                    };
-
-                    let message_key = message
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .or_else(|| value.get("uuid").and_then(|v| v.as_str()))
-                        .unwrap_or("");
-                    if !message_key.is_empty() && !seen_message_ids.insert(message_key.to_string()) {
-                        continue;
-                    }
-
-                    let input_tokens = usage_u64(usage, "input_tokens");
-                    let output_tokens = usage_u64(usage, "output_tokens");
-                    let cache_tokens = usage_u64(usage, "cache_read_input_tokens")
-                        + cache_creation_tokens(usage);
-                    let total_tokens = input_tokens + output_tokens + cache_tokens;
-                    if total_tokens == 0 {
-                        continue;
-                    }
-
-                    total_input += input_tokens;
-                    total_output += output_tokens;
-                    total_cache += cache_tokens;
-                    message_count += 1;
-
-                    let date = value
-                        .get("timestamp")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.get(0..10))
-                        .unwrap_or("unknown")
-                        .to_string();
-                    let entry = daily.entry(date.clone()).or_insert_with(|| ProfileDailyStats {
-                        date,
-                        ..Default::default()
-                    });
-                    entry.input_tokens += input_tokens;
-                    entry.output_tokens += output_tokens;
-                    entry.cache_tokens += cache_tokens;
-                    entry.total_tokens += total_tokens;
-                    entry.message_count += 1;
-
-                    if let Some(model) = message.get("model").and_then(|v| v.as_str()) {
-                        let model_entry = models.entry(model.to_string()).or_insert_with(|| ProfileModelStats {
-                            model: model.to_string(),
-                            ..Default::default()
-                        });
-                        model_entry.total_tokens += total_tokens;
-                        model_entry.message_count += 1;
-                    }
-                }
-            }
+    for_each_usage_msg(|session_id, _, m| {
+        if is_listable_session(session_id, &hidden) {
+            sessions.insert(session_id.to_string());
         }
-    }
+        let cache = m.cache_read + m.cache_5m + m.cache_1h;
+        let total = m.input + m.output + cache;
+        total_input += m.input;
+        total_output += m.output;
+        total_cache += cache;
+        message_count += 1;
+
+        // 按 UTC 日期归档，与原实现一致
+        let date = m.hour.get(0..10).unwrap_or("unknown").to_string();
+        let day = daily.entry(date.clone()).or_insert_with(|| ProfileDailyStats {
+            date,
+            ..Default::default()
+        });
+        day.input_tokens += m.input;
+        day.output_tokens += m.output;
+        day.cache_tokens += cache;
+        day.total_tokens += total;
+        day.message_count += 1;
+
+        if m.model != "unknown" {
+            let entry = models.entry(m.model.clone()).or_insert_with(|| ProfileModelStats {
+                model: m.model.clone(),
+                ..Default::default()
+            });
+            entry.total_tokens += total;
+            entry.message_count += 1;
+        }
+    })?;
 
     let mut daily_values: Vec<ProfileDailyStats> = daily.into_values().collect();
     daily_values.sort_by(|a, b| a.date.cmp(&b.date));
@@ -374,11 +296,18 @@ pub(crate) async fn get_profile_stats() -> Result<Value, String> {
         "totalOutputTokens": total_output,
         "totalCacheTokens": total_cache,
         "totalTokens": total_input + total_output + total_cache,
-        "sessionCount": counted_sessions.len() as u64,
+        "sessionCount": sessions.len() as u64,
         "messageCount": message_count,
         "activeDays": daily_values.iter().filter(|d| d.date != "unknown").count() as u64,
         "peakDayTokens": peak_day_tokens,
         "daily": daily_values,
         "models": model_values,
     }))
+}
+
+#[tauri::command]
+pub(crate) async fn get_profile_stats() -> Result<Value, String> {
+    tokio::task::spawn_blocking(compute_profile_stats)
+        .await
+        .map_err(|e| format!("profile stats task failed: {}", e))?
 }

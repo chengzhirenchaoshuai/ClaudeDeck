@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { bridge, ProfileStats } from '../../lib/tauri-bridge';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUsageStore } from '../../stores/usageStore';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 
 type ActivityView = 'daily' | 'weekly' | 'total';
@@ -51,26 +51,16 @@ function monthLabel(date: Date): string {
 /** "活动记录" Tab：本机 ClaudeDeck 使用汇总（GitHub 式热力图 + 每日/每周/累计明细）。
  *  原 ProfileStatsModal 的内容，合并进用量面板后去掉了自己的弹窗外壳。 */
 export function ActivityTab() {
-  const [stats, setStats] = useState<ProfileStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  // 数据放在 usageStore：切到“用量与成本”再切回来时组件会重新挂载，先显示上次结果，后台按需刷新
+  const stats = useUsageStore((s) => s.profile);
+  const loading = useUsageStore((s) => s.profileLoading);
+  const error = useUsageStore((s) => s.profileError);
+  const refreshProfile = useUsageStore((s) => s.refreshProfile);
   const [view, setView] = useState<ActivityView>('daily');
   const userAvatarUrl = useSettingsStore((s) => s.userAvatarUrl);
   const userDisplayName = useSettingsStore((s) => s.userDisplayName);
 
-  const loadStats = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setStats(await bridge.getProfileStats());
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => { void refreshProfile(); }, [refreshProfile]);
 
   const dailyMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -139,7 +129,8 @@ export function ActivityTab() {
         <p className="mt-1 text-sm text-text-muted">本机 ClaudeDeck 使用汇总</p>
       </div>
 
-      {loading && (
+      {/* 已有数据时后台刷新不遮挡内容，只在首次读取时显示提示 */}
+      {loading && !stats && (
         <div className="mt-8 text-center text-sm text-text-muted">正在读取本机会话统计...</div>
       )}
 
@@ -149,7 +140,7 @@ export function ActivityTab() {
         </div>
       )}
 
-      {stats && !loading && (
+      {stats && (
         <>
           <div className="mt-7 grid grid-cols-5 rounded-[20px] border border-border-subtle bg-bg-primary/70 overflow-hidden">
             {[
@@ -297,11 +288,12 @@ export function ActivityTab() {
 
           <div className="mt-6 flex justify-center">
             <button
-              onClick={loadStats}
+              onClick={() => void refreshProfile(true)}
+              disabled={loading}
               className="px-4 py-2 rounded-full border border-border-subtle text-sm text-text-muted
-                hover:text-text-primary hover:bg-bg-secondary transition-smooth"
+                hover:text-text-primary hover:bg-bg-secondary transition-smooth disabled:opacity-50"
             >
-              刷新统计
+              {loading ? '正在刷新…' : '刷新统计'}
             </button>
           </div>
         </>
