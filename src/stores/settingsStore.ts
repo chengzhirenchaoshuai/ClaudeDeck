@@ -196,6 +196,9 @@ interface SettingsState {
   setSecondaryTab: (tab: SecondaryPanelTab) => void;
   setSecondaryPanelWidth: (width: number) => void;
   toggleSettings: () => void;
+  /** 消息区右侧的轮次导航条是否收起 */
+  timelineHidden: boolean;
+  toggleTimeline: () => void;
   setWorkingDirectory: (dir: string) => void;
   /** 切换环境，并清空工作目录（本地与远程的项目路径互不通用） */
   setActiveEnv: (env: string) => void;
@@ -349,6 +352,9 @@ export const useSettingsStore = create<SettingsState>()(
       setSecondaryPanelWidth: (width) =>
         set(() => ({ secondaryPanelWidth: width })),
 
+      timelineHidden: false,
+      toggleTimeline: () => set((state) => ({ timelineHidden: !state.timelineHidden })),
+
       toggleSettings: () =>
         set((state) => ({
           settingsOpen: !state.settingsOpen,
@@ -464,7 +470,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 23,
+      version: 24,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -581,6 +587,10 @@ export const useSettingsStore = create<SettingsState>()(
           persisted.seenCliUpdate = '';
           persisted.seenAppUpdate = '';
         }
+        if (version < 24) {
+          // 新增：轮次导航条可收起，默认展开
+          persisted.timelineHidden = false;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -621,6 +631,7 @@ export const useSettingsStore = create<SettingsState>()(
         glassOpacity: state.glassOpacity,
         seenCliUpdate: state.seenCliUpdate,
         seenAppUpdate: state.seenAppUpdate,
+        timelineHidden: state.timelineHidden,
       }),
     },
   ),

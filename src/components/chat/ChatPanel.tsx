@@ -83,6 +83,7 @@ export function ChatPanel() {
   const totalAgentCount = agents.size;
 
   const showPlanPanel = usePlanPanelStore((s) => s.open);
+  const timelineHidden = useSettingsStore((s) => s.timelineHidden);
   const closePlanPanel = usePlanPanelStore((s) => s.close);
 
   // Listen for internal file tree drag-drop (mouse-based, not HTML5 drag-and-drop)
@@ -466,9 +467,9 @@ export function ChatPanel() {
       <div className="flex flex-col flex-1 min-w-0">
       {/* 消息区单独作为定位容器：右侧轮次导航条按消息区定位，输入栏和悬浮的选项卡变高时不会被它盖住 */}
       <div className="relative flex flex-col flex-1 min-h-0">
-      {/* 右侧轮次导航条（lg 及以上显示）悬浮在消息区上方，显示时给消息区留出等宽的右边距，避免挡住文字 */}
+      {/* 右侧轮次导航条（lg 及以上显示）悬浮在消息区上方，展开时给消息区留出等宽的右边距，避免挡住文字；收起后不留 */}
       <div ref={scrollRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto px-5 py-6 selectable chat-scroll-container
-        ${!showPlanPanel && turns.length > 0 ? 'lg:pr-16' : ''}`}>
+        ${!showPlanPanel && turns.length > 0 && !timelineHidden ? 'lg:pr-16' : ''}`}>
         {!workingDirectory && messages.length === 0 && !isStreaming ? (
           <WelcomeScreen />
         ) : messages.length === 0 && !isStreaming && sessionStatus === 'running' ? (

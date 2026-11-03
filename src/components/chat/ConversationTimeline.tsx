@@ -1,6 +1,7 @@
 // 对话轮次导航条：按用户消息分轮，点击跳转，并提供回到底部按钮。
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useT } from '../../lib/i18n';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { type Turn } from '../../lib/turns';
 
 export function ConversationTimeline({ turns, scrollRef, messageRefs, showScrollBtn, onJumped, onJumpBottom, ensureRendered }: {
@@ -15,6 +16,9 @@ export function ConversationTimeline({ turns, scrollRef, messageRefs, showScroll
   ensureRendered?: (messageId: string) => boolean;
 }) {
   const t = useT();
+  // 收起时只隐藏圆点列表，保留顶部的展开按钮和底部的“最新”按钮
+  const hidden = useSettingsStore((s) => s.timelineHidden);
+  const toggleTimeline = useSettingsStore((s) => s.toggleTimeline);
   // 当前高亮的轮次放在这里而不是 ChatPanel：滚动时它频繁变化，放在上层会导致整个消息列表重渲染而卡顿
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
   // 点击跳转后锁定高亮，直到用户自己滚动（滚轮/拖动/按键）才解除：
@@ -135,6 +139,24 @@ export function ConversationTimeline({ turns, scrollRef, messageRefs, showScroll
   return (
     <div className="hidden lg:flex absolute right-3 top-24 bottom-3 z-10
       flex-col items-center gap-2 pointer-events-none">
+      {/* 收起 / 展开按钮：样式与下方圆点一致 */}
+      <button
+        onClick={toggleTimeline}
+        className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center
+          border border-border-subtle bg-bg-card/90 backdrop-blur shadow-lg
+          text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary transition-smooth pointer-events-auto"
+        title={hidden ? t('chat.showTimeline') : t('chat.hideTimeline')}
+      >
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"
+          stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d={hidden ? 'M9 3L5 7l4 4' : 'M5 3l4 4-4 4'} />
+        </svg>
+      </button>
+
+      {hidden ? (
+        // 占住中间高度，让“最新”按钮仍停在底部
+        <div className="flex-1" />
+      ) : (
       <div ref={navRef} className="flex-1 min-h-0 px-1 py-2 rounded-lg
         bg-bg-card/80 backdrop-blur border border-border-subtle shadow-lg
         overflow-y-auto scrollbar-none pointer-events-auto">
@@ -160,6 +182,7 @@ export function ConversationTimeline({ turns, scrollRef, messageRefs, showScroll
           })}
         </div>
       </div>
+      )}
 
       {/* 固定占位：始终占住这块高度，只切换可见性——只在向上翻离底部较远时才需要
           显示，但如果隐藏时不占位，上面圆点导航条（flex-1）会跟着变高变矮，
