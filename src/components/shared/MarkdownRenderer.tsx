@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
-import Markdown from 'react-markdown';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
@@ -36,7 +36,8 @@ function AsyncImage({ src, alt }: { src: string; alt?: string }) {
   const showThumbnails = useSettingsStore((s) => s.showImageThumbnails);
 
   // 远程项目里的绝对路径（C:\x\a.png）转成 ssh:// 经远端读取
-  const filePath = toSessionFilePath(src.startsWith('file://') ? src.slice(7) : src);
+  // file://C:/x 和 file:///C:/x 都还原成 C:/x
+  const filePath = toSessionFilePath(src.replace(/^file:\/\/(\/(?=[A-Za-z]:))?/i, ''));
 
   useEffect(() => {
     bridge.readFileBase64(filePath).then(setDataUrl).catch(() => setError(true));
@@ -244,9 +245,40 @@ const SANITIZE_SCHEMA = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    src: [...(defaultSchema.protocols?.src || []), 'data'],
+    // file / ssh：本机和远程图片，由 AsyncImage 经后端读取
+    src: [...(defaultSchema.protocols?.src || []), 'data', 'file', 'ssh'],
   },
 };
+
+/**
+ * 图片地址是 Windows 绝对路径（C:\x\a.png、C:/x/a.png）时改写成 file://C:/x/a.png。
+ * 否则 C: 会被 rehype-sanitize 和 react-markdown 的 urlTransform 当成未知协议，src 被清空，图片裂掉。
+ * 必须放在 rehypeSanitize 之前。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rehypeLocalImageSrc() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walk = (node: any) => {
+    if (node.type === 'element' && node.tagName === 'img') {
+      const src = node.properties?.src;
+      // remark-rehype 已把地址做了 URL 编码：反斜杠成了 %5C，中文、空格也被编码，要先还原
+      if (typeof src === 'string' && /^[A-Za-z]:(\/|\\|%5C)/i.test(src)) {
+        let path = src;
+        try { path = decodeURIComponent(src); } catch { /* 编码不合法时按原样 */ }
+        node.properties.src = `file://${path.replace(/\\/g, '/')}`;
+      }
+    }
+    node.children?.forEach(walk);
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (tree: any) => walk(tree);
+}
+
+/** 图片的 file:// 和 ssh:// 地址保留（AsyncImage 经后端读取），其余仍按 react-markdown 默认规则过滤 */
+function urlTransform(url: string, key: string): string {
+  if (key === 'src' && /^(file|ssh):\/\//i.test(url)) return url;
+  return defaultUrlTransform(url);
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RemarkPlugin = any;
@@ -342,6 +374,7 @@ function mayContainMath(content: string): boolean {
 const BASE_REHYPE_PLUGINS: any[] = [
   rehypeRaw,
   rehypeKatexFix,
+  rehypeLocalImageSrc,
   [rehypeSanitize, SANITIZE_SCHEMA],
   rehypeHighlight,
 ];
@@ -684,6 +717,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
           remarkRehypeOptions={remarkRehypeOptions}
+          urlTransform={urlTransform}
           components={components}
         >
           {processedContent}
