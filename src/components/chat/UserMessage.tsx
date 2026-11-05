@@ -9,6 +9,7 @@ import { useRewind } from '../../hooks/useRewind';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
 import { parseInlineDirPath, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { InlineDirChip } from '../shared/InlineDirChip';
+import { handleFileLinkContextMenu } from '../shared/FileLinkMenu';
 import { UserAvatar } from '../shared/UserAvatar';
 import { safeContent, type MessageProps } from './messageShared';
 
@@ -42,12 +43,7 @@ function renderCodeSegment(inner: string, key: number): ReactNode {
             useFileStore.getState().selectFile(resolved);
           }
         }}
-        onContextMenu={(e) => {
-          if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(resolved)) {
-            e.preventDefault();
-            bridge.revealInFinder(resolved);
-          }
-        }}
+        onContextMenu={(e) => handleFileLinkContextMenu(e, resolved)}
         className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5
           bg-white/15 border border-white/25 rounded-md
           text-xs font-medium cursor-pointer
@@ -241,12 +237,7 @@ export function UserMsg({ message }: MessageProps) {
                     useFileStore.getState().selectFile(toSessionFilePath(att.path));
                   }
                 }}
-                onContextMenu={(e) => {
-                  if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(att.path)) {
-                    e.preventDefault();
-                    bridge.revealInFinder(att.path);
-                  }
-                }}
+                onContextMenu={(e) => handleFileLinkContextMenu(e, toSessionFilePath(att.path))}
                 className="inline-flex items-center gap-2 px-2.5 py-1.5
                   bg-white/10 hover:bg-white/20 rounded-lg border border-white/15
                   transition-smooth cursor-pointer text-left"

@@ -13,6 +13,7 @@ import remarkCjkAutolink from '../../lib/remark-cjk-autolink';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
 import { KNOWN_FILE_EXTENSIONS, isBareFileMissing, parseInlineDirPath, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { InlineDirChip } from './InlineDirChip';
+import { handleFileLinkContextMenu } from './FileLinkMenu';
 import { useT } from '../../lib/i18n';
 
 /* ================================================================
@@ -453,12 +454,7 @@ function InlineFileChip({ path, line, base, copyText }: { path: string; line?: n
           useFileStore.getState().selectFile(resolved);
         }
       }}
-      onContextMenu={(e) => {
-        if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(resolved)) {
-          e.preventDefault();
-          bridge.revealInFinder(resolved);
-        }
-      }}
+      onContextMenu={(e) => handleFileLinkContextMenu(e, resolved)}
       className="inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 mx-0.5
         bg-accent/10 border border-accent/25 rounded-md
         text-xs text-accent font-medium cursor-pointer

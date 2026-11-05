@@ -5,6 +5,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
+import { handleFileLinkContextMenu } from '../shared/FileLinkMenu';
 import { safeContent, type MessageProps } from './messageShared';
 
 /* ================================================================
@@ -177,13 +178,7 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
                 useFileStore.getState().selectFile(toSessionFilePath(input.file_path));
               }
             }}
-            onContextMenu={(e) => {
-              if ((e.ctrlKey || e.metaKey) && isLocalSessionFile(input.file_path)) {
-                e.preventDefault();
-                e.stopPropagation();
-                bridge.revealInFinder(input.file_path);
-              }
-            }}
+            onContextMenu={(e) => handleFileLinkContextMenu(e, toSessionFilePath(input.file_path))}
             className={`text-accent/70 hover:text-accent font-mono
               truncate min-w-0 hover:underline cursor-pointer transition-smooth
               ${isFileEdit ? 'text-[12px]' : 'text-[11px]'}`}
