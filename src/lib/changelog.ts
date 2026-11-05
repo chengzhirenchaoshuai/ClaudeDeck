@@ -18,6 +18,29 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.6.1',
+    date: '2026-11-05',
+    highlights: {
+      zh: ['消息里的文件链接支持右键菜单，远程文件可下载、复制路径'],
+      en: ['File links in messages get a context menu; download remote files or copy their paths'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '消息里的文件链接、附件、工具卡片上的路径可右键：预览、复制路径、下载或另存为',
+            '远程文件可在文件树中定位，本机文件可在资源管理器中显示或用默认程序打开',
+          ],
+          en: [
+            'Right-click file links, attachments and tool card paths to preview, copy the path, or download / save as',
+            'Reveal remote files in the file tree; show local files in Explorer or open them with the default app',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.6.0',
     date: '2026-11-03',
     highlights: {
