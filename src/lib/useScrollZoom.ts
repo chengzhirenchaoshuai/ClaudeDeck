@@ -69,6 +69,8 @@ export function useScrollZoom(selector: string = TARGET_SELECTOR) {
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
+      // 自己处理滚轮的浮层（如大图查看器）里不缩放聊天区
+      if (target?.closest?.('[data-own-wheel]')) return;
 
       e.preventDefault();
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
