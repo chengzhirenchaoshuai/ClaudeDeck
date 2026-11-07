@@ -1715,4 +1715,163 @@ mod tests {
         assert!(script.contains(r#"cmd /c --% claude "--settings" "{\"alwaysThinkingEnabled\":true}""#));
         assert!(script.contains("exit $LASTEXITCODE"));
     }
+
+    fn host(id: &str, destination: &str) -> RemoteHost {
+        RemoteHost { id: id.into(), destination: destination.into(), port: None, identity_file: None }
+    }
+
+    /// 取出 tokio Command 的参数列表，便于断言
+    fn args_of(cmd: &Command) -> Vec<String> {
+        cmd.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+    }
+
+    #[test]
+    fn validate_host_rules() {
+        assert!(validate_host(&host("win-pc_1.lan", "me@win-pc")).is_ok());
+        // 名称会拼进 ssh://<名称>/ URI，只允许安全字符
+        assert!(validate_host(&host("", "win-pc")).is_err());
+        assert!(validate_host(&host("a/b", "win-pc")).is_err());
+        assert!(validate_host(&host("中文", "win-pc")).is_err());
+        assert!(validate_host(&host(&"a".repeat(33), "win-pc")).is_err());
+        assert!(validate_host(&host(&"a".repeat(32), "win-pc")).is_ok());
+        // 以 - 开头会被 ssh 当成选项（如 -oProxyCommand=...），是命令注入入口
+        assert!(validate_host(&host("h", "-oProxyCommand=calc")).is_err());
+        assert!(validate_host(&host("h", "  -oProxyCommand=calc")).is_err());
+        assert!(validate_host(&host("h", "win pc")).is_err());
+        assert!(validate_host(&host("h", "   ")).is_err());
+    }
+
+    #[test]
+    fn ssh_command_args() {
+        let h = RemoteHost {
+            id: "h".into(),
+            destination: " me@win-pc ".into(),
+            port: Some(2222),
+            identity_file: Some(" C:/keys/id_ed25519 ".into()),
+        };
+        let args = args_of(&ssh_command(&h));
+        // BatchMode 防止卡在密码输入；目标必须是最后一个参数（之后才拼远端命令）
+        assert!(args.windows(2).any(|w| w == ["-o", "BatchMode=yes"]));
+        assert!(args.windows(2).any(|w| w == ["-p", "2222"]));
+        assert!(args.windows(2).any(|w| w == ["-i", "C:/keys/id_ed25519"]));
+        assert_eq!(args.last().unwrap(), "me@win-pc");
+
+        // 空白的密钥路径不传 -i
+        let blank = RemoteHost { identity_file: Some("  ".into()), ..host("h", "win-pc") };
+        assert!(!args_of(&ssh_command(&blank)).contains(&"-i".to_string()));
+    }
+
+    #[test]
+    fn scp_uses_capital_p_for_port() {
+        // scp 的端口选项是 -P（小写 -p 是“保留时间戳”），写错会连到默认 22 端口
+        let h = RemoteHost { port: Some(2222), ..host("h", "win-pc") };
+        let args = args_of(&scp_command(&h));
+        assert!(args.windows(2).any(|w| w == ["-P", "2222"]));
+        assert!(!args.contains(&"-p".to_string()));
+    }
+
+    #[test]
+    fn remote_file_path_rejects_traversal() {
+        assert!(check_remote_file_path("C:/Users/me/proj/a.txt").is_ok());
+        assert!(check_remote_file_path("C:/Users/me/a..b/c.txt").is_ok());
+        assert!(check_remote_file_path("C:/Users/me/../secret").is_err());
+        assert!(check_remote_file_path("C:\\Users\\me\\..\\secret").is_err());
+        assert!(check_remote_file_path("..").is_err());
+        assert!(check_remote_file_path("C:/a\nb").is_err());
+        assert!(check_remote_file_path("C:/a\0b").is_err());
+    }
+
+    #[test]
+    fn quote_cmd_arg_backslashes_and_metachars() {
+        // 普通反斜杠原样保留，结尾的反斜杠要加倍，否则会把收尾的双引号转义掉
+        assert_eq!(quote_cmd_arg(r"C:\a b\").unwrap(), r#""C:\a b\\""#);
+        assert_eq!(quote_cmd_arg(r#"a\"b"#).unwrap(), r#""a\\\"b""#);
+        assert_eq!(quote_cmd_arg("").unwrap(), r#""""#);
+        // % 会被 cmd 展开成环境变量，其余是 cmd 的命令分隔/重定向符
+        for bad in ["%PATH%", "a|b", "a>b", "a<b", "a^b", "a\nb"] {
+            assert!(quote_cmd_arg(bad).is_err(), "应拒绝 {:?}", bad);
+        }
+    }
+
+    #[test]
+    fn build_command_rejects_unsafe_input() {
+        assert!(build_remote_claude_command("C:/p\nrm", &[], &[]).is_err());
+        assert!(build_remote_claude_command("C:/p", &[("A-B", "v")], &[]).is_err());
+        assert!(build_remote_claude_command("C:/p", &[("", "v")], &[]).is_err());
+        assert!(build_remote_claude_command("C:/p", &[], &["a&calc".to_string()]).is_err());
+    }
+
+    #[test]
+    fn build_command_quotes_single_quotes_and_env() {
+        let cmd = build_remote_claude_command("C:/Users/O'Brien/proj", &[("TOKEN", "it's")], &[]).unwrap();
+        let script = decode_encoded_command(&cmd);
+        // PowerShell 单引号字符串里 ' 要写成 ''，否则路径/变量值能截断字符串注入命令
+        assert!(script.contains(r"Set-Location -LiteralPath 'C:\Users\O''Brien\proj'"));
+        assert!(script.contains("$env:TOKEN = 'it''s'"));
+        // 所有远端脚本都带上 ASCII JSON 辅助函数
+        assert!(script.starts_with(PS_ASCII_HELPER));
+    }
+
+    #[test]
+    fn mask_secrets_recursively() {
+        let mut v = json!({
+            "env": { "ANTHROPIC_AUTH_TOKEN": "sk-xxx", "ANTHROPIC_BASE_URL": "https://api.example.com" },
+            "apiKeyHelper": "get-key.cmd",
+            "authEnabled": true,
+            "servers": [{ "name": "a", "secretValue": "s" }],
+        });
+        mask_secrets(&mut v);
+        let masked = "***（已设置）";
+        assert_eq!(v["env"]["ANTHROPIC_AUTH_TOKEN"], masked);
+        assert_eq!(v["apiKeyHelper"], masked);
+        assert_eq!(v["servers"][0]["secretValue"], masked);
+        assert_eq!(v["servers"][0]["name"], "a");
+        assert_eq!(v["env"]["ANTHROPIC_BASE_URL"], "https://api.example.com");
+        // 非字符串值不是密钥本身，保留原值
+        assert_eq!(v["authEnabled"], true);
+    }
+
+    #[test]
+    fn uri_tree_converts_nested_paths() {
+        let mut nodes = json!([
+            { "path": "C:\\p\\src", "children": [{ "path": "C:\\p\\src\\a.ts" }] },
+            { "path": "C:\\p\\README.md" },
+        ]);
+        uri_tree("win-pc", &mut nodes);
+        assert_eq!(nodes[0]["path"], "ssh://win-pc/C:/p/src");
+        assert_eq!(nodes[0]["children"][0]["path"], "ssh://win-pc/C:/p/src/a.ts");
+        assert_eq!(nodes[1]["path"], "ssh://win-pc/C:/p/README.md");
+    }
+
+    #[test]
+    fn same_as_local_requires_matching_machine() {
+        // 机器名为空或不同：一定不是本机（避免把真正的远程用量当成重复而丢掉）
+        assert!(!is_same_as_local("", "C:/Users/me/.claude/projects"));
+        assert!(!is_same_as_local("definitely-not-this-machine-0x1", "C:/Users/me/.claude/projects"));
+        if let Ok(local) = std::env::var("COMPUTERNAME") {
+            assert!(!is_same_as_local(&local, ""));
+            if let Ok(dir) = crate::claude_projects_dir() {
+                // 大小写、斜杠方向、结尾斜杠都不影响判断
+                let variant = format!("{}/", dir.to_string_lossy().replace('\\', "/").to_uppercase());
+                assert!(is_same_as_local(&local.to_lowercase(), &variant));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn hide_remote_session_ignores_non_uuid_ids() {
+        // 会话 ID 会拼进远端脚本：非 UUID 字符直接忽略，不会去查主机、更不会连 ssh
+        assert!(hide_remote_session("no-such-host".into(), "x'; Remove-Item C:\\ -Recurse; '".into()).await.is_ok());
+        assert!(hide_remote_session("no-such-host".into(), String::new()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn delete_remote_session_validates_before_connecting() {
+        let err = |r: Result<(), String>| r.unwrap_err();
+        assert!(err(delete_remote_session("C:/local.jsonl").await).contains("无效"));
+        assert!(err(delete_remote_session("ssh://h/C:/Users/me/.claude/settings.json").await).contains(".jsonl"));
+        for bad in ["ssh://h/C:/a\"b.jsonl", "ssh://h/C:/%TEMP%.jsonl", "ssh://h/C:/a\nb.jsonl"] {
+            assert!(err(delete_remote_session(bad).await).contains("不支持"), "应拒绝 {:?}", bad);
+        }
+    }
 }
