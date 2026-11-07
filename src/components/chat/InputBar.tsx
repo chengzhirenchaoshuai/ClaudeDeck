@@ -20,7 +20,6 @@ import { useCommandStore } from '../../stores/commandStore';
 import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveModelOrError, resolveThinkingLevelForProvider } from '../../lib/api-provider';
 import { useProviderStore } from '../../stores/providerStore';
 import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
-import { stripAnsi } from '../../lib/strip-ansi';
 import { getContextUsedTokens } from '../../lib/context-usage';
 import { ContextMeter } from './UsageMeters';
 import { PlanReviewCard } from './PlanReviewCard';
@@ -33,6 +32,7 @@ import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
 import { showToast } from '../shared/Toast';
 import { useInputHistory } from './useInputHistory';
+import { handleStderrLine as processStderrLine } from './stderr-handler';
 // drag-state import removed — tree drag handled by ChatPanel
 
 /* PlanApprovalBar removed — PlanReviewCard (triggered by ExitPlanMode detection)
@@ -871,72 +871,9 @@ export function InputBar() {
   // handleStreamMessage 由 useStreamProcessor 提供（src/hooks/useStreamProcessor.ts），
   // 前台、后台标签页的流消息都经它处理。
 
-  // Handle stderr lines — detect permission prompts and other interactive requests
+  // stderr 行处理（实现见 stderr-handler.ts）
   const handleStderrLine = useCallback((line: string, sid: string) => {
-    if (sid) {
-      const ownerTabId = useSessionStore.getState().getTabForStdin(sid);
-      const activeTabId = useSessionStore.getState().selectedSessionId;
-      if (ownerTabId && ownerTabId !== activeTabId) {
-        const clean = stripAnsi(line).trim();
-        if (clean) {
-          useChatStore.getState().addMessage(ownerTabId, {
-            id: generateMessageId(),
-            role: 'system',
-            type: 'text',
-            content: `[stderr] ${clean}`,
-            timestamp: Date.now(),
-          });
-        }
-        return;
-      }
-    }
-
-    // Strip ANSI escape codes so regex matching works on raw text
-    const clean = stripAnsi(line).trim();
-    console.log('[ClaudeDeck:stderr]', clean);
-
-    // Track last non-trivial stderr line for error reporting on unexpected exit
-    if (clean && !/^\s*$/.test(clean)) {
-      lastStderrRef.current = clean;
-    }
-
-    const stderrTabId = useSessionStore.getState().selectedSessionId;
-
-    // Detect ExitPlanMode prompt — create plan_review card as fallback (Plan mode only).
-    // In Code/Bypass modes the CLI or Rust backend handles this — no UI card needed.
-    if (/(?:Exit|Leave)\s+plan\s+mode/i.test(clean)
-        && useSettingsStore.getState().sessionMode === 'plan') {
-      const stderrTabState = getActiveTabState();
-      const existingReview = stderrTabState.messages.find(
-        (m: import('../../stores/chatStore').ChatMessage) => m.id === 'plan_review_current' && m.type === 'plan_review',
-      );
-      if (!existingReview || existingReview.resolved) {
-        if (existingReview?.resolved) return;
-        let planContent = '';
-        for (let i = stderrTabState.messages.length - 1; i >= 0; i--) {
-          const m = stderrTabState.messages[i];
-          if (m.type === 'tool_use' && m.toolName === 'Write' && m.toolInput?.content) {
-            planContent = m.toolInput.content;
-            break;
-          }
-        }
-        if (stderrTabId) {
-          useChatStore.getState().addMessage(stderrTabId, {
-            id: 'plan_review_current',
-            role: 'assistant', type: 'plan_review',
-            content: planContent, planContent: planContent,
-            resolved: false, timestamp: Date.now(),
-          });
-          useChatStore.getState().setActivityStatus(stderrTabId, { phase: 'awaiting' });
-        }
-      }
-      return;
-    }
-
-    // Permission prompts are now handled via SDK control protocol (P1-03/P1-04).
-    // The Rust backend intercepts control_request messages from stdout and emits
-    // them on the claude:permission_request channel, which is handled by
-    // onPermissionRequest above. Stderr is now purely for diagnostic logging.
+    processStderrLine(line, sid, lastStderrRef);
   }, []);
 
   // Keep stderr ref in sync so auto-retry logic in handleStreamMessage can call it
