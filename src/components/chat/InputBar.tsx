@@ -9,7 +9,6 @@ import { FileUploadChips } from './FileUploadChips';
 import { RewindPanel } from './RewindPanel';
 import { useFileAttachments } from '../../hooks/useFileAttachments';
 import { useRewind } from '../../hooks/useRewind';
-import { findWithdrawableTurn } from '../../lib/turns';
 import { useStreamProcessor } from '../../hooks/useStreamProcessor';
 import { flushStreamBuffer } from '../../hooks/stream/buffer';
 import { useAgentStore } from '../../stores/agentStore';
@@ -33,6 +32,7 @@ import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
 import { showToast } from '../shared/Toast';
 import { useInputHistory } from './useInputHistory';
 import { useSlashCommands } from './useSlashCommands';
+import { stopCurrentSession, type SpawningSessions } from './stop-session';
 import { handleStderrLine as processStderrLine } from './stderr-handler';
 // drag-state import removed — tree drag handled by ChatPanel
 
@@ -165,7 +165,7 @@ export function InputBar() {
 
   const { files, setFiles, isProcessing, addFiles, removeFile, clearFiles, cancelProcessing } = useFileAttachments();
   // 正在启动 CLI 的标签页：启动返回前 stdinId 还没写入，终止时靠这里标记取消
-  const spawningRef = useRef(new Map<string, { stdinId: string; cancelled: boolean }>());
+  const spawningRef = useRef<SpawningSessions>(new Map());
 
   // 本地 files 与 store.pendingAttachments 双向同步（切换标签页时保留附件）。
   // 用 lastSyncedRef 记住最近一次同步过的数组：同一个值不再反向写回。
@@ -1185,52 +1185,7 @@ export function InputBar() {
           {/* Stop button — visible only while running */}
           {isRunning && (
             <button
-              onClick={async () => {
-                const stopTabId = useSessionStore.getState().selectedSessionId;
-                const tabState = getActiveTabState();
-                const sid = tabState.sessionMeta.stdinId;
-                const withdrawTurn = findWithdrawableTurn(tabState);
-                const lastMessage = tabState.messages[tabState.messages.length - 1];
-                if (stopTabId) {
-                  // 进程还在启动：拿到进程后由启动流程结束它
-                  const spawn = spawningRef.current.get(stopTabId);
-                  if (spawn) {
-                    spawn.cancelled = true;
-                    releaseStreamListener(spawn.stdinId);
-                  }
-                  useChatStore.getState().setSessionStatus(stopTabId, 'completed');
-                  useChatStore.getState().setActivityStatus(stopTabId, { phase: 'completed' });
-                }
-                // 刚发出还没有回应：撤回这条消息，连同附件、技能放回输入框，模型也不会记得它
-                if (stopTabId && withdrawTurn) {
-                  const ctx = lastMessage.sendContext;
-                  const restoredText = ctx?.rawInput ?? lastMessage.content;
-                  const draft = tabState.inputDraft.trim();
-                  const withdrawn = await executeRewind(
-                    withdrawTurn,
-                    'restore_conversation',
-                    draft ? `${restoredText}\n${draft}` : restoredText,
-                    true,
-                  );
-                  if (withdrawn) {
-                    restoreSendExtras(stopTabId, lastMessage);
-                    return;
-                  }
-                }
-                // Immediately clear stdinId so no further messages are sent to the dead process
-                if (stopTabId) {
-                  useChatStore.getState().setSessionMeta(stopTabId, { stdinId: undefined });
-                }
-                if (sid) {
-                  await bridge.killSession(sid).catch(() => {});
-                  // Don't unlisten immediately — let process_exit fire naturally to clean up.
-                  // The listener will be replaced when a new session spawns (line ~788).
-                  // As a safety net, force-clean after 3s if process_exit hasn't arrived.
-                  setTimeout(() => {
-                    releaseStreamListener(sid);
-                  }, 3000);
-                }
-              }}
+              onClick={() => stopCurrentSession({ spawning: spawningRef.current, executeRewind, restoreSendExtras })}
               className="flex-shrink-0 w-7 h-7 rounded-[10px]
                 bg-red-500/15 text-red-500
                 flex items-center justify-center
