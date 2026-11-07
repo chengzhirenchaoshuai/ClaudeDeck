@@ -1,4 +1,5 @@
 // 界面文案（中文 / 英文，默认中文）。词条按领域分在 zh/、en/ 下，英文文件逐条对应中文，缺漏会编译报错。
+import { useCallback } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { Locale } from '../../stores/settingsStore';
 import zh from './zh';
@@ -16,20 +17,25 @@ function resolvePlatformPlaceholders(text: string): string {
     .replace(/\{fileManagerEn\}/g, 'Explorer');
 }
 
-// --- 组件外使用的非响应式 t() ---
-
-export function t(key: string): string {
-  const locale = useSettingsStore.getState().locale;
+/** 按指定语言取文案：当前语言没有时退回英文，都没有时返回 key 本身 */
+export function translate(locale: Locale, key: string): string {
   const raw = messages[locale]?.[key] || messages['en'][key] || key;
   return resolvePlatformPlaceholders(raw);
 }
 
+// --- 组件外使用的非响应式 t() ---
+
+export function t(key: string): string {
+  return translate(useSettingsStore.getState().locale, key);
+}
+
 // --- 组件内使用的响应式 hook：切换语言时重新渲染 ---
 
+/**
+ * 返回的函数按语言缓存：语言不变时始终是同一个函数，切换语言后才换新的。
+ * 放进 useCallback/useEffect 的依赖里不会导致每次渲染都重建、重新订阅。
+ */
 export function useT() {
   const locale = useSettingsStore((s) => s.locale);
-  return (key: string): string => {
-    const raw = messages[locale]?.[key] || messages['en'][key] || key;
-    return resolvePlatformPlaceholders(raw);
-  };
+  return useCallback((key: string): string => translate(locale, key), [locale]);
 }

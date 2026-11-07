@@ -81,7 +81,6 @@ export function InputBar() {
   const activityPhase = useActiveTab((t) => t.activityStatus.phase);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
   const selectedModel = useSettingsStore((s) => s.selectedModel);
-  const sessionMode = useSettingsStore((s) => s.sessionMode);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
 
   // Floating approval cards — unresolved plan_review / question messages
@@ -132,9 +131,6 @@ export function InputBar() {
   const showSuggestion = !!promptSuggestion && !input && !isRunning && activePrefixes.length === 0;
   const isAwaiting = isRunning && activityPhase === 'awaiting';
 
-  // Whether this is a follow-up (session already has a CLI session ID)
-  const hasActiveSession = sessionStatus !== 'idle';
-
   // Ref to always point to the latest handleSubmit (avoids stale closure)
   const handleSubmitRef = useRef<() => void>(() => {});
   // 其他组件经 window 事件发来的请求：压缩、执行计划、撤回排队消息、插入文件、打开回退面板
@@ -173,6 +169,13 @@ export function InputBar() {
     slashQuery, slashVisible, slashIndex, detectSlashCommand, handleSlashSelect, handleSlashKey, closeSlash,
   } = useSlashCommands({ textareaRef, setInputSync, executeImmediateCommand, activePrefixes });
 
+  // stderr 行处理（实现见 stderr-handler.ts）。要声明在 handleSubmit 之前：它出现在 handleSubmit 的依赖数组里
+  const handleStderrLine = useCallback((line: string, sid: string) => {
+    processStderrLine(line, sid, lastStderrRef);
+  }, []);
+  // 保持 ref 同步，handleStreamMessage 里的自动重试经它调用
+  handleStderrLineRef.current = handleStderrLine;
+
   // --- 发送（三个阶段的实现见 submit-message.ts）---
   const handleSubmit = useCallback(async () => {
     // 没有选中的标签页时，在当前工作目录下新建一个草稿会话
@@ -208,21 +211,16 @@ export function InputBar() {
       handleStreamMessage,
       handleStderrLine,
     });
-  }, [hasActiveSession, workingDirectory, selectedModel, sessionMode, files, clearFiles]);
+  }, [
+    workingDirectory, selectedModel, files, clearFiles, t,
+    setInputSync, executeImmediateCommand, handleStreamMessage, handleStderrLine,
+  ]);
 
-  // Keep ref in sync so executeImmediateCommand can call latest handleSubmit
+  // 保持 ref 指向最新的 handleSubmit（计划执行、压缩、静默重启等经 rAF 调用）
   handleSubmitRef.current = handleSubmit;
 
   // handleStreamMessage 由 useStreamProcessor 提供（src/hooks/useStreamProcessor.ts），
   // 前台、后台标签页的流消息都经它处理。
-
-  // stderr 行处理（实现见 stderr-handler.ts）
-  const handleStderrLine = useCallback((line: string, sid: string) => {
-    processStderrLine(line, sid, lastStderrRef);
-  }, []);
-
-  // Keep stderr ref in sync so auto-retry logic in handleStreamMessage can call it
-  handleStderrLineRef.current = handleStderrLine;
 
   // Register global stream handler on mount so pre-warm events (system:init,
   // process_exit) are processed immediately — not deferred until user sends.

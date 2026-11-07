@@ -7,7 +7,7 @@ vi.stubGlobal('localStorage', {
 });
 
 const { useSettingsStore } = await import('../../stores/settingsStore');
-const { t } = await import('../i18n');
+const { t, translate } = await import('../i18n');
 const zhParts = import.meta.glob<{ default: Record<string, string> }>('../i18n/zh/*.ts', { eager: true });
 const enParts = import.meta.glob<{ default: Record<string, string> }>('../i18n/en/*.ts', { eager: true });
 
@@ -49,6 +49,19 @@ describe('词条表', () => {
     for (const dict of [merged(zhParts), merged(enParts)]) {
       expect(Object.entries(dict).filter(([, v]) => !v.trim()).map(([k]) => k)).toEqual([]);
     }
+  });
+});
+
+describe('translate', () => {
+  it('按传入的语言取文案，不受当前设置影响（useT 按语言缓存的基础）', () => {
+    useSettingsStore.setState({ locale: 'zh' });
+    expect(translate('en', 'common.cancel')).toBe('Cancel');
+    expect(translate('zh', 'common.cancel')).toBe('取消');
+  });
+
+  it('当前语言缺少时退回英文，都没有时返回 key', () => {
+    expect(translate('xx' as never, 'common.cancel')).toBe('Cancel');
+    expect(translate('zh', 'no.such.key')).toBe('no.such.key');
   });
 });
 
