@@ -73,7 +73,7 @@ fn msi_install_dir() -> Option<PathBuf> {
 }
 
 /// 当前 exe 是否位于 MSI 安装目录下
-fn is_msi_installed() -> bool {
+pub(crate) fn is_msi_installed() -> bool {
     let (Some(install_dir), Ok(exe)) = (msi_install_dir(), std::env::current_exe()) else {
         return false;
     };

@@ -469,6 +469,7 @@ pub fn run() {
         .manage(StdinManager::new())
         .manage(WatcherManager::default())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         // DPI 变化（拖到不同缩放的显示器）后按新尺寸重新设置窗口图标
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::ScaleFactorChanged { .. } = event {
@@ -612,6 +613,7 @@ pub fn run() {
             commands::cli_setup::update_claude_cli,
             commands::cli_setup::check_cli_update,
             commands::updater::get_update_env,
+            commands::notification::send_notification,
             commands::updater::download_portable_update,
             commands::updater::apply_portable_update,
             commands::toolchain::check_node_env,

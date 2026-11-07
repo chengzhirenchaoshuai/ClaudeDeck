@@ -15,5 +15,6 @@ pub mod usage;
 pub mod providers;
 pub mod preview;
 pub mod updater;
+pub mod notification;
 
 pub use claude_process::*;
