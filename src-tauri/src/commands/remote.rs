@@ -447,9 +447,7 @@ fn uri_tree(host_id: &str, nodes: &mut Value) {
 /// 读取远端目录树（路径已转为 ssh:// URI，节点未排序）。目录不存在时返回 "Directory does not exist"，
 /// 与本机 read_file_tree 的报错一致，前端据此判断目录缺失。
 pub async fn scan_remote_tree(host_id: &str, remote_path: &str, depth: u32) -> Result<Value, String> {
-    if remote_path.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) || remote_path.split(['/', '\\']).any(|seg| seg == "..") {
-        return Err("远程路径含有不支持的字符".to_string());
-    }
+    check_remote_file_path(remote_path)?;
     let host = find_host(host_id)?;
     let script = SCAN_TREE_SCRIPT
         .replace("__DIR__", &ps_quote(&remote_path.replace('/', "\\")))
@@ -1056,11 +1054,7 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
 /// 会把错误序列化成 CLIXML，前端只能看到一串不可读的 "#< CLIXML"。
 pub async fn read_remote_file(uri: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
     let (host_id, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
-    if path.chars().any(|c| matches!(c, '\n' | '\r' | '\0'))
-        || path.split(['/', '\\']).any(|seg| seg == "..")
-    {
-        return Err("远程路径含有不支持的字符".to_string());
-    }
+    check_remote_file_path(&path)?;
     let host = find_host(&host_id)?;
     let win_path = path.replace('/', "\\").replace('\'', "''");
     let script = format!(
@@ -1131,7 +1125,8 @@ fn scp_command(host: &RemoteHost) -> Command {
     cmd
 }
 
-/// 校验远端文件路径：不能含换行、NUL，不能有 `..` 段
+/// 校验远端文件/目录路径：不能含换行、NUL，不能有 `..` 段。
+/// 读目录树、读文件、下载、查大小共用，路径会拼进远端脚本或 scp 参数
 fn check_remote_file_path(path: &str) -> Result<(), String> {
     if path.chars().any(|c| matches!(c, '\n' | '\r' | '\0'))
         || path.split(['/', '\\']).any(|seg| seg == "..")
@@ -1856,6 +1851,18 @@ mod tests {
                 assert!(is_same_as_local(&local.to_lowercase(), &variant));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn tree_and_file_reads_reject_traversal_before_connecting() {
+        // 校验在查主机之前：主机不存在也应先报路径错误，而不是“主机未找到”
+        let tree = scan_remote_tree("no-such-host", "C:\\p\\..\\..\\Windows", 2).await.unwrap_err();
+        assert!(tree.contains("不支持"), "{}", tree);
+        let file = read_remote_file("ssh://no-such-host/C:/p/../secret.txt", 1024).await.unwrap_err();
+        assert!(file.contains("不支持"), "{}", file);
+        // 合法路径通过校验，走到查主机这一步
+        let ok_path = read_remote_file("ssh://no-such-host/C:/p/a..b.txt", 1024).await.unwrap_err();
+        assert!(!ok_path.contains("不支持"), "{}", ok_path);
     }
 
     #[tokio::test]
