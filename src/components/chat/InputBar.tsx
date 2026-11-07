@@ -20,6 +20,7 @@ import { TiptapEditor, type TiptapEditorHandle } from './TiptapEditor';
 import { ProjectFolderPicker } from './ProjectFolderPicker';
 import { executeImmediateCommand as runImmediateCommand } from './immediate-commands';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
+import { BackgroundTasksButton } from './BackgroundTasksButton';
 import { useInputHistory } from './useInputHistory';
 import { useSlashCommands } from './useSlashCommands';
 import { stopCurrentSession, type SpawningSessions } from './stop-session';
@@ -547,6 +548,9 @@ export function InputBar() {
 
           {/* Spacer */}
           <div className="flex-1" />
+
+          {/* 后台任务：当前会话有后台任务时显示，可查看输出、停止 */}
+          <BackgroundTasksButton key={selectedSessionId || 'new'} />
 
           {/* Plan view button */}
           <PlanToggleButton />
