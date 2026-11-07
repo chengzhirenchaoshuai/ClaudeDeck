@@ -29,11 +29,11 @@ import { ProjectFolderPicker } from './ProjectFolderPicker';
 import { executeImmediateCommand as runImmediateCommand } from './immediate-commands';
 import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
-import { showToast } from '../shared/Toast';
 import { useInputHistory } from './useInputHistory';
 import { useSlashCommands } from './useSlashCommands';
 import { stopCurrentSession, type SpawningSessions } from './stop-session';
 import { handleStderrLine as processStderrLine } from './stderr-handler';
+import { useAttachmentSync, useInputBarEvents, useRestoreSendExtras } from './useInputBarEvents';
 // drag-state import removed — tree drag handled by ChatPanel
 
 /* PlanApprovalBar removed — PlanReviewCard (triggered by ExitPlanMode detection)
@@ -96,63 +96,6 @@ export function InputBar() {
   const sessionMode = useSettingsStore((s) => s.sessionMode);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
 
-  const handlePlanApprove = useCallback(async () => {
-    const tabId = useSessionStore.getState().selectedSessionId;
-    if (!tabId) return;
-    const currentMode = useSettingsStore.getState().sessionMode;
-    const tabState = getActiveTabState();
-    const meta = tabState.sessionMeta;
-    const status = tabState.sessionStatus;
-
-    // If CLI is still alive (e.g., Bypass auto-accepted ExitPlanMode),
-    // just dismiss the card — no restart needed.
-    if (meta.stdinId && status === 'running') {
-      useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
-      return;
-    }
-
-    // CLI exited after ExitPlanMode (permission denied in stream-json mode).
-    // Plan mode: switch to Code mode for execution.
-    // Bypass mode: stay in Bypass (no mode switch needed).
-    if (currentMode === 'plan') {
-      useSettingsStore.getState().setSessionMode('code');
-    }
-
-    // Clean up dead CLI process
-    if (meta.stdinId) {
-      useChatStore.getState().setSessionMeta(tabId, { stdinId: undefined });
-      bridge.killSession(meta.stdinId).catch(() => {});
-      releaseStreamListener(meta.stdinId);
-    }
-
-    // Restart with --resume <sessionId>
-    useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
-    setInputSync('Execute the plan above.');
-    requestAnimationFrame(() => {
-      handleSubmitRef.current();
-    });
-  }, [setInputSync]);
-
-  // 右上角“压缩”按钮、斜杠菜单选 /compact：会话没有运行中的进程时，通过发送 /compact 续接会话并压缩
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const args = (e as CustomEvent<{ args?: string } | undefined>).detail?.args;
-      setInputSync(args ? `/compact ${args}` : '/compact');
-      requestAnimationFrame(() => {
-        handleSubmitRef.current();
-      });
-    };
-    window.addEventListener('tokenicode:compact-now', handler);
-    return () => window.removeEventListener('tokenicode:compact-now', handler);
-  }, [setInputSync]);
-
-  // Listen for plan-execute events from PlanReviewCard and Enter shortcut
-  useEffect(() => {
-    const handler = () => handlePlanApprove();
-    window.addEventListener('tokenicode:plan-execute', handler);
-    return () => window.removeEventListener('tokenicode:plan-execute', handler);
-  }, [handlePlanApprove]);
-
   // Floating approval cards — unresolved plan_review / question messages
   // are rendered above the input instead of inline in the chat flow.
   const floatingCard = useActiveTab((tab) => {
@@ -167,107 +110,9 @@ export function InputBar() {
   // 正在启动 CLI 的标签页：启动返回前 stdinId 还没写入，终止时靠这里标记取消
   const spawningRef = useRef<SpawningSessions>(new Map());
 
-  // 本地 files 与 store.pendingAttachments 双向同步（切换标签页时保留附件）。
-  // 用 lastSyncedRef 记住最近一次同步过的数组：同一个值不再反向写回。
-  // 否则同一次渲染里两边都变了（如发送后清空附件 + 同时切换/改名标签页）时，
-  // 两个 effect 会把两个值来回互换，形成无限更新（Maximum update depth exceeded）。
-  // 初始值取挂载时的 files：挂载那一刻不把空数组写进 store，而是由下面的 effect 从 store 恢复
-  const lastSyncedRef = useRef(files);
-  const setPendingAttachmentsStore = useChatStore((s) => s.setPendingAttachments);
-  useEffect(() => {
-    if (files === lastSyncedRef.current) return;
-    lastSyncedRef.current = files;
-    const tid = useSessionStore.getState().selectedSessionId;
-    if (tid) setPendingAttachmentsStore(tid, files);
-  }, [files, setPendingAttachmentsStore]);
-
-  // 标签页切换回来时从 store 恢复附件（pendingAttachments → 本地 files）
-  const pendingAttachments = useActiveTab((t) => t.pendingAttachments);
-  useEffect(() => {
-    if (pendingAttachments === lastSyncedRef.current) return;
-    lastSyncedRef.current = pendingAttachments;
-    setFiles(pendingAttachments);
-  }, [pendingAttachments, setFiles]);
-
-  // 撤回的消息放回输入框时，恢复发送时的技能/命令前缀、回退摘要和附件（文本由调用方放回）
-  const restoreSendExtras = useCallback((tabId: string, message: ChatMessage) => {
-    const ctx = message.sendContext;
-    if (ctx?.prefixes.length) {
-      ctx.prefixes.forEach((cmd) => useCommandStore.getState().addPrefix(cmd));
-    }
-    if (ctx?.pendingSummary) {
-      useChatStore.getState().setSessionMeta(tabId, { pendingSummary: ctx.pendingSummary });
-    }
-    const restoredFiles = (message.attachments ?? []).map((a, i) => ({
-      id: `withdrawn_${message.id}_${i}`,
-      name: a.name,
-      path: a.path,
-      size: a.size ?? 0,
-      type: a.type ?? 'application/octet-stream',
-      isImage: a.isImage,
-      preview: a.preview,
-    }));
-    if (restoredFiles.length > 0) setFiles((prev) => [...restoredFiles, ...prev]);
-  }, [setFiles]);
-
-  // 运行中发出、CLI 还没处理的消息：撤回并放回输入框编辑（ChatPanel 里排队气泡上的按钮触发）
-  useEffect(() => {
-    const handler = async (e: Event) => {
-      const messageId = (e as CustomEvent<string>).detail;
-      const tabId = useSessionStore.getState().selectedSessionId;
-      if (!tabId || !messageId) return;
-      const tabState = getActiveTabState();
-      const pending = tabState.pendingUserMessages.find((p) => p.message?.id === messageId);
-      if (!pending?.message) return;
-      if (pending.sent) {
-        // 已写入 stdin：先让 CLI 从队列里取消，CLI 已经取走时不能撤回
-        const sid = tabState.sessionMeta.stdinId;
-        const cancelled = !!sid && !!pending.uuid
-          && await bridge.cancelQueuedMessage(sid, pending.uuid).catch((err) => {
-            console.warn('[ClaudeDeck] cancel queued message failed:', err);
-            return false;
-          });
-        if (!cancelled) {
-          showToast(t('chat.withdrawFailed'), 'error');
-          return;
-        }
-      }
-      if (!useChatStore.getState().removePendingMessage(tabId, messageId)) return;
-      // 本轮已结束、只是在等这条消息开始下一轮：撤回后不会再有下一轮，回到空闲
-      const after = useChatStore.getState().getTab(tabId);
-      if (after?.sessionMeta.awaitingQueuedTurn && !after.pendingUserMessages.some((p) => p.sent)) {
-        useChatStore.getState().setSessionMeta(tabId, { awaitingQueuedTurn: undefined });
-        useChatStore.getState().setSessionStatus(tabId, 'completed');
-        useChatStore.getState().setActivityStatus(tabId, { phase: 'completed' });
-      }
-      const restoredText = pending.message.sendContext?.rawInput ?? pending.message.content;
-      const draft = useChatStore.getState().getTab(tabId)?.inputDraft.trim() ?? '';
-      setInputSync(draft ? `${restoredText}\n${draft}` : restoredText);
-      restoreSendExtras(tabId, pending.message);
-      textareaRef.current?.focus();
-    };
-    window.addEventListener('tokenicode:withdraw-pending', handler);
-    return () => window.removeEventListener('tokenicode:withdraw-pending', handler);
-  }, [setInputSync, restoreSendExtras, t]);
-
-  // Inline file insertion: drop or drag → insert a file chip at cursor
-  useEffect(() => {
-    const onTreeFileInline = (e: Event) => {
-      const fullPath = (e as CustomEvent<string>).detail;
-      if (!fullPath || !textareaRef.current) return;
-
-      // Convert to path relative to working directory for readability
-      const cwd = useSettingsStore.getState().workingDirectory;
-      let displayPath = fullPath;
-      if (cwd && fullPath.startsWith(cwd)) {
-        displayPath = fullPath.slice(cwd.length).replace(/^[\\/]/, '');
-      }
-
-      textareaRef.current.insertFileChip({ fullPath, label: displayPath });
-    };
-    window.addEventListener('tokenicode:tree-file-inline', onTreeFileInline);
-    return () => window.removeEventListener('tokenicode:tree-file-inline', onTreeFileInline);
-  }, []);
+  // 附件与 store 双向同步、撤回时恢复发送附带的内容（实现见 useInputBarEvents.ts）
+  useAttachmentSync(files, setFiles);
+  const restoreSendExtras = useRestoreSendExtras(setFiles);
 
   const activePrefixes = useCommandStore((s) => s.activePrefixes);
 
@@ -282,25 +127,6 @@ export function InputBar() {
   const [showRewindPanel, setShowRewindPanel] = useState(false);
   const { showRewind, canRewind, executeRewind } = useRewind();
   // lastEscTime removed — double-Esc rewind disabled (#36/#71)
-
-  // Listen for rewind event from /rewind command
-  useEffect(() => {
-    const handler = () => {
-      if (canRewind) {
-        setShowRewindPanel(true);
-      } else {
-        const tid = useSessionStore.getState().selectedSessionId;
-        if (tid) {
-          useChatStore.getState().addMessage(tid, {
-            id: generateMessageId(), role: 'system', type: 'text',
-            content: t('rewind.disabled'), commandType: 'error', timestamp: Date.now(),
-          });
-        }
-      }
-    };
-    window.addEventListener('tokenicode:rewind', handler);
-    return () => window.removeEventListener('tokenicode:rewind', handler);
-  }, [canRewind, t]);
 
   // Double-Esc rewind shortcut disabled (#36 / #71) — rewind feature is hidden in ClaudeDeck
 
@@ -323,6 +149,9 @@ export function InputBar() {
 
   // Ref to always point to the latest handleSubmit (avoids stale closure)
   const handleSubmitRef = useRef<() => void>(() => {});
+  // 其他组件经 window 事件发来的请求：压缩、执行计划、撤回排队消息、插入文件、打开回退面板
+  const openRewindPanel = useCallback(() => setShowRewindPanel(true), []);
+  useInputBarEvents({ textareaRef, setInputSync, handleSubmitRef, restoreSendExtras, canRewind, openRewindPanel });
   // Ref to always point to the latest handleStderrLine (used by retry logic in handleStreamMessage)
   const handleStderrLineRef = useRef<(line: string, sid: string) => void>(() => {});
   /** Last non-empty stderr line — shown to user if process exits without response */
