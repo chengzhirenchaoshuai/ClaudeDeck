@@ -58,6 +58,8 @@ export default {
   'settings.autostart': '开机自启动',
   'settings.autostartHint': '登录 Windows 后自动启动；移动或重装应用后需重新开关一次',
   'settings.ctrlEnterToSendHint': '关闭时按 Enter 直接发送',
+  'settings.systemNotifications': '系统通知',
+  'settings.systemNotificationsHint': '窗口不在前台时，回复完成或需要你确认会弹出系统通知',
   'settings.promptSuggestions': '提示建议',
   'settings.promptSuggestionsHint': '每轮回复后预测你的下一句话，输入框为空时按 Tab 填入；每轮多一次小的模型调用；切换后从下一条消息起生效',
   'settings.ctrlClickOpenExternally': 'Ctrl+单击文件用系统程序打开',

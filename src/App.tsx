@@ -27,6 +27,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTaskbarBadge } from './hooks/useTaskbarBadge';
 import { useAutoUpdateCheck } from './hooks/useAutoUpdateCheck';
 import { useUnreadSessions } from './hooks/useUnreadSessions';
+import { useSystemNotifications } from './hooks/useSystemNotifications';
 import { installChipCopy } from './lib/chip-copy';
 import { installDraftCleanup } from './lib/draft-cleanup';
 import { useTerminalSessions } from './hooks/useTerminalSessions';
@@ -190,6 +191,8 @@ function App() {
 
   // 会话结束时不在该会话窗口，则标记为未读
   useUnreadSessions();
+  // 窗口不在前台时，回复完成或需要确认会弹出系统通知
+  useSystemNotifications();
   useTerminalSessions();
 
   // TK-329: On app startup (incl. browser F5 refresh), handle active backend processes.
@@ -377,7 +380,6 @@ function App() {
   useEffect(() => {
     useSessionStore.getState().loadCustomPreviewsFromDisk();
     useProviderStore.getState().load();
-    // Notification permission is requested lazily on first need (see useStreamProcessor.ts)
   }, []);
 
   // Disable browser context menu globally (native app feel)

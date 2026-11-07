@@ -59,6 +59,8 @@ export default {
   'settings.autostart': 'Launch at startup',
   'settings.autostartHint': 'Starts when you sign in to Windows; toggle again after moving or reinstalling the app',
   'settings.ctrlEnterToSendHint': 'When off, Enter sends',
+  'settings.systemNotifications': 'System notifications',
+  'settings.systemNotificationsHint': 'Show a system notification when a reply finishes or needs your confirmation while the window is in the background',
   'settings.promptSuggestions': 'Prompt suggestions',
   'settings.promptSuggestionsHint': 'Predict your next message after each reply; press Tab in an empty input to use it. Adds a small model call per turn; takes effect from your next message',
   'settings.ctrlClickOpenExternally': 'Ctrl+click opens files in the system app',

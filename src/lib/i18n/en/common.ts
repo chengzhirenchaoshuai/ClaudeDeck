@@ -69,4 +69,13 @@ export default {
   // Network / firewall hints
   'network.firewallHint': 'Network error — you may need a VPN or proxy to connect',
   'error.permissionHint': 'Permission denied — try running as administrator, or check if antivirus is blocking the directory',
+
+  // 系统通知（窗口不在前台时，回复完成或需要确认）
+  'notification.completed': 'Reply finished',
+  'notification.failed': 'Something went wrong',
+  'notification.failedWith': 'Error: {detail}',
+  'notification.awaiting': 'Waiting for your confirmation',
+  'notification.awaitingPermission': 'Waiting for your confirmation: allow {tool}',
+  'notification.awaitingQuestion': 'Question for you: {question}',
+  'notification.awaitingPlan': 'The plan is ready for your review',
 } satisfies Record<keyof typeof zh, string>;

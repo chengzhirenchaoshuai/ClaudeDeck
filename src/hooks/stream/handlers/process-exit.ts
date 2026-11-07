@@ -79,17 +79,7 @@ export function handleProcessExit(ctx: StreamContext, msg: ProcessExitMessage): 
   }
 
   setSessionStatus('idle');
-  if (isForeground && !document.hasFocus() && 'Notification' in window) {
-    if (Notification.permission === 'granted') {
-      new Notification('ClaudeDeck', { body: t('notification.chatComplete') });
-    } else if (Notification.permission === 'default') {
-      Notification.requestPermission().then((perm) => {
-        if (perm === 'granted') {
-          new Notification('ClaudeDeck', { body: t('notification.chatComplete') });
-        }
-      }).catch(() => {});
-    }
-  }
+  // 系统通知由 useSystemNotifications 统一处理（监听标签页状态变化），这里不再单独发
 
   setSessionMeta({ stdinId: undefined, lastProgressAt: undefined });
   // Clean up stdinId → tabId mapping to prevent memory leak

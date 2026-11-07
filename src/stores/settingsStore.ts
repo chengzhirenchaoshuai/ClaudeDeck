@@ -199,6 +199,9 @@ interface SettingsState {
   /** 消息区右侧的轮次导航条是否收起 */
   timelineHidden: boolean;
   toggleTimeline: () => void;
+  /** 窗口不在前台时，回复完成或需要确认是否弹出系统通知 */
+  systemNotifications: boolean;
+  toggleSystemNotifications: () => void;
   setWorkingDirectory: (dir: string) => void;
   /** 切换环境，并清空工作目录（本地与远程的项目路径互不通用） */
   setActiveEnv: (env: string) => void;
@@ -354,6 +357,8 @@ export const useSettingsStore = create<SettingsState>()(
 
       timelineHidden: false,
       toggleTimeline: () => set((state) => ({ timelineHidden: !state.timelineHidden })),
+      systemNotifications: true,
+      toggleSystemNotifications: () => set((state) => ({ systemNotifications: !state.systemNotifications })),
 
       toggleSettings: () =>
         set((state) => ({
@@ -470,7 +475,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 24,
+      version: 25,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -591,6 +596,10 @@ export const useSettingsStore = create<SettingsState>()(
           // 新增：轮次导航条可收起，默认展开
           persisted.timelineHidden = false;
         }
+        if (version < 25) {
+          // 新增：系统通知，默认开启
+          persisted.systemNotifications = true;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -632,6 +641,7 @@ export const useSettingsStore = create<SettingsState>()(
         seenCliUpdate: state.seenCliUpdate,
         seenAppUpdate: state.seenAppUpdate,
         timelineHidden: state.timelineHidden,
+        systemNotifications: state.systemNotifications,
       }),
     },
   ),

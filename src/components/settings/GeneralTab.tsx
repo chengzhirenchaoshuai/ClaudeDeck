@@ -113,6 +113,8 @@ export function GeneralTab() {
   const setContextWindowMode = useSettingsStore((s) => s.setContextWindowMode);
   const setAutoCompactThresholdTokens = useSettingsStore((s) => s.setAutoCompactThresholdTokens);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
+  const systemNotifications = useSettingsStore((s) => s.systemNotifications);
+  const toggleSystemNotifications = useSettingsStore((s) => s.toggleSystemNotifications);
   const toggleCtrlEnterToSend = useSettingsStore((s) => s.toggleCtrlEnterToSend);
   const promptSuggestions = useSettingsStore((s) => s.promptSuggestions);
   const togglePromptSuggestions = useSettingsStore((s) => s.togglePromptSuggestions);
@@ -206,6 +208,9 @@ export function GeneralTab() {
             </select>
           </Row>
         )}
+        <Row title={t('settings.systemNotifications')} hint={t('settings.systemNotificationsHint')}>
+          <Toggle on={systemNotifications} onClick={toggleSystemNotifications} />
+        </Row>
       </Section>
 
       <Section title={t('settings.section.input')}>

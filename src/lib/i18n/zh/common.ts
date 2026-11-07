@@ -68,4 +68,13 @@ export default {
   // Network / firewall hints
   'network.firewallHint': '网络连接失败，可能需要 VPN 或代理才能访问',
   'error.permissionHint': '权限不足，请以管理员身份运行，或检查防病毒软件是否锁定了相关目录',
+
+  // 系统通知（窗口不在前台时，回复完成或需要确认）
+  'notification.completed': '回复完成',
+  'notification.failed': '出错了',
+  'notification.failedWith': '出错了：{detail}',
+  'notification.awaiting': '等待你确认',
+  'notification.awaitingPermission': '等待你确认：允许使用 {tool}',
+  'notification.awaitingQuestion': '有问题等你回答：{question}',
+  'notification.awaitingPlan': '计划已写好，等待你审阅',
 };

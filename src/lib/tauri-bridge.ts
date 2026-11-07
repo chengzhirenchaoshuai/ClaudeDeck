@@ -714,6 +714,10 @@ export const bridge = {
   getUpdateEnv: () =>
     invoke<{ mode: 'msi' | 'portable' | 'dev'; proxy: string | null }>('get_update_env'),
 
+  /** 发送一条 Windows 系统通知（开发版显示为 PowerShell 的名称和图标） */
+  sendNotification: (title: string, body: string) =>
+    invoke<void>('send_notification', { title, body }),
+
   /** 免安装版：下载新 exe 并校验签名，保存在当前 exe 旁边 */
   downloadPortableUpdate: (
     url: string,
