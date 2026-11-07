@@ -70,6 +70,15 @@ export interface TerminalSessionInfo {
 }
 
 /** 远程主机配置：id 同时作为 ssh://<id>/<路径> 中的主机名 */
+/** get_task_output 的结果（字段与后端 TaskOutput 一致） */
+export interface TaskOutput {
+  /** 输出末尾，可能含终端转义序列，按纯文本显示 */
+  output: string;
+  total_bytes: number;
+  /** output 是否只是更长输出的末尾 */
+  truncated: boolean;
+}
+
 export interface RemoteHost {
   id: string;
   /** ssh 目标：~/.ssh/config 的 Host 别名，或 user@host */
@@ -391,6 +400,14 @@ export const bridge = {
   /** 撤回已写入 stdin、CLI 还没开始处理的消息；false 表示已被 CLI 取走 */
   cancelQueuedMessage: (sessionId: string, messageUuid: string) =>
     invoke<boolean>('cancel_queued_message', { sessionId, messageUuid }),
+
+  /** 后台 shell / Monitor 任务输出的末尾（最多 8 KiB）；sessionId 为 stdinId */
+  getTaskOutput: (sessionId: string, taskId: string) =>
+    invoke<TaskOutput>('get_task_output', { sessionId, taskId }),
+
+  /** 停止一个后台任务；sessionId 为 stdinId */
+  stopBackgroundTask: (sessionId: string, taskId: string) =>
+    invoke<void>('stop_background_task', { sessionId, taskId }),
 
   sendRawStdin: (sessionId: string, message: string) =>
     invoke<void>('send_raw_stdin', { sessionId, message }),

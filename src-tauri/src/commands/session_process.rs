@@ -719,6 +719,63 @@ pub(crate) async fn cancel_queued_message(
     Ok(resp["subtype"] == "success" && resp["response"]["cancelled"] == true)
 }
 
+/// 控制请求的回应：success 时返回其中的 response，error 时把 CLI 给出的原因作为错误返回
+fn control_success(resp: Value, what: &str) -> Result<Value, String> {
+    if resp["subtype"] == "success" {
+        return Ok(resp["response"].clone());
+    }
+    let reason = resp["error"].as_str().unwrap_or("未知错误");
+    Err(format!("{}失败：{}", what, reason))
+}
+
+/// 后台任务输出的末尾（与 SDKControlGetTaskOutputResponse 对应）
+#[derive(serde::Serialize)]
+pub(crate) struct TaskOutput {
+    /// 输出末尾（最多 8 KiB），按 UTF-8 解码，可能含终端转义序列
+    output: String,
+    /// 完整输出的字节数
+    total_bytes: u64,
+    /// output 是否只是更长输出的末尾
+    truncated: bool,
+}
+
+/// 读取后台 shell / Monitor 任务输出的末尾。只读，不触发模型；任务运行期间前端定时轮询
+#[tauri::command]
+pub(crate) async fn get_task_output(
+    stdin_mgr: State<'_, StdinManager>,
+    session_id: String,
+    task_id: String,
+) -> Result<TaskOutput, String> {
+    let req = protocol::ControlRequest::get_task_output(task_id);
+    let json_str = serde_json::to_string(&req)
+        .map_err(|e| format!("Failed to serialize control request: {}", e))?;
+    let resp = stdin_mgr
+        .request(&session_id, &req.request_id, &json_str, std::time::Duration::from_secs(5))
+        .await?;
+    let body = control_success(resp, "读取任务输出")?;
+    Ok(TaskOutput {
+        output: body["output"].as_str().unwrap_or_default().to_string(),
+        total_bytes: body["total_bytes"].as_u64().unwrap_or(0),
+        truncated: body["truncated"].as_bool().unwrap_or(false),
+    })
+}
+
+/// 停止一个后台任务；任务结束后 CLI 会推送 task_notification（status: stopped）和新的 background_tasks_changed
+#[tauri::command]
+pub(crate) async fn stop_background_task(
+    stdin_mgr: State<'_, StdinManager>,
+    session_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    let req = protocol::ControlRequest::stop_task(task_id);
+    let json_str = serde_json::to_string(&req)
+        .map_err(|e| format!("Failed to serialize control request: {}", e))?;
+    let resp = stdin_mgr
+        .request(&session_id, &req.request_id, &json_str, std::time::Duration::from_secs(10))
+        .await?;
+    control_success(resp, "停止任务").map(|_| ())
+}
+
 #[tauri::command]
 pub(crate) async fn send_raw_stdin(
     stdin_mgr: State<'_, StdinManager>,
@@ -885,4 +942,28 @@ pub(crate) async fn list_active_processes(
     state: State<'_, ProcessManager>,
 ) -> Result<Vec<String>, String> {
     Ok(state.active_ids().await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_success_returns_inner_response() {
+        let resp = serde_json::json!({
+            "subtype": "success",
+            "request_id": "r1",
+            "response": { "output": "hello", "total_bytes": 5, "truncated": false },
+        });
+        assert_eq!(control_success(resp, "读取").unwrap()["output"], "hello");
+    }
+
+    #[test]
+    fn control_success_surfaces_cli_error() {
+        // CLI 拒绝（如 task_id 不是本会话的 shell 任务）时把原因原样带给前端
+        let resp = serde_json::json!({ "subtype": "error", "request_id": "r1", "error": "No such task" });
+        assert_eq!(control_success(resp, "读取任务输出").unwrap_err(), "读取任务输出失败：No such task");
+        let resp = serde_json::json!({ "subtype": "error", "request_id": "r1" });
+        assert_eq!(control_success(resp, "停止任务").unwrap_err(), "停止任务失败：未知错误");
+    }
 }

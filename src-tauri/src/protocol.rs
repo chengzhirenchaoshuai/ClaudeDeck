@@ -96,6 +96,12 @@ pub enum SdkControlRequestPayload {
     /// 按 uuid 撤回已写入 stdin、还在 CLI 队列里的用户消息
     #[serde(rename = "cancel_async_message")]
     CancelAsyncMessage { message_uuid: String },
+    /// 停止一个后台任务（task_id 来自 task_started / background_tasks_changed）
+    #[serde(rename = "stop_task")]
+    StopTask { task_id: String },
+    /// 读取后台 shell / Monitor 任务输出的末尾（最多 8 KiB），只读、不触发模型
+    #[serde(rename = "get_task_output")]
+    GetTaskOutput { task_id: String },
     /// SDK 初始化请求：目前只用来开启提示建议
     #[serde(rename = "initialize")]
     Initialize {
@@ -150,6 +156,22 @@ impl ControlRequest {
             r#type: "control_request",
             request_id: Self::random_id(),
             request: SdkControlRequestPayload::CancelAsyncMessage { message_uuid },
+        }
+    }
+
+    pub fn stop_task(task_id: String) -> Self {
+        Self {
+            r#type: "control_request",
+            request_id: Self::random_id(),
+            request: SdkControlRequestPayload::StopTask { task_id },
+        }
+    }
+
+    pub fn get_task_output(task_id: String) -> Self {
+        Self {
+            r#type: "control_request",
+            request_id: Self::random_id(),
+            request: SdkControlRequestPayload::GetTaskOutput { task_id },
         }
     }
 
@@ -232,6 +254,16 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains(r#""subtype":"set_model""#));
         assert!(json.contains(r#""model":"claude-opus-4-6""#));
+    }
+
+    /// 字段名与 SDK 类型一致（SDKControlStopTaskRequest / SDKControlGetTaskOutputRequest）：蛇形 task_id
+    #[test]
+    fn test_serialize_task_requests() {
+        let v: serde_json::Value = serde_json::to_value(ControlRequest::stop_task("t1".into())).unwrap();
+        assert_eq!(v["type"], "control_request");
+        assert_eq!(v["request"], serde_json::json!({ "subtype": "stop_task", "task_id": "t1" }));
+        let v: serde_json::Value = serde_json::to_value(ControlRequest::get_task_output("t2".into())).unwrap();
+        assert_eq!(v["request"], serde_json::json!({ "subtype": "get_task_output", "task_id": "t2" }));
     }
 
     #[test]
