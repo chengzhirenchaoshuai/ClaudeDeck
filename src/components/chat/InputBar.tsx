@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useChatStore, useActiveTab, getActiveTabState, generateMessageId, type ChatMessage } from '../../stores/chatStore';
 import { useSettingsStore, mapSessionModeToPermissionMode, setSessionModeLocal, planApprovalCliMode, getContextWindowForModel } from '../../stores/settingsStore';
-import { bridge, type UnifiedCommand } from '../../lib/tauri-bridge';
+import { bridge } from '../../lib/tauri-bridge';
 import { hasStreamListener, releaseStreamListener } from '../../lib/stream-listeners';
 import { ModelSelector } from './ModelSelector';
 import { ModeSelector } from './ModeSelector';
@@ -15,7 +15,7 @@ import { flushStreamBuffer } from '../../hooks/stream/buffer';
 import { useAgentStore } from '../../stores/agentStore';
 import { useSessionStore, hostOfPath } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
-import { SlashCommandPopover, getFilteredCommandList } from './SlashCommandPopover';
+import { SlashCommandPopover } from './SlashCommandPopover';
 import { useCommandStore } from '../../stores/commandStore';
 import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveModelOrError, resolveThinkingLevelForProvider } from '../../lib/api-provider';
 import { useProviderStore } from '../../stores/providerStore';
@@ -32,6 +32,7 @@ import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
 import { showToast } from '../shared/Toast';
 import { useInputHistory } from './useInputHistory';
+import { useSlashCommands } from './useSlashCommands';
 import { handleStderrLine as processStderrLine } from './stderr-handler';
 // drag-state import removed — tree drag handled by ChatPanel
 
@@ -268,11 +269,6 @@ export function InputBar() {
     return () => window.removeEventListener('tokenicode:tree-file-inline', onTreeFileInline);
   }, []);
 
-  // Slash command state
-  const [slashQuery, setSlashQuery] = useState('');
-  const [slashVisible, setSlashVisible] = useState(false);
-  const [slashIndex, setSlashIndex] = useState(0);
-  const slashCommands = useCommandStore((s) => s.commands);
   const activePrefixes = useCommandStore((s) => s.activePrefixes);
 
   // Focus input when skills/commands are selected externally.
@@ -325,22 +321,6 @@ export function InputBar() {
   // Whether this is a follow-up (session already has a CLI session ID)
   const hasActiveSession = sessionStatus !== 'idle';
 
-  // --- Slash command detection ---
-  // Relaxed: detect "/" at start of first line, keep popover open even after spaces
-  const detectSlashCommand = useCallback((text: string) => {
-    const firstLine = text.split('\n')[0];
-    const canAddAnotherSkill = activePrefixes.length === 0
-      || activePrefixes.every((item) => item.category === 'skill');
-    if (firstLine.startsWith('/') && canAddAnotherSkill) {
-      const query = firstLine.slice(1); // strip leading "/"
-      setSlashQuery(query);
-      setSlashVisible(true);
-      setSlashIndex(0);
-    } else {
-      setSlashVisible(false);
-    }
-  }, [activePrefixes]);
-
   // Ref to always point to the latest handleSubmit (avoids stale closure)
   const handleSubmitRef = useRef<() => void>(() => {});
   // Ref to always point to the latest handleStderrLine (used by retry logic in handleStreamMessage)
@@ -371,26 +351,10 @@ export function InputBar() {
     [setInputSync],
   );
 
-  // --- Slash command selection ---
-  const handleSlashSelect = useCallback((cmd: UnifiedCommand) => {
-    setSlashVisible(false);
-    setInputSync('');
-
-    if (cmd.immediate) {
-      if (cmd.has_args) {
-        // Immediate + has_args: show prefix chip so user can type the argument
-        useCommandStore.getState().addPrefix(cmd);
-        textareaRef.current?.focus();
-      } else {
-        // Immediate execution: send command via stdin or as first message
-        executeImmediateCommand(cmd.name);
-      }
-    } else {
-      // Deferred: set as immutable prefix chip
-      useCommandStore.getState().addPrefix(cmd);
-      textareaRef.current?.focus();
-    }
-  }, [executeImmediateCommand]);
+  // 斜杠命令弹窗（实现见 useSlashCommands.ts）
+  const {
+    slashQuery, slashVisible, slashIndex, detectSlashCommand, handleSlashSelect, handleSlashKey, closeSlash,
+  } = useSlashCommands({ textareaRef, setInputSync, executeImmediateCommand, activePrefixes });
 
   // --- Submit ---
   const handleSubmit = useCallback(async () => {
@@ -909,37 +873,8 @@ export function InputBar() {
    *  Receives a native KeyboardEvent (not React.KeyboardEvent).
    *  Return true to prevent tiptap default handling. */
   const handleKeyDown = (e: KeyboardEvent): boolean | void => {
-    // Slash command navigation
-    if (slashVisible) {
-      const filtered = getFilteredCommandList(slashCommands, slashQuery);
-      const count = filtered.length;
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSlashIndex((prev) => (prev - 1 + count) % count);
-        return true;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSlashIndex((prev) => (prev + 1) % count);
-        return true;
-      }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.isComposing)) {
-        if (filtered[slashIndex]) {
-          e.preventDefault();
-          handleSlashSelect(filtered[slashIndex]);
-          return true;
-        }
-        // No matching command — close popover, let Enter fall through to submit
-        if (e.key === 'Enter') {
-          setSlashVisible(false);
-        }
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setSlashVisible(false);
-        return true;
-      }
-    }
+    // 斜杠命令弹窗打开时的上下选择、确认、关闭
+    if (handleSlashKey(e)) return true;
 
     // Tab 填入提示建议（光标放到末尾，可以接着修改再发送）
     if (e.key === 'Tab' && !e.shiftKey && showSuggestion && promptSuggestion
@@ -1099,7 +1034,7 @@ export function InputBar() {
             visible={slashVisible}
             selectedIndex={slashIndex}
             onSelect={handleSlashSelect}
-            onClose={() => setSlashVisible(false)}
+            onClose={closeSlash}
           />
           <div
             className={`flex items-center gap-2 bg-bg-input border rounded-2xl px-4 py-2.5
