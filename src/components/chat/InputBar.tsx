@@ -32,6 +32,7 @@ import { executeImmediateCommand as runImmediateCommand } from './immediate-comm
 import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
 import { showToast } from '../shared/Toast';
+import { useInputHistory } from './useInputHistory';
 // drag-state import removed — tree drag handled by ChatPanel
 
 /* PlanApprovalBar removed — PlanReviewCard (triggered by ExitPlanMode detection)
@@ -963,53 +964,8 @@ export function InputBar() {
     }
   }, [handleStreamMessage]);
 
-  // 上下键翻看本会话发过的消息（与 CLI 一致）。index/text 是正在显示的那条，用户改了内容就不再算在翻看
-  const historyRef = useRef<{ index: number; text: string } | null>(null);
-  /** 处理上下键，返回 true 表示已处理（不再移动光标） */
-  const handleHistoryKey = (up: boolean): boolean => {
-    const editor = textareaRef.current?.getEditor();
-    const current = textareaRef.current?.getText() ?? '';
-    const browsing = !!historyRef.current && current.trim() === historyRef.current.text.trim();
-    if (!browsing && current.trim() !== '') return false;
-    if (!browsing && !up) return false;
-    // 多行内容：光标不在第一行（上键）/最后一行（下键）时照常移动光标
-    if (browsing && editor) {
-      const { from, to } = editor.state.selection;
-      const doc = editor.state.doc;
-      const leaf = (node: { type: { name: string } }) => (node.type.name === 'hardBreak' ? '\n' : '');
-      const around = up ? doc.textBetween(0, from, '\n', leaf) : doc.textBetween(to, doc.content.size, '\n', leaf);
-      if (around.includes('\n')) return false;
-    }
-    const tab = getActiveTabState();
-    // 输入框为空时上键先撤回最后一条排队中的消息放回输入框
-    if (up && !browsing) {
-      const lastPending = [...tab.pendingUserMessages].reverse().find((p) => p.message);
-      if (lastPending?.message) {
-        window.dispatchEvent(new CustomEvent('tokenicode:withdraw-pending', { detail: lastPending.message.id }));
-        return true;
-      }
-    }
-    const entries: string[] = [];
-    for (const m of tab.messages) {
-      if (m.role !== 'user' || m.type !== 'text') continue;
-      const text = (m.sendContext?.rawInput ?? m.content).trim();
-      // 连续重复的只留一条
-      if (text && entries[entries.length - 1] !== text) entries.push(text);
-    }
-    if (entries.length === 0) return false;
-    const index = (browsing ? historyRef.current!.index : entries.length) + (up ? -1 : 1);
-    if (index < 0) return true; // 已经是最早的一条
-    if (index >= entries.length) {
-      // 翻过最新一条：回到空输入框
-      historyRef.current = null;
-      setInputSync('');
-      return true;
-    }
-    historyRef.current = { index, text: entries[index] };
-    setInputSync(entries[index]);
-    editor?.commands.focus('end');
-    return true;
-  };
+  // 上下键翻看本会话发过的消息（实现见 useInputHistory.ts）
+  const handleHistoryKey = useInputHistory(textareaRef, setInputSync);
 
   // --- Keyboard handler ---
   /** Keyboard handler for the tiptap editor.
