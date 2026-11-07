@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { CLI_DEFAULT, useSettingsStore } from '../../stores/settingsStore';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { handleSystemMessage } from '../stream/handlers/system';
 import type { SystemMessage } from '../../lib/stream-message';
 import { makeContext, tabOf } from './stream-test-utils';
@@ -81,6 +82,36 @@ describe('handleSystemMessage', () => {
         compactMetadata: { postTokens: 8000 },
       } as Partial<SystemMessage>));
       expect(tabOf(TAB).sessionMeta.contextInputTokens).toBe(90000);
+    });
+  });
+
+  describe('后台任务面板', () => {
+    const tasks = () => useBackgroundTaskStore.getState().tasksByTab.get(TAB) ?? [];
+    beforeEach(() => {
+      useBackgroundTaskStore.setState({ tasksByTab: new Map(), startInfo: new Map() });
+    });
+
+    it('task_started 记下命令行（取自对应的 Bash 工具调用），进入列表后显示', () => {
+      ctx.addMessage({ id: 'tu1', role: 'assistant', type: 'tool_use', content: '', toolName: 'Bash', toolInput: { command: 'pnpm dev' }, timestamp: 1 });
+      handleSystemMessage(ctx, system('task_started', { task_id: 'b1', tool_use_id: 'tu1', task_type: 'local_bash', is_backgrounded: true }));
+      expect(tasks()).toHaveLength(0);
+      handleSystemMessage(ctx, system('background_tasks_changed', { tasks: [{ task_id: 'b1', task_type: 'local_bash', description: '启动开发服务器' }] }));
+      expect(tasks()[0]).toMatchObject({ id: 'b1', command: 'pnpm dev', toolUseId: 'tu1', status: 'running', description: '启动开发服务器' });
+    });
+
+    it('前台阻塞运行的任务（is_backgrounded: false）不记录', () => {
+      handleSystemMessage(ctx, system('task_started', { task_id: 'f1', is_backgrounded: false }));
+      expect(useBackgroundTaskStore.getState().startInfo.has('f1')).toBe(false);
+    });
+
+    it('task_notification 写入结束方式，task_updated 的 killed 记为已停止', () => {
+      handleSystemMessage(ctx, system('background_tasks_changed', { tasks: [
+        { task_id: 'a', task_type: 'local_bash', description: 'a' },
+        { task_id: 'b', task_type: 'local_bash', description: 'b' },
+      ] }));
+      handleSystemMessage(ctx, system('task_notification', { task_id: 'a', status: 'failed', summary: 'exit 1' }));
+      handleSystemMessage(ctx, system('task_updated', { task_id: 'b', patch: { status: 'killed' } }));
+      expect(tasks().map((t) => [t.id, t.status, t.summary])).toEqual([['a', 'failed', 'exit 1'], ['b', 'stopped', undefined]]);
     });
   });
 });

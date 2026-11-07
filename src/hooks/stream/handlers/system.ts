@@ -1,6 +1,7 @@
 // system 消息：init 模型、错误、思考 token、压缩边界、后台任务数。
 import { useChatStore, generateMessageId } from '../../../stores/chatStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { CLI_DEFAULT, useSettingsStore } from '../../../stores/settingsStore';
 import { formatErrorForUser } from '../errors';
 import { persistTokenState } from '../token-state';
@@ -42,11 +43,24 @@ export function handleSystemMessage(ctx: StreamContext, msg: SystemMessage): voi
     // tasks 是当前全部存活的后台任务，直接覆盖计数；ambient 是 CLI 自身的任务，不计入
     const count = (msg.tasks ?? []).filter((task) => !task.ambient).length;
     useSessionStore.getState().setBackgroundTasks(tabId, count);
-  } else if (
-    msg.subtype === 'task_started' || msg.subtype === 'task_progress'
-    || msg.subtype === 'task_updated' || msg.subtype === 'task_notification'
-  ) {
-    // 单个任务的事件：后台任务数以 background_tasks_changed 的完整列表为准，这里不处理
+    // 后台任务面板：哪些任务在运行以这份完整列表为准
+    useBackgroundTaskStore.getState().applyLiveList(tabId, msg.tasks ?? []);
+  } else if (msg.subtype === 'task_started') {
+    // 只记下开始时间和命令行，任务出现在 background_tasks_changed 里时才进入面板
+    // （前台阻塞运行的任务也会发 task_started）
+    if (msg.task_id && !msg.ambient && msg.is_backgrounded !== false) {
+      const toolUse = msg.tool_use_id
+        ? useChatStore.getState().getTab(tabId)?.messages.find((m) => m.id === msg.tool_use_id)
+        : undefined;
+      const command = typeof toolUse?.toolInput?.command === 'string' ? toolUse.toolInput.command : undefined;
+      useBackgroundTaskStore.getState().recordStart(msg.task_id, { toolUseId: msg.tool_use_id, startedAt: Date.now(), command });
+    }
+  } else if (msg.subtype === 'task_notification') {
+    if (msg.task_id) useBackgroundTaskStore.getState().applyNotification(tabId, msg.task_id, msg.status, msg.summary);
+  } else if (msg.subtype === 'task_updated') {
+    if (msg.task_id && msg.patch) useBackgroundTaskStore.getState().applyPatch(tabId, msg.task_id, msg.patch);
+  } else if (msg.subtype === 'task_progress') {
+    // 进度（子代理的 token 数、最近用的工具）：面板暂不显示
   } else if (msg.subtype === 'status') {
     // Session status updates (e.g. "requesting") — informational, silently tracked
     // We don't surface these as user-visible messages; they're internal CLI state

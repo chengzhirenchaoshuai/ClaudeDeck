@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { bridge, SessionListItem, ContentSearchResult, RemoteHost, type TerminalSessionStatus } from '../lib/tauri-bridge';
 import { useSettingsStore } from './settingsStore';
+import { useBackgroundTaskStore } from './backgroundTaskStore';
 
 /** 从 ssh://<主机>/<路径> 中取出主机 id；本机路径返回 undefined */
 export function hostOfPath(p: string): string | undefined {
@@ -465,6 +466,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     }
 
     saveStdinToTab(stdinToTab);
+    useBackgroundTaskStore.getState().renameTab(oldDraftId, newRealId);
     return { sessions, selectedSessionId, previousSessionId, runningSessions, backgroundTasks, stdinToTab, customPreviews };
   });
   },

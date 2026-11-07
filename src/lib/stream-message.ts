@@ -104,6 +104,33 @@ export interface SystemMessage extends StreamMessageBase {
   error?: string;
   /** background_tasks_changed：当前全部存活的后台任务（CLI v2.1.203+） */
   tasks?: BackgroundTaskEntry[];
+  /** task_started / task_progress / task_updated / task_notification：任务 ID */
+  task_id?: string;
+  /** task_*：发起该任务的工具调用（如 Bash 的 tool_use id） */
+  tool_use_id?: string;
+  /** task_started / task_progress */
+  description?: string;
+  /** task_started */
+  task_type?: string;
+  /** task_started：false 表示前台阻塞运行（不是后台任务） */
+  is_backgrounded?: boolean;
+  /** task_notification：任务结束的方式（status 子类型的 status 字段另有含义，这里放宽为 string） */
+  status?: string;
+  /** task_notification：结束摘要 */
+  summary?: string;
+  /** task_updated：变化的字段 */
+  patch?: TaskPatch;
+  /** task_*：CLI 自身的内部任务，不计入活动、不显示 */
+  ambient?: boolean;
+}
+
+/** task_updated 的 patch（SDKTaskUpdatedMessage.patch） */
+export interface TaskPatch {
+  status?: 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'paused';
+  description?: string;
+  end_time?: number;
+  error?: string;
+  is_backgrounded?: boolean;
 }
 
 /** background_tasks_changed 中的一项（SDKBackgroundTasksChangedMessage.tasks） */

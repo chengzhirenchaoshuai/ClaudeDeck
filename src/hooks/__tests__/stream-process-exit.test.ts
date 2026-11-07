@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatStore, type ChatMessage } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { handleProcessExit } from '../stream/handlers/process-exit';
 import { makeConfig, makeContext, stubBrowserGlobals, tabOf } from './stream-test-utils';
 
@@ -93,6 +94,7 @@ describe('handleProcessExit', () => {
       const unlisten = vi.fn();
       window.__claudeUnlisteners![STDIN] = unlisten;
       useSessionStore.getState().setBackgroundTasks(TAB, 2);
+      useBackgroundTaskStore.getState().applyLiveList(TAB, [{ task_id: 'bg', task_type: 'local_bash', description: 'pnpm dev' }]);
       ctx.addMessage({ id: 'cmd', role: 'system', type: 'text', content: '', timestamp: 1 });
       useChatStore.getState().setSessionMeta(TAB, { pendingCommandMsgId: 'cmd' });
 
@@ -106,6 +108,7 @@ describe('handleProcessExit', () => {
       expect(unlisten).toHaveBeenCalledTimes(1);
       expect(useSessionStore.getState().getTabForStdin(STDIN)).toBeUndefined();
       expect(useSessionStore.getState().backgroundTasks.get(TAB) ?? 0).toBe(0);
+      expect(useBackgroundTaskStore.getState().tasksByTab.get(TAB)?.[0].status).toBe('ended');
       expect(useSessionStore.getState().fetchSessions).toHaveBeenCalled();
     });
   });
