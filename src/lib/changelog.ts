@@ -18,6 +18,44 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.7.0',
+    date: '2026-11-07',
+    highlights: {
+      zh: ['窗口在后台时回复完成或需要确认会弹出系统通知；新增后台任务面板，可查看后台 Bash 的输出、单独停止'],
+      en: ['System notifications when a reply finishes or needs you while the window is in the background; a new background tasks panel to view output of background Bash and stop tasks'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '系统通知：回复完成、出错或等待确认时弹出 Windows 通知，可在设置 → 通用中关闭',
+            '后台任务面板：查看后台 Bash 的命令、状态和输出，单独停止某个任务',
+            '大图查看器支持滚轮缩放、拖动平移',
+          ],
+          en: [
+            'System notifications when a reply finishes, fails or waits for confirmation; can be turned off in Settings → General',
+            'Background tasks panel: see command, status and output of background Bash, and stop individual tasks',
+            'Image viewer supports wheel zoom and drag to pan',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '消息里用 Windows 绝对路径引用的图片无法显示',
+            '切换界面语言后，发送时的部分提示仍是旧语言',
+          ],
+          en: [
+            'Images referenced by Windows absolute paths in messages did not display',
+            'Some prompts shown while sending stayed in the previous language after switching languages',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.6.1',
     date: '2026-11-05',
     highlights: {
