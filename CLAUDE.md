@@ -25,7 +25,7 @@ scripts/bump-version.sh <版本号>    # 同步三处版本号
 - **远程主机**：项目路径 `ssh://<主机别名>/<远端路径>`，经系统 ssh 在远端运行，不注入本机服务商配置。
 - **窗口**：主窗口 `create: false`，新窗口也必须在后端用 `data_directory` 创建（数据目录见 `app_paths.rs`）。
 - **Windows**：`.cmd`/`.bat` 经 `cmd /C` 启动，子进程加 CREATE_NO_WINDOW。
-- 用户文案全部走 `src/lib/i18n.ts`（zh/en，默认 zh）。素材放 `assets/`。
+- 用户文案全部走 `src/lib/i18n`（zh/en，默认 zh）：词条按 key 前缀分在 `zh/<领域>.ts`，`en/` 下同名文件逐条对应（`satisfies` 约束，缺漏编译报错）；新前缀要在两边同一领域文件里加。素材放 `assets/`。
 - 残留的 `tokenicode` 命名（事件名、`tokenicode_session_names.json`、`.tokenicode/tmp`）用于兼容用户数据，不要改名。
 - **换行符一律 LF**（`.bat/.cmd/.ps1` 除外）。Python 改文件用 `read_bytes()/write_bytes()` 或 `open(..., newline="")`；改完用 `git ls-files --eol | grep w/crlf` 自查。
 

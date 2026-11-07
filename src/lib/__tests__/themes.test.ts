@@ -6,7 +6,8 @@ import {
   migrateLegacySkin,
   skinForMode,
 } from '../themes';
-import i18nSource from '../i18n.ts?raw';
+import zhMessages from '../i18n/zh';
+import enMessages from '../i18n/en';
 
 describe('themes', () => {
   it('方案 id 不重复，且两种深浅都有方案', () => {
@@ -17,9 +18,10 @@ describe('themes', () => {
   });
 
   it('每套方案都有中英文名称', () => {
-    // i18n.ts 里 zh、en 各一份，名称键应恰好出现两次
+    // 中英文词条表里都要有 skin.<方案 id>
     for (const skin of SKINS) {
-      expect(i18nSource.split(`'skin.${skin.id}':`).length - 1, skin.id).toBe(2);
+      expect(zhMessages[`skin.${skin.id}` as keyof typeof zhMessages], skin.id).toBeTruthy();
+      expect(enMessages[`skin.${skin.id}` as keyof typeof enMessages], skin.id).toBeTruthy();
     }
   });
 
