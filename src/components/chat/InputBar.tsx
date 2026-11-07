@@ -1,8 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useChatStore, useActiveTab, getActiveTabState, generateMessageId, type ChatMessage } from '../../stores/chatStore';
-import { useSettingsStore, mapSessionModeToPermissionMode, setSessionModeLocal, planApprovalCliMode, getContextWindowForModel } from '../../stores/settingsStore';
-import { bridge } from '../../lib/tauri-bridge';
-import { hasStreamListener, releaseStreamListener } from '../../lib/stream-listeners';
+import { useChatStore, useActiveTab, getActiveTabState } from '../../stores/chatStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { ModelSelector } from './ModelSelector';
 import { ModeSelector } from './ModeSelector';
 import { FileUploadChips } from './FileUploadChips';
@@ -10,16 +8,10 @@ import { RewindPanel } from './RewindPanel';
 import { useFileAttachments } from '../../hooks/useFileAttachments';
 import { useRewind } from '../../hooks/useRewind';
 import { useStreamProcessor } from '../../hooks/useStreamProcessor';
-import { flushStreamBuffer } from '../../hooks/stream/buffer';
-import { useAgentStore } from '../../stores/agentStore';
-import { useSessionStore, hostOfPath } from '../../stores/sessionStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { useT } from '../../lib/i18n';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useCommandStore } from '../../stores/commandStore';
-import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveModelOrError, resolveThinkingLevelForProvider } from '../../lib/api-provider';
-import { useProviderStore } from '../../stores/providerStore';
-import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
-import { getContextUsedTokens } from '../../lib/context-usage';
 import { ContextMeter } from './UsageMeters';
 import { PlanReviewCard } from './PlanReviewCard';
 import { PermissionCard } from './PermissionCard';
@@ -27,14 +19,13 @@ import { QuestionCard } from './QuestionCard';
 import { TiptapEditor, type TiptapEditorHandle } from './TiptapEditor';
 import { ProjectFolderPicker } from './ProjectFolderPicker';
 import { executeImmediateCommand as runImmediateCommand } from './immediate-commands';
-import { dropStaleProcess, registerSessionListeners } from './session-launch';
 import { ThinkLevelSelector, PlanToggleButton } from './InputToolbarButtons';
 import { useInputHistory } from './useInputHistory';
 import { useSlashCommands } from './useSlashCommands';
 import { stopCurrentSession, type SpawningSessions } from './stop-session';
 import { handleStderrLine as processStderrLine } from './stderr-handler';
 import { useAttachmentSync, useInputBarEvents, useRestoreSendExtras } from './useInputBarEvents';
-// drag-state import removed — tree drag handled by ChatPanel
+import { prepareSubmission, showUserTurn, launchTurn } from './submit-message';
 
 /* PlanApprovalBar removed — PlanReviewCard (triggered by ExitPlanMode detection)
    is the proper plan approval UI. The fallback bar was too broad: it appeared on
@@ -88,9 +79,6 @@ export function InputBar() {
   const sessionStatus = useActiveTab((t) => t.sessionStatus);
   const sessionMetaLive = useActiveTab((t) => t.sessionMeta);
   const activityPhase = useActiveTab((t) => t.activityStatus.phase);
-  const addMessage = useChatStore((s) => s.addMessage);
-  const setSessionStatus = useChatStore((s) => s.setSessionStatus);
-  const setSessionMeta = useChatStore((s) => s.setSessionMeta);
   const workingDirectory = useSettingsStore((s) => s.workingDirectory);
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const sessionMode = useSettingsStore((s) => s.sessionMode);
@@ -185,9 +173,9 @@ export function InputBar() {
     slashQuery, slashVisible, slashIndex, detectSlashCommand, handleSlashSelect, handleSlashKey, closeSlash,
   } = useSlashCommands({ textareaRef, setInputSync, executeImmediateCommand, activePrefixes });
 
-  // --- Submit ---
+  // --- 发送（三个阶段的实现见 submit-message.ts）---
   const handleSubmit = useCallback(async () => {
-    // Capture tabId at the start of submission
+    // 没有选中的标签页时，在当前工作目录下新建一个草稿会话
     let tabId = useSessionStore.getState().selectedSessionId;
     if (!tabId) {
       if (!workingDirectory) return;
@@ -198,464 +186,28 @@ export function InputBar() {
     }
     useChatStore.getState().ensureTab(tabId);
 
-    // Read input from store directly (not closure) so that async callers
-    // like handlePlanApprove (setInput + rAF) always see the latest value.
+    // 直接从 store 读输入（不用闭包里的值）：handlePlanApprove 这类先 setInput 再 rAF 调用的场景也能读到最新内容
     const rawInput = getActiveTabState().inputDraft || textareaRef.current?.getText() || '';
-    let text = rawInput.trim();
-    // /compact 在没有运行中的进程时（历史会话），走处理卡片而不是普通用户气泡，见下方赋值处
-    let compactWithoutProcess = false;
-
-    // Plan approval shortcut: empty Enter triggers approve & execute flow
-    const tabState = getActiveTabState();
-    const pendingPlanReview = tabState.messages.find(
-      (m: import('../../stores/chatStore').ChatMessage) => m.type === 'plan_review' && !m.resolved,
-    );
-    if (pendingPlanReview && !text && useCommandStore.getState().activePrefixes.length === 0) {
-      const stdinId = tabState.sessionMeta.stdinId;
-      const permData = pendingPlanReview.permissionData;
-      if (permData?.requestId && stdinId) {
-        try {
-          await bridge.respondPermission(
-            stdinId,
-            permData.requestId,
-            true,
-            undefined,
-            permData.toolUseId,
-            permData.input,
-            planApprovalCliMode(),
-          );
-        } catch (err) {
-          console.error('[TC:plan] Empty-Enter plan approval failed:', err);
-          return;
-        }
-      }
-      if (useSettingsStore.getState().sessionMode === 'plan') {
-        setSessionModeLocal('code');
-      }
-      useChatStore.getState().updateMessage(tabId, pendingPlanReview.id, {
-        resolved: true,
-        interactionState: 'resolved',
-      });
-      window.dispatchEvent(new CustomEvent('tokenicode:plan-execute'));
-      return;
-    }
-
-    // Resolve selected and directly typed skills in the app. This avoids the
-    // CLI's "command not found" path and supports multiple/custom directories.
-    const sentPrefixes = useCommandStore.getState().activePrefixes;
-    const invocation = resolveSkillInvocation(
-      text,
-      sentPrefixes,
-      useCommandStore.getState().commands,
-    );
-    useCommandStore.getState().clearPrefixes();
-
-    const selectedSkills = invocation.skills;
-    const selectedCommand = invocation.command;
-    text = invocation.userText;
-    if (selectedCommand) {
-      text = text ? `${selectedCommand.name} ${text}` : selectedCommand.name;
-    }
-
-    if (!text && selectedSkills.length === 0) return;
-    // 已经发出新内容，上一轮预测的下一句话作废
-    useChatStore.getState().setPromptSuggestion(tabId, undefined);
-
-    // Intercept immediate (built-in) commands even when submitted directly
-    // (e.g. user types "/help" and presses Enter without using the popover)
-    if (text.startsWith('/')) {
-      const parts = text.split(/\s+/);
-      const cmdPart = parts[0].toLowerCase();
-      const restText = parts.slice(1).join(' ').trim();
-
-      // Mode-switching commands: /ask, /plan, /code, /bypass
-      // If followed by text, switch mode then submit the text normally
-      const modeMap: Record<string, 'ask' | 'plan' | 'code' | 'bypass'> = {
-        '/ask': 'ask', '/plan': 'plan', '/code': 'code', '/bypass': 'bypass',
-      };
-      if (modeMap[cmdPart]) {
-        useSettingsStore.getState().setSessionMode(modeMap[cmdPart]);
-        if (restText) {
-          // Directly apply the mode prefix and continue with submission
-          text = `${cmdPart} ${restText}`;
-        } else {
-          setInputSync('');
-          const modeVal = modeMap[cmdPart];
-          const modeKey = `cmd.switchedTo${modeVal.charAt(0).toUpperCase() + modeVal.slice(1)}` as any;
-          const iconMap: Record<string, string> = { ask: '💬', plan: '📋', code: '⚡' };
-          addMessage(tabId, {
-            id: generateMessageId(),
-            role: 'system',
-            type: 'text',
-            content: t(modeKey),
-            commandType: 'mode',
-            commandData: { mode: modeVal, icon: iconMap[modeVal] },
-            timestamp: Date.now(),
-          });
-          return;
-        }
-      } else {
-        // Other immediate commands (e.g. /clear, /help, /compact)
-        const cmds = useCommandStore.getState().commands;
-        const match = cmds.find(
-          (c) => c.immediate && c.name.toLowerCase() === cmdPart
-        );
-        // /compact 在没有运行中的进程时（如刚打开的历史会话），不走“需要活动会话”的拦截，
-        // 而是作为这个会话的第一条消息发给 CLI：会续接该会话并执行压缩
-        compactWithoutProcess = cmdPart === '/compact'
-          && !getActiveTabState().sessionMeta.stdinId
-          && !!getActiveTabState().sessionMeta.sessionId;
-        if (match && !compactWithoutProcess) {
-          setInputSync('');
-          executeImmediateCommand(match.name, restText || undefined);
-          return;
-        }
-      }
-    }
-
-    // 跟随 CLI 配置时，CLI 自己认识的技能（不在本应用额外添加的技能目录里）按 /技能名 交给 CLI 加载，
-    // 与终端里的调用方式一致；多个技能或额外目录里的技能 CLI 处理不了，仍把技能全文拼进消息。
-    const normalizePath = (p: string) => p.replace(/[\\/]+/g, '/').toLowerCase();
-    const extraSkillRoots = useSettingsStore.getState().skillDirectories.map((dir) => `${normalizePath(dir)}/`);
-    const cliKnownSkill = selectedSkills.length === 1
-      && !extraSkillRoots.some((root) => normalizePath(selectedSkills[0].path || '').startsWith(root));
-    if (useSettingsStore.getState().followCli && cliKnownSkill) {
-      const skillName = selectedSkills[0].name.startsWith('/') ? selectedSkills[0].name : `/${selectedSkills[0].name}`;
-      text = text ? `${skillName} ${text}` : skillName;
-    } else if (selectedSkills.length > 0) {
-      try {
-        const loadedSkills = await Promise.all(selectedSkills.map(async (skill) => ({
-          skill,
-          content: await bridge.readSkill(skill.path!),
-        })));
-        text = buildSkillPrompt(
-          loadedSkills.map(({ skill, content }) => ({ name: skill.name, path: skill.path, content })),
-          text,
-        );
-      } catch (error) {
-        console.error('[ClaudeDeck:skills] failed to read selected skill:', error);
-        addMessage(tabId, {
-          id: generateMessageId(),
-          role: 'system',
-          type: 'text',
-          content: t('skills.readFailed'),
-          commandType: 'error',
-          timestamp: Date.now(),
-        });
-        return;
-      }
-    }
-
-    // Append file paths if there are attachments
-    if (files.length > 0) {
-      const filePaths = files.map((f) => f.path).join('\n');
-      text = `${text}\n\n${t('input.attachedFiles')}\n${filePaths}`;
-    }
-
-    // 回退时“总结”的摘要：作为上下文附在这条消息前面发给模型，不显示在气泡里，发送一次后清除
-    const pendingSummary = getActiveTabState().sessionMeta.pendingSummary;
-    if (pendingSummary) {
-      text = `${pendingSummary}\n\n${text}`;
-      setSessionMeta(tabId, { pendingSummary: undefined });
-    }
+    const prepared = await prepareSubmission({ tabId, rawInput, files, t, setInputSync, executeImmediateCommand });
+    if (!prepared) return;
 
     setInputSync('');
+    if (await showUserTurn({ tabId, prepared, files, clearFiles, silentRestartRef })) return;
 
-    // 运行中提交的消息：普通消息直接写入 stdin，CLI 自己排队（下一个工具调用间隙插入本轮，
-    // 或本轮结束后接着处理），收到它的回显时才插入气泡；斜杠命令等本轮结束再按 FIFO 发送。
-    const currentTabState = getActiveTabState();
-    const shouldQueue = !!currentTabState.sessionMeta.stdinId && currentTabState.sessionStatus === 'running';
-
-    // Silent restart: skip user message bubble (Code mode ExitPlanMode auto-recovery)
-    if (silentRestartRef.current) {
-      silentRestartRef.current = false;
-    } else if (compactWithoutProcess) {
-      // 历史会话续接压缩：显示处理卡片而不是普通的“/compact”用户气泡，
-      // 完成状态和压缩摘要由 useStreamProcessor 里的 result / compact_boundary 处理写入。
-      // 压缩前 token 数用刚从磁盘恢复的历史会话上下文快照，不等 CLI 事件。
-      const compactCardId = generateMessageId();
-      addMessage(tabId, {
-        id: compactCardId,
-        role: 'system',
-        type: 'text',
-        content: '',
-        commandType: 'processing',
-        commandData: {
-          command: '/compact',
-          compactSummary: { preTokens: getContextUsedTokens(getActiveTabState().sessionMeta) },
-        },
-        commandStartTime: Date.now(),
-        commandCompleted: false,
-        timestamp: Date.now(),
-      });
-      setSessionMeta(tabId, { pendingCommandMsgId: compactCardId });
-    } else {
-      // Add user message (show original text, not with prefix)
-      const userBubble: ChatMessage = {
-        id: generateMessageId(),
-        role: 'user',
-        type: 'text',
-        content: rawInput.trim() || selectedSkills.map((skill) => skill.name).join(' '),
-        timestamp: Date.now(),
-        attachments: files.length > 0
-          ? files.map((f) => ({ name: f.name, path: f.path, isImage: f.isImage, preview: f.preview, size: f.size, type: f.type }))
-          : undefined,
-        sendContext: { rawInput, prefixes: sentPrefixes, pendingSummary },
-      };
-      // 会话列表右侧的时间是最后发言时间：立即更新，不等磁盘写入或远程列表刷新
-      useSessionStore.getState().touchSession(tabId, userBubble.timestamp);
-      if (shouldQueue) {
-        // 气泡等 CLI 真正处理这条消息时再插入，否则会排在本轮回复的正文前面
-        clearFiles();
-        // 普通消息直接写入 stdin，与终端一致：CLI 在下一个工具调用间隙插入本轮，或本轮结束后接着处理。
-        // 斜杠命令仍等本轮结束再发送
-        const midTurnStdinId = currentTabState.sessionMeta.stdinId;
-        if (midTurnStdinId && !text.startsWith('/')) {
-          const uuid = crypto.randomUUID();
-          useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble, sent: true, uuid });
-          try {
-            await bridge.sendStdin(midTurnStdinId, text, uuid);
-          } catch (err) {
-            console.warn('[ClaudeDeck] mid-turn sendStdin failed, queued instead:', err);
-            useChatStore.getState().markPendingUnsent(tabId, userBubble.id);
-          }
-        } else {
-          useChatStore.getState().addPendingMessage(tabId, { text, message: userBubble });
-        }
-        return;
-      }
-      addMessage(tabId, userBubble);
-    }
-
-    clearFiles();
-
-    if (shouldQueue) {
-      useChatStore.getState().addPendingMessage(tabId, { text });
-      return;
-    }
-
-    const turnStartedAt = Date.now();
-    setSessionStatus(tabId, 'running');
-    setSessionMeta(tabId, {
-      turnStartTime: turnStartedAt,
-      lastProgressAt: turnStartedAt,
-      inputTokens: 0,
-      outputTokens: 0,
-      awaitingQueuedTurn: undefined,
+    await launchTurn({
+      tabId,
+      text: prepared.text,
+      rawInput,
+      workingDirectory,
+      selectedModel,
+      t,
+      spawning: spawningRef.current,
+      lastStderrRef,
+      autoCompactFiredRef,
+      exitPlanModeSeenRef,
+      handleStreamMessage,
+      handleStderrLine,
     });
-    useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
-    lastStderrRef.current = ''; // Clear stale stderr before new turn
-
-    // Initialize agent tracking — clear previous turn's agents (they may be from a
-    // different project/session) and create a fresh main agent for this turn.
-    useAgentStore.getState().clearAgents();
-    useAgentStore.getState().upsertAgent({
-      id: 'main',
-      parentId: null,
-      description: rawInput.trim(),
-      phase: 'spawning',
-      startTime: Date.now(),
-      isMain: true,
-    });
-
-    let sessionStdinId: string | undefined;
-    let spawn: { stdinId: string; cancelled: boolean } | undefined;
-    const spawnTabId = tabId;
-
-    try {
-      if (!workingDirectory) {
-        setSessionStatus(tabId, 'error');
-        addMessage(tabId, {
-          id: generateMessageId(),
-          role: 'system',
-          type: 'text',
-          content: 'No working directory selected. Please select a project folder first.',
-          timestamp: Date.now(),
-        });
-        return;
-      }
-
-      // Check model mapping before sending — block if provider has no mapping for selected tier
-      const modelResolution = resolveModelOrError(selectedModel);
-      if (!modelResolution.ok) {
-        const msg = t('provider.noModelMapping')
-          .replace('{provider}', modelResolution.providerName)
-          .replace('{tier}', modelResolution.tier);
-        addMessage(tabId, {
-          id: generateMessageId(),
-          role: 'system',
-          type: 'text',
-          content: msg,
-          timestamp: Date.now(),
-        });
-        setSessionStatus(tabId, 'error');
-        return;
-      }
-
-      // Use stdinId (desk-generated) for stdin communication, not CLI's own sessionId.
-      // stdinId exists when: (a) a pre-warmed process is waiting, or (b) follow-up in active session.
-      const submitTabState = getActiveTabState();
-      let stdinId = submitTabState.sessionMeta.stdinId;
-      let sentViaStdin = false;
-
-      if (stdinId) {
-        if (dropStaleProcess(tabId, stdinId, text, selectedModel)) {
-          stdinId = undefined;
-        } else {
-          // ===== Send via stdin to existing persistent process (pre-warmed or follow-up) =====
-          try {
-            await bridge.sendStdin(stdinId, text);
-            sentViaStdin = true;
-            // Defensive: ensure spawnedModel is always recorded after first successful stdin send
-            if (!getActiveTabState().sessionMeta.spawnedModel) {
-              setSessionMeta(tabId, { spawnedModel: resolveModelForProvider(selectedModel) });
-            }
-          } catch (stdinErr) {
-            // stdin write failed (broken pipe — process already exited).
-            // Clean up dead listeners (P0-5 fix) and fall through to spawn a new process.
-            console.warn('[ClaudeDeck] sendStdin failed, spawning new process:', stdinErr);
-            releaseStreamListener(stdinId);
-            setSessionMeta(tabId, { stdinId: undefined });
-            stdinId = undefined;
-          }
-        }
-      }
-
-      if (!sentViaStdin) {
-        // ===== No running process: spawn a new persistent stream-json process =====
-
-        // Mode is now passed via --mode CLI arg in startSession, not text prefix.
-        // Text prefix (/ask, /plan) caused "Unknown skill" errors in stream-json mode.
-
-        // If we have an existing sessionId (loaded historical session), resume it.
-        // Only use it as resume_session_id if it looks like a real CLI session ID (UUID),
-        // not a desk-generated ID like "desk_xxx".
-        const rawSessionId = getActiveTabState().sessionMeta.sessionId;
-        const existingSessionId = rawSessionId && !rawSessionId.startsWith('desk_')
-          ? rawSessionId
-          : undefined;
-
-        // TK-329 fix: only clean up THIS tab's old stdinId listener, not the global singleton.
-        // The old __claudeUnlisten global could kill another tab's active listener.
-        const oldStdinId = getActiveTabState().sessionMeta.stdinId;
-        if (oldStdinId && hasStreamListener(oldStdinId)) {
-          releaseStreamListener(oldStdinId);
-          // Also flush any pending stream buffer for the old session
-          flushStreamBuffer(oldStdinId);
-        }
-
-        const cwd = workingDirectory;
-
-        // Generate the desk-side session ID FIRST so we can register
-        // event listeners BEFORE spawning the process.
-        const preGeneratedId = `desk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        sessionStdinId = preGeneratedId;
-        spawn = { stdinId: preGeneratedId, cancelled: false };
-        spawningRef.current.set(spawnTabId, spawn);
-
-        // Reset guards for the new session
-        autoCompactFiredRef.current = false;
-        exitPlanModeSeenRef.current = false;
-
-        // TK-329 fix: register stdinId → tabId mapping BEFORE listeners,
-        // so events arriving immediately after spawn can be routed correctly.
-        const earlyTabId = useSessionStore.getState().selectedSessionId;
-        if (earlyTabId) {
-          useSessionStore.getState().registerStdinTab(preGeneratedId, earlyTabId);
-        }
-
-        // Register listeners BEFORE starting the session
-        await registerSessionListeners(preGeneratedId, () => tabId, handleStreamMessage, handleStderrLine);
-
-        // Spawn persistent process (first message sent via stdin inside Rust)
-        // If resuming a historical session, pass resume_session_id so the CLI
-        // picks up the existing conversation context.
-        // Read sessionMode from store (not closure) so plan-approve → code
-        // mode switch is visible even when called via rAF.
-        const liveSessionMode = useSettingsStore.getState().sessionMode;
-        const liveThinkingSetting = useSettingsStore.getState().thinkingLevel;
-        const liveContextWindowMode = useSettingsStore.getState().contextWindowMode;
-        const liveThinkingLevel = resolveThinkingLevelForProvider(selectedModel, liveThinkingSetting);
-        const liveProviderId = useProviderStore.getState().activeProviderId || null;
-        const liveResolvedModel = resolveModelForProvider(selectedModel);
-        const liveContextWindow = getContextWindowForModel(liveResolvedModel, liveContextWindowMode);
-        console.log('[ClaudeDeck:session] starting session', { cwd, stdinId: preGeneratedId, mode: liveSessionMode, provider: liveProviderId });
-        const session = await bridge.startSession({
-          prompt: text,
-          cwd,
-          session_id: preGeneratedId,
-          resume_session_id: existingSessionId || undefined,
-          // 回退后的第一次启动：续接到回退点并分叉出新会话，模型只记得回退点之前的历史
-          resume_session_at: existingSessionId
-            ? getActiveTabState().sessionMeta.resumeAtUuid || undefined
-            : undefined,
-          ...cliLaunchArgs(liveResolvedModel, liveThinkingLevel),
-          session_mode: (liveSessionMode === 'ask' || liveSessionMode === 'plan') ? liveSessionMode : undefined,
-          provider_id: liveProviderId || undefined,
-          context_window: liveContextWindow,
-          permission_mode: mapSessionModeToPermissionMode(liveSessionMode),
-          enable_mcp: useSettingsStore.getState().enableMcp,
-        });
-        console.log('[ClaudeDeck:session] started successfully', { sessionId: session.session_id, pid: session.pid, cli: session.cli_path });
-
-        // 启动期间用户点了终止：此时才拿得到进程，直接结束，不接管这个会话
-        if (spawn.cancelled) {
-          bridge.killSession(preGeneratedId).catch(() => {});
-          releaseStreamListener(preGeneratedId);
-          useSessionStore.getState().unregisterStdinTab(preGeneratedId);
-          return;
-        }
-
-        // Store both: session_id for tracking, stdinId (preGeneratedId) for stdin communication
-        const rewoundFromSessionId = getActiveTabState().sessionMeta.rewoundFromSessionId;
-        setSessionMeta(tabId, {
-          sessionId: session.session_id,
-          rewoundFromSessionId: undefined,
-          resumeAtUuid: undefined,
-          stdinId: preGeneratedId,
-          envFingerprint: envFingerprint(),
-          snapshotMode: liveSessionMode,
-          snapshotModel: selectedModel,
-          snapshotThinking: liveThinkingSetting,
-          snapshotContextWindowMode: liveContextWindowMode,
-          snapshotProviderId: liveProviderId,
-          spawnedModel: liveResolvedModel,
-        });
-
-        // 回退：新分支替换旧分支显示，旧 JSONL 留在磁盘上以便恢复。
-        // 标签页先保留旧 ID，等 CLI 回报新分支的真实会话 ID 后（useStreamProcessor）
-        // 再把标签页、列表行和会话名一起迁移过去。不能改用 session.session_id：
-        // 那是本应用生成的 desk_ 临时 ID，列表里永远对不上，原会话的行会消失、改的名字也会丢。
-        // 旧分支也等到那时再隐藏：提前隐藏的话，列表刷新会先删掉这一行（远程列表要等这轮结束才刷新），
-        // 启动失败时还会把仍然有效的旧会话藏起来。
-        if (rewoundFromSessionId) {
-          setSessionMeta(tabId, { forkFrom: { id: rewoundFromSessionId, host: hostOfPath(cwd) } });
-        }
-        // Note: stdinId → tabId mapping already registered before listener setup (TK-329)
-
-        // 会话列表以 CLI 目录为准，无需登记，直接刷新
-        useSessionStore.getState().fetchSessions();
-        // Delayed retry in case JSONL file isn't written yet
-        setTimeout(() => useSessionStore.getState().fetchSessions(), 1500);
-      }
-    } catch (err: any) {
-      releaseStreamListener(sessionStdinId);
-      if (sessionStdinId) {
-        useSessionStore.getState().unregisterStdinTab(sessionStdinId);
-      }
-      // 已被用户终止的启动，失败了也不用再报错
-      if (spawn?.cancelled) return;
-      setSessionStatus(tabId, 'error');
-      addMessage(tabId, {
-        id: generateMessageId(),
-        role: 'system',
-        type: 'text',
-        content: `Error: ${err}`,
-        timestamp: Date.now(),
-      });
-    } finally {
-      if (spawn && spawningRef.current.get(spawnTabId) === spawn) spawningRef.current.delete(spawnTabId);
-    }
   }, [hasActiveSession, workingDirectory, selectedModel, sessionMode, files, clearFiles]);
 
   // Keep ref in sync so executeImmediateCommand can call latest handleSubmit
