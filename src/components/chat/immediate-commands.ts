@@ -8,6 +8,7 @@ import { useProviderStore } from '../../stores/providerStore';
 import { bridge, isRemotePath } from '../../lib/tauri-bridge';
 import { displayProviderModelName } from '../../lib/deepseek-models';
 import { getContextUsedTokens } from '../../lib/context-usage';
+import { buildCompactCommand } from '../../lib/compact-command';
 import { t } from '../../lib/i18n';
 
 /** 可用 --resume 续接的 CLI 会话 ID（desk_ 开头的是进程启动前的临时 ID） */
@@ -244,7 +245,9 @@ export async function executeImmediateCommand(
         useChatStore.getState().setSessionMeta(tabId, { pendingCommandMsgId: processingMsgId });
         useChatStore.getState().setSessionStatus(tabId, 'running');
         useChatStore.getState().setActivityStatus(tabId, { phase: 'thinking' });
-        await bridge.sendStdin(stdinId, `/${cmd}${args ? ' ' + args : ''}`);
+        // /compact 没写参数时附上设置里的默认参数（处理卡上仍只显示用户输入的命令）
+        const command = cmd === 'compact' ? buildCompactCommand(args) : `/${cmd}${args ? ' ' + args : ''}`;
+        await bridge.sendStdin(stdinId, command);
       } else if (cmd === 'compact' && resumableSessionId(getActiveTabState().sessionMeta.sessionId)) {
         // 历史会话还没有运行中的进程：和终端里 --resume 后再 /compact 一样，
         // 交给输入框作为第一条消息发出，续接该会话并压缩（与用量条的“压缩”按钮同一路径）

@@ -138,6 +138,8 @@ interface SettingsState {
   /** User-adjustable auto compact threshold in tokens. */
   /** 自动 compact 阈值（tokens）；null 表示按所选模型自动取上下文窗口的 80% */
   autoCompactThresholdTokens: number | null;
+  /** 压缩时默认附加的参数（/compact 后面的说明）；null 用内置默认文案，空串表示不附加 */
+  compactInstructions: string | null;
   /** Whether a newer CLI version is available */
   cliUpdateAvailable: boolean;
   /** Latest CLI version string (for display) */
@@ -219,6 +221,7 @@ interface SettingsState {
   setThinkingLevel: (level: ThinkingLevel) => void;
   setContextWindowMode: (mode: ContextWindowMode) => void;
   setAutoCompactThresholdTokens: (tokens: number | null) => void;
+  setCompactInstructions: (text: string | null) => void;
   setAiAvatarUrl: (url: string) => void;
   setUserAvatarUrl: (url: string) => void;
   setUserDisplayName: (name: string) => void;
@@ -300,6 +303,7 @@ export const useSettingsStore = create<SettingsState>()(
       thinkingLevel: CLI_DEFAULT as ThinkingLevel,
       contextWindowMode: 'default',
       autoCompactThresholdTokens: null,
+      compactInstructions: null,
       cliUpdateAvailable: false,
       cliLatestVersion: '',
       seenCliUpdate: '',
@@ -416,6 +420,9 @@ export const useSettingsStore = create<SettingsState>()(
             autoCompactThresholdTokens === null ? null : clampAutoCompactThreshold(autoCompactThresholdTokens),
         })),
 
+      setCompactInstructions: (compactInstructions) =>
+        set(() => ({ compactInstructions })),
+
       setAiAvatarUrl: (url) =>
         set(() => ({ aiAvatarUrl: url })),
 
@@ -475,7 +482,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 25,
+      version: 26,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -600,6 +607,10 @@ export const useSettingsStore = create<SettingsState>()(
           // 新增：系统通知，默认开启
           persisted.systemNotifications = true;
         }
+        if (version < 26) {
+          // 新增：压缩默认参数，null 表示用内置默认文案
+          persisted.compactInstructions = null;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -621,6 +632,7 @@ export const useSettingsStore = create<SettingsState>()(
         thinkingLevel: state.thinkingLevel,
         contextWindowMode: state.contextWindowMode,
         autoCompactThresholdTokens: state.autoCompactThresholdTokens,
+        compactInstructions: state.compactInstructions,
         aiAvatarUrl: state.aiAvatarUrl,
         userAvatarUrl: state.userAvatarUrl,
         userDisplayName: state.userDisplayName,

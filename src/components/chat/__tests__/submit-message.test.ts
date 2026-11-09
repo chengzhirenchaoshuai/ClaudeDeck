@@ -102,9 +102,18 @@ describe('prepareSubmission', () => {
   it('历史会话（没有进程）里的 /compact 不拦截，作为消息发给 CLI 续接压缩', async () => {
     useCommandStore.setState({ commands: [{ name: '/compact', immediate: true } as UnifiedCommand] });
     useChatStore.getState().setSessionMeta(TAB, { sessionId: 'old-session' });
+    useSettingsStore.setState({ compactInstructions: '用中文写摘要' });
     const { result, executeImmediateCommand } = prepare('/compact');
-    expect(await result).toMatchObject({ text: '/compact', compactWithoutProcess: true });
+    expect(await result).toMatchObject({ text: '/compact 用中文写摘要', compactWithoutProcess: true });
     expect(executeImmediateCommand).not.toHaveBeenCalled();
+  });
+
+  it('续接压缩时用户自己写了参数：原样使用，不附默认参数', async () => {
+    useCommandStore.setState({ commands: [{ name: '/compact', immediate: true } as UnifiedCommand] });
+    useChatStore.getState().setSessionMeta(TAB, { sessionId: 'old-session' });
+    useSettingsStore.setState({ compactInstructions: '用中文写摘要' });
+    const { result } = prepare('/compact 只保留代码改动');
+    expect(await result).toMatchObject({ text: '/compact 只保留代码改动', compactWithoutProcess: true });
   });
 
   it('技能读取失败：提示错误，不发送', async () => {

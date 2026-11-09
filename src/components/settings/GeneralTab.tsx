@@ -112,6 +112,8 @@ export function GeneralTab() {
   const autoCompactThresholdTokens = useSettingsStore((s) => s.autoCompactThresholdTokens);
   const setContextWindowMode = useSettingsStore((s) => s.setContextWindowMode);
   const setAutoCompactThresholdTokens = useSettingsStore((s) => s.setAutoCompactThresholdTokens);
+  const compactInstructions = useSettingsStore((s) => s.compactInstructions);
+  const setCompactInstructions = useSettingsStore((s) => s.setCompactInstructions);
   const ctrlEnterToSend = useSettingsStore((s) => s.ctrlEnterToSend);
   const systemNotifications = useSettingsStore((s) => s.systemNotifications);
   const toggleSystemNotifications = useSettingsStore((s) => s.toggleSystemNotifications);
@@ -208,6 +210,30 @@ export function GeneralTab() {
             </select>
           </Row>
         )}
+        <Row
+          title={t('settings.compactInstructions')}
+          hint={t('settings.compactInstructionsHint')}
+          below={(
+            // null 表示用内置默认文案：直接显示出来，用户一改就存为自定义内容
+            <textarea
+              value={compactInstructions ?? t('settings.compactInstructionsDefault')}
+              onChange={(e) => setCompactInstructions(e.target.value)}
+              rows={3}
+              className="mt-2 w-full px-2 py-1.5 text-[12px] leading-relaxed bg-bg-secondary border border-border-subtle
+                rounded-lg text-text-primary outline-none focus:border-accent/60 resize-y"
+            />
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => setCompactInstructions(null)}
+            disabled={compactInstructions === null}
+            className="h-8 px-3 rounded-lg border border-border-subtle text-[12px] text-text-secondary
+              hover:bg-bg-secondary disabled:opacity-40 disabled:cursor-default"
+          >
+            {t('settings.compactInstructionsReset')}
+          </button>
+        </Row>
         <Row title={t('settings.systemNotifications')} hint={t('settings.systemNotificationsHint')}>
           <Toggle on={systemNotifications} onClick={toggleSystemNotifications} />
         </Row>

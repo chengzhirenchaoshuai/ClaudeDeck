@@ -9,6 +9,7 @@ import { releaseStreamListener, setStreamListener } from '../../../lib/stream-li
 import { cliLaunchArgs, envFingerprint, resolveModelForProvider, resolveThinkingLevelForProvider } from '../../../lib/api-provider';
 import { t } from '../../../lib/i18n';
 import { getContextUsedTokens } from '../../../lib/context-usage';
+import { buildCompactCommand } from '../../../lib/compact-command';
 import { type StreamMessage, type ResultMessage } from '../../../lib/stream-message';
 import { resolveSessionContextWindow } from '../../../lib/context-window';
 import { persistTokenState } from '../token-state';
@@ -462,7 +463,7 @@ function maybeAutoCompact(ctx: StreamContext, msg: ResultMessage): boolean {
     setSessionMeta({ pendingCommandMsgId: compactMsgId });
     setSessionStatus('running');
     setActivityStatus({ phase: 'thinking' });
-    bridge.sendStdin(compactStdinId, '/compact').catch((err) => {
+    bridge.sendStdin(compactStdinId, buildCompactCommand()).catch((err) => {
       console.error('[ClaudeDeck] Auto-compact failed:', err);
     });
     // FI-4: Timeout fallback — if compact doesn't complete within 90s, auto-complete

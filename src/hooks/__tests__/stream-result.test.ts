@@ -153,28 +153,28 @@ describe('handleResultMessage', () => {
   describe('自动压缩', () => {
     const huge = success({ usage: { input_tokens: 5_000_000, output_tokens: 0 } });
 
-    it('前台超过阈值时发送一次 /compact，并跳过排队消息', () => {
-      useSettingsStore.setState({ followCli: false });
+    it('前台超过阈值时发送一次 /compact（附默认参数），并跳过排队消息', () => {
+      useSettingsStore.setState({ followCli: false, compactInstructions: '用中文写摘要' });
       ctx = { ...ctx, isForeground: true };
       useChatStore.getState().addPendingMessage(TAB, { text: '排队' });
 
       handleResultMessage(ctx, huge);
 
-      expect(sendStdin).toHaveBeenCalledWith(STDIN, '/compact');
+      expect(sendStdin).toHaveBeenCalledWith(STDIN, '/compact 用中文写摘要');
       expect(sendStdin).toHaveBeenCalledTimes(1);
       expect(ctx.config.autoCompactFiredRef.current).toBe(true);
       expect(tabOf(TAB).sessionMeta.pendingCommandMsgId).toBeDefined();
 
       // 每个会话只触发一次
       handleResultMessage(ctx, huge);
-      expect(sendStdin.mock.calls.filter((c) => c[1] === '/compact')).toHaveLength(1);
+      expect(sendStdin.mock.calls.filter((c) => String(c[1]).startsWith('/compact'))).toHaveLength(1);
     });
 
     it('跟随 CLI 配置时交给 CLI 自己压缩', () => {
       useSettingsStore.setState({ followCli: true });
       ctx = { ...ctx, isForeground: true };
       handleResultMessage(ctx, huge);
-      expect(sendStdin).not.toHaveBeenCalledWith(STDIN, '/compact');
+      expect(sendStdin.mock.calls.some((c) => String(c[1]).startsWith('/compact'))).toBe(false);
     });
 
     it('/compact 15 秒没完成时自动收尾，不让会话卡在运行中', () => {

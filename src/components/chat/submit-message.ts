@@ -19,6 +19,7 @@ import {
 } from '../../lib/api-provider';
 import { buildSkillPrompt, resolveSkillInvocation } from '../../lib/skill-invocation';
 import { getContextUsedTokens } from '../../lib/context-usage';
+import { buildCompactCommand } from '../../lib/compact-command';
 import type { StreamMessage } from '../../lib/stream-message';
 import type { FileAttachment } from '../../hooks/useFileAttachments';
 import { dropStaleProcess, registerSessionListeners } from './session-launch';
@@ -153,6 +154,8 @@ export async function prepareSubmission({
         executeImmediateCommand(match.name, restText || undefined);
         return null;
       }
+      // 续接压缩发给 CLI 的文本：没写参数时附上设置里的默认参数
+      if (compactWithoutProcess) text = buildCompactCommand(restText);
     }
   }
 

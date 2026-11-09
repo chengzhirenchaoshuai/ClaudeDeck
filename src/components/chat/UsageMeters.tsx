@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useChatStore, generateMessageId, type SessionMeta } from '../../stores/chatStore';
 import { useSettingsStore, getAutoCompactThreshold } from '../../stores/settingsStore';
 import { getContextUsedTokens } from '../../lib/context-usage';
+import { buildCompactCommand } from '../../lib/compact-command';
 import { useRateLimitsStore, type RateLimitWindow } from '../../stores/rateLimitsStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
@@ -78,7 +79,7 @@ export function ContextMeter({ sessionMeta, tabId, sessionStatus }: {
     store.setSessionStatus(tabId, 'running');
     store.setActivityStatus(tabId, { phase: 'thinking' });
     try {
-      await bridge.sendStdin(sessionMeta.stdinId, '/compact');
+      await bridge.sendStdin(sessionMeta.stdinId, buildCompactCommand());
     } catch (e) {
       store.setSessionMeta(tabId, { pendingCommandMsgId: undefined });
       store.setSessionStatus(tabId, 'error');
