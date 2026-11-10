@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BackgroundTaskEntry } from '../stream-message';
 import {
-  MAX_ENDED_TASKS, applyLiveList, applyNotification, applyPatch, canReadOutput, endAll,
+  MAX_ENDED_TASKS, applyLiveList, applyNotification, applyPatch, canReadOutput, endAll, stopFollowUp,
   type BackgroundTask, type TaskStartInfo,
 } from '../background-tasks';
 
@@ -88,5 +88,22 @@ describe('endAll / canReadOutput', () => {
   it('只有后台 Bash / Monitor 能读输出', () => {
     expect(canReadOutput(running('a'))).toBe(true);
     expect(canReadOutput(running('a', { type: 'local_agent' }))).toBe(false);
+  });
+});
+
+describe('stopFollowUp', () => {
+  const tab = (sessionStatus: string, phase: string) => ({ sessionStatus, activityStatus: { phase } });
+  it('模型空闲：通知随下一条消息送达', () => {
+    expect(stopFollowUp(undefined)).toBe('idle');
+    expect(stopFollowUp(tab('completed', 'completed'))).toBe('idle');
+    expect(stopFollowUp(tab('idle', 'idle'))).toBe('idle');
+  });
+  it('模型在思考或输出：当前这一步结束后送达', () => {
+    expect(stopFollowUp(tab('running', 'thinking'))).toBe('running');
+    expect(stopFollowUp(tab('running', 'writing'))).toBe('running');
+    expect(stopFollowUp(tab('running', 'awaiting'))).toBe('running');
+  });
+  it('模型正在执行前台工具：可能卡在等待循环里，需要提供中断', () => {
+    expect(stopFollowUp(tab('running', 'tool'))).toBe('blocked');
   });
 });

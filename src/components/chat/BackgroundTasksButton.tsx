@@ -1,11 +1,11 @@
 // 输入栏工具行上的“后台任务”按钮与面板：列出当前会话的后台任务（运行中与最近结束的），
 // 可查看后台 Bash / Monitor 的输出末尾、停止单个任务。数据来源见 stores/backgroundTaskStore.ts
 import { useEffect, useRef, useState } from 'react';
-import { useActiveTab } from '../../stores/chatStore';
+import { useActiveTab, useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBackgroundTaskStore, useTabBackgroundTasks } from '../../stores/backgroundTaskStore';
 import { bridge, type TaskOutput } from '../../lib/tauri-bridge';
-import { canReadOutput, isRunning, type BackgroundTask } from '../../lib/background-tasks';
+import { canReadOutput, isRunning, stopFollowUp, type BackgroundTask } from '../../lib/background-tasks';
 import { stripAnsi } from '../../lib/strip-ansi';
 import { useT } from '../../lib/i18n';
 import { useFloatingMaxHeight } from '../../hooks/useFloatingMaxHeight';
@@ -102,7 +102,13 @@ function TaskOutputView({ stdinId, task }: { stdinId: string | undefined; task: 
   );
 }
 
-function TaskRow({ task, stdinId, now }: { task: BackgroundTask; stdinId: string | undefined; now: number }) {
+function TaskRow({ task, stdinId, now, onStopped }: {
+  task: BackgroundTask;
+  stdinId: string | undefined;
+  now: number;
+  /** 停止成功后调用，由面板决定怎么提示 */
+  onStopped: () => void;
+}) {
   const t = useT();
   const [showOutput, setShowOutput] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -119,6 +125,7 @@ function TaskRow({ task, stdinId, now }: { task: BackgroundTask; stdinId: string
     setStopping(true);
     try {
       await bridge.stopBackgroundTask(stdinId, task.id);
+      onStopped();
     } catch (e) {
       showToast(t('bgTask.stopFailed').replace('{error}', String(e)), 'error');
     } finally {
@@ -177,6 +184,34 @@ export function BackgroundTasksButton() {
   const ref = useRef<HTMLDivElement>(null);
   const maxHeight = useFloatingMaxHeight(open);
   const runningCount = tasks.filter(isRunning).length;
+  const sessionStatus = useActiveTab((tab) => tab.sessionStatus);
+  const phase = useActiveTab((tab) => tab.activityStatus.phase);
+  // 停止任务时模型正卡在前台命令里：提示并提供“中断当前回合”，直到这条命令结束或回合结束
+  const [blockedAfterStop, setBlockedAfterStop] = useState(false);
+  const showBlocked = blockedAfterStop && sessionStatus === 'running' && phase === 'tool';
+
+  // 回合结束或切换标签页后不再提示
+  useEffect(() => {
+    if (sessionStatus !== 'running') setBlockedAfterStop(false);
+  }, [sessionStatus]);
+  useEffect(() => {
+    setBlockedAfterStop(false);
+  }, [tabId]);
+
+  const handleStopped = () => {
+    const followUp = stopFollowUp(tabId ? useChatStore.getState().getTab(tabId) : undefined);
+    if (followUp === 'blocked') setBlockedAfterStop(true);
+    else showToast(t(followUp === 'idle' ? 'bgTask.stoppedIdle' : 'bgTask.stoppedRunning'), 'info');
+  };
+
+  // 中断只结束当前回合，CLI 进程保留；排队的停止通知随下一条消息送达模型
+  const interruptTurn = () => {
+    setBlockedAfterStop(false);
+    if (!stdinId) return;
+    bridge.interruptSession(stdinId).catch((e) => {
+      showToast(t('bgTask.interruptFailed').replace('{error}', String(e)), 'error');
+    });
+  };
 
   // 点面板外关闭
   useEffect(() => {
@@ -233,9 +268,20 @@ export function BackgroundTasksButton() {
               </button>
             )}
           </div>
+          {showBlocked && (
+            <div className="flex items-start gap-2 px-3 py-2 border-b border-border-subtle bg-amber-500/10">
+              <span className="flex-1 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+                {t('bgTask.blockedHint')}
+              </span>
+              <button onClick={interruptTurn}
+                className="flex-shrink-0 px-2 py-0.5 rounded text-[11px] font-medium text-text-inverse bg-amber-500 hover:bg-amber-600 transition-smooth">
+                {t('bgTask.interruptTurn')}
+              </button>
+            </div>
+          )}
           <div className="overflow-y-auto">
             {sortTasks(tasks).map((task) => (
-              <TaskRow key={task.id} task={task} stdinId={stdinId} now={now} />
+              <TaskRow key={task.id} task={task} stdinId={stdinId} now={now} onStopped={handleStopped} />
             ))}
           </div>
         </div>

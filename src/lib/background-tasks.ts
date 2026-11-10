@@ -124,3 +124,18 @@ export function endAll(tasks: BackgroundTask[], now: number): BackgroundTask[] {
   if (!tasks.some(isRunning)) return tasks;
   return pruneEnded(tasks.map((t) => (isRunning(t) ? { ...t, status: 'ended', endedAt: now } : t)));
 }
+
+/**
+ * 停止后台任务后，CLI 会给模型排一条“任务已被用户停止”的通知（passive：不会自己开新回合）。
+ * 按停止那一刻的会话状态决定界面怎么提示：
+ * - idle：模型空闲，通知随下一条消息一起送达；
+ * - running：模型在思考或输出，当前这一步结束后就能看到；
+ * - blocked：模型正在执行前台工具（常见的是轮询等待这个任务的循环），
+ *   通知要等这条命令结束才送达，可能要等很久，需要提供“中断当前回合”。
+ */
+export type StopFollowUp = 'idle' | 'running' | 'blocked';
+
+export function stopFollowUp(tab: { sessionStatus: string; activityStatus: { phase: string } } | undefined): StopFollowUp {
+  if (!tab || tab.sessionStatus !== 'running') return 'idle';
+  return tab.activityStatus.phase === 'tool' ? 'blocked' : 'running';
+}
