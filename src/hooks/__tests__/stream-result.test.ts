@@ -64,6 +64,30 @@ describe('handleResultMessage', () => {
       expect(tabOf(TAB).sessionStatus).toBe('error');
     });
 
+    it('用户主动中断后的 error_during_execution：按正常结束显示，标记随之清除', () => {
+      useChatStore.getState().setSessionMeta(TAB, { userInterruptStdinId: STDIN });
+      handleResultMessage(ctx, { type: 'result', subtype: 'error_during_execution' });
+      expect(tabOf(TAB).sessionStatus).toBe('completed');
+      expect(tabOf(TAB).sessionMeta.userInterruptStdinId).toBeUndefined();
+      // 下一轮真正出错时照常显示 error
+      ctx.setSessionStatus('running');
+      handleResultMessage(ctx, { type: 'result', subtype: 'error_during_execution' });
+      expect(tabOf(TAB).sessionStatus).toBe('error');
+    });
+
+    it('中断标记属于另一个进程（已被替换）：不影响这个进程的失败结果', () => {
+      useChatStore.getState().setSessionMeta(TAB, { userInterruptStdinId: 'old_stdin' });
+      handleResultMessage(ctx, { type: 'result', subtype: 'error_during_execution' });
+      expect(tabOf(TAB).sessionStatus).toBe('error');
+    });
+
+    it('中断后排队消息仍由 CLI 接着处理（后台任务面板的中断不撤回排队消息）：保持运行', () => {
+      useChatStore.getState().setSessionMeta(TAB, { userInterruptStdinId: STDIN });
+      useChatStore.getState().addPendingMessage(TAB, { text: '接着做', sent: true, uuid: 'q1' });
+      handleResultMessage(ctx, { type: 'result', subtype: 'error_during_execution' });
+      expect(tabOf(TAB).sessionStatus).toBe('running');
+    });
+
     it('result 正文已经由 assistant 事件送达时不重复添加', () => {
       ctx.addMessage(text('a1', 'assistant', '回答'));
       handleResultMessage(ctx, success({ result: '回答' }));

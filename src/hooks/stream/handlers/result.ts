@@ -16,6 +16,7 @@ import { persistTokenState } from '../token-state';
 import { commitPartialText } from '../buffer';
 import { scheduleUsageLimitResume, takeRejectedResetsAt } from '../usage-limit-resume';
 import { type StreamContext } from '../context';
+import { takeUserInterrupt } from '../../../lib/interrupt-turn';
 
 export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): void {
   const { tabId, msgStdinId, agentActions, clearPartial } = ctx;
@@ -37,6 +38,15 @@ export function handleResultMessage(ctx: StreamContext, msg: ResultMessage): voi
   clearPartial();
   // 本轮记下的额度恢复时间只属于本轮，先取出，免得留到下一轮
   const limitResetsAt = takeRejectedResetsAt(tabId);
+
+  // 用户主动中断（终止按钮 / 中断当前回合）：CLI 回 error_during_execution，按正常结束收尾，
+  // 不走重试、计划模式重启、自动压缩、额度续跑这些针对失败的处理，状态也不显示成出错
+  if (takeUserInterrupt(tabId, msgStdinId) && msg.subtype !== 'success') {
+    completePendingCommand(ctx, msg);
+    finalizeTurn(ctx, msg, 'completed');
+    sendNextPendingMessage(ctx);
+    return;
+  }
 
   if (retryAfterThinkingSignatureError(ctx, msg)) return;
   if (restartAfterExitPlanMode(ctx, msg)) return;
@@ -333,14 +343,13 @@ function completePendingCommand(ctx: StreamContext, msg: ResultMessage): void {
 }
 
 /** 更新会话状态、用 result 校正 token 累计值、结束代理树并刷新会话列表。 */
-function finalizeTurn(ctx: StreamContext, msg: ResultMessage): void {
+function finalizeTurn(ctx: StreamContext, msg: ResultMessage, statusOverride?: 'completed'): void {
   const { tabId, agentActions, setSessionStatus, setSessionMeta } = ctx;
+  const endStatus = statusOverride ?? (msg.subtype === 'success' ? 'completed' : 'error');
 
   // 还有已写入 stdin 未处理的消息时 CLI 会紧接着开始下一轮，保持运行状态（由 sendNextPendingMessage 重置计时）
   if (!hasSentPendingMessage(tabId)) {
-    setSessionStatus(
-      msg.subtype === 'success' ? 'completed' : 'error'
-    );
+    setSessionStatus(endStatus);
   }
   {
     // Correct cumulative totals for any drift between streaming
@@ -365,9 +374,7 @@ function finalizeTurn(ctx: StreamContext, msg: ResultMessage): void {
     const resultMeta = useChatStore.getState().getTab(tabId)?.sessionMeta;
     if (resultMeta) persistTokenState(tabId, resultMeta);
   }
-  agentActions?.completeAll(
-    msg.subtype === 'success' ? 'completed' : 'error'
-  );
+  agentActions?.completeAll(endStatus);
   useSessionStore.getState().fetchSessions();
   setTimeout(() => useSessionStore.getState().fetchSessions(), 1000);
   // 远程会话列表平时不自动刷新：新建的远程会话第一轮结束时还是草稿行（没有标题），

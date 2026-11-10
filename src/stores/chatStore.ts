@@ -108,6 +108,11 @@ export interface SessionMeta {
   forkFrom?: { id: string; host?: string };
   /** 回退时“总结”生成的摘要，附在下一条消息前发给模型（不显示在气泡里），发送后清除 */
   pendingSummary?: string;
+  /**
+   * 用户主动中断了当前回合（终止按钮、后台任务面板的“中断当前回合”），值为中断时的 stdinId。
+   * CLI 随后回的 error_during_execution 按正常结束处理，收到 result 时清除；见 lib/interrupt-turn.ts
+   */
+  userInterruptStdinId?: string;
   /** The desk-generated ID used as key in Rust StdinManager for sending follow-up messages */
   stdinId?: string;
   /** Message ID of a pending processing card (for CLI slash commands) */

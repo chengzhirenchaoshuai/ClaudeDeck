@@ -5,6 +5,7 @@ import { useActiveTab, useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBackgroundTaskStore, useTabBackgroundTasks } from '../../stores/backgroundTaskStore';
 import { bridge, type TaskOutput } from '../../lib/tauri-bridge';
+import { interruptTurn } from '../../lib/interrupt-turn';
 import { canReadOutput, isRunning, stopFollowUp, type BackgroundTask } from '../../lib/background-tasks';
 import { stripAnsi } from '../../lib/strip-ansi';
 import { useT } from '../../lib/i18n';
@@ -205,11 +206,11 @@ export function BackgroundTasksButton() {
   };
 
   // 中断只结束当前回合，CLI 进程保留；排队的停止通知随下一条消息送达模型
-  const interruptTurn = () => {
+  const handleInterrupt = () => {
     setBlockedAfterStop(false);
-    if (!stdinId) return;
-    bridge.interruptSession(stdinId).catch((e) => {
-      showToast(t('bgTask.interruptFailed').replace('{error}', String(e)), 'error');
+    if (!stdinId || !tabId) return;
+    void interruptTurn(tabId, stdinId).then((ok) => {
+      if (!ok) showToast(t('bgTask.interruptFailed'), 'error');
     });
   };
 
@@ -273,7 +274,7 @@ export function BackgroundTasksButton() {
               <span className="flex-1 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
                 {t('bgTask.blockedHint')}
               </span>
-              <button onClick={interruptTurn}
+              <button onClick={handleInterrupt}
                 className="flex-shrink-0 px-2 py-0.5 rounded text-[11px] font-medium text-text-inverse bg-amber-500 hover:bg-amber-600 transition-smooth">
                 {t('bgTask.interruptTurn')}
               </button>
