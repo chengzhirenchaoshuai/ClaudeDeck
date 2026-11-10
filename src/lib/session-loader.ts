@@ -29,7 +29,9 @@ function isSystemText(text: string): boolean {
     || t.startsWith('In this environment you have access to') // tool definitions
     || t.startsWith('Human:')                          // raw conversation format leaks
     || t.includes('<system-reminder>')                 // embedded system reminders
-    || t.includes('</system-reminder>');
+    || t.includes('</system-reminder>')
+    // 终止/中断时 CLI 写入的标记（含 "for tool use" 变体），不是用户输入
+    || /^\[Request interrupted by user[^\]]*\]\s*$/.test(t);
 }
 
 /** Parse raw JSONL messages into structured session data */

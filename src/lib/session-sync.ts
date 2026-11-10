@@ -153,6 +153,9 @@ export async function syncSession(
   opts: { force?: boolean } = {},
 ): Promise<void> {
   if (!session || !session.path) return;
+  // 已回退（含终止时撤回刚发出的消息）、新分支还没建立：磁盘上仍是旧分支，
+  // 被撤回的消息和 CLI 追加的中断记录都还在，不能拿它覆盖界面；手动刷新也一样
+  if (useChatStore.getState().getTab(session.id)?.sessionMeta.rewoundFromSessionId) return;
   // 文件大小没变就跳过：避免每次轮询都把整个 JSONL 传到前端解析（大会话会让界面周期性卡顿）
   const size = await localFileSize(session.path);
   if (!opts.force && size !== null && lastFileSize.get(session.id) === size) return;

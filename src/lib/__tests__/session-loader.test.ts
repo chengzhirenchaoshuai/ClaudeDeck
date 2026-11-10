@@ -19,6 +19,17 @@ describe('session history loading', () => {
     expect(loaded.messages.map((message) => message.content)).toEqual(['hello', 'world']);
   });
 
+  it('CLI 中断时写入的标记不显示成用户消息', () => {
+    const loaded = parseSessionMessages([
+      { type: 'user', uuid: 'u1', timestamp: 1, message: { content: [{ type: 'text', text: 'hello' }] } },
+      { type: 'user', uuid: 'u2', timestamp: 2, message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+      { type: 'user', uuid: 'u3', timestamp: 3, message: { content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } },
+      // 用户自己输入的文字里提到这个标记，照常显示
+      { type: 'user', uuid: 'u4', timestamp: 4, message: { content: '为什么会出现 [Request interrupted by user]？' } },
+    ]);
+    expect(loaded.messages.map((m) => m.content)).toEqual(['hello', '为什么会出现 [Request interrupted by user]？']);
+  });
+
   it('压缩边界之后的摘要与文件记录合并成一条压缩提示（结构取自真实会话 JSONL）', () => {
     const loaded = parseSessionMessages([
       { type: 'user', uuid: 'u1', timestamp: 1, message: { content: [{ type: 'text', text: 'hello' }] } },
