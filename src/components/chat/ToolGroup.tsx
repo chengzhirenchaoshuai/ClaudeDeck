@@ -29,9 +29,9 @@ function buildToolSummary(messages: ChatMessage[]): string {
 export function ToolGroup({ messages }: Props) {
   const t = useT();
 
-  // Auto-collapse when all tools have results
+  // 全部工具都已成功返回时显示汇总对勾（有被中断、被拒绝或失败的不显示）
   const allHaveResults = useMemo(
-    () => messages.every((m) => m.toolResultContent && m.toolResultContent.length > 0),
+    () => messages.every((m) => m.toolResultContent && m.toolResultContent.length > 0 && !m.toolResultError),
     [messages],
   );
 

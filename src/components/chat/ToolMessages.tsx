@@ -3,6 +3,14 @@ import { memo, useState } from 'react';
 import { useFileStore } from '../../stores/fileStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
+import type { ToolResultError } from '../../lib/tool-result-status';
+
+/** 工具没有成功完成时的标记样式：中断、拒绝是用户的操作（琥珀色），执行失败为红色 */
+const TOOL_ERROR_STYLE: Record<ToolResultError, string> = {
+  interrupted: 'text-amber-500 bg-amber-500/10',
+  rejected: 'text-amber-500 bg-amber-500/10',
+  failed: 'text-red-500 bg-red-500/10',
+};
 import { bridge } from '../../lib/tauri-bridge';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
 import { handleFileLinkContextMenu } from '../shared/FileLinkMenu';
@@ -439,8 +447,12 @@ export const ToolUseMsg = memo(function ToolUseMsg({ message }: MessageProps) {
         <ToolIcon name={toolName} />
         <span className={`font-medium text-text-muted flex-shrink-0 whitespace-nowrap ${isFileEdit ? 'text-[13px]' : 'text-xs'}`}>{label}</span>
         {renderPreview()}
-        {/* Show a small result indicator when collapsed with result */}
-        {!expanded && hasResult && (
+        {/* 结果标记：成功时收起状态下显示对勾；被中断、被拒绝、执行失败时一直显示文字标记 */}
+        {message.toolResultError ? (
+          <span className={`flex-shrink-0 ml-0.5 px-1.5 py-px rounded text-[10px] whitespace-nowrap ${TOOL_ERROR_STYLE[message.toolResultError]}`}>
+            {t(`msg.toolResult.${message.toolResultError}`)}
+          </span>
+        ) : !expanded && hasResult && (
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"
             stroke="currentColor" strokeWidth="1.5" className="text-success flex-shrink-0 ml-0.5">
             <path d="M2.5 6l2.5 2.5 4.5-4.5" />

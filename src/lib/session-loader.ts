@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../stores/chatStore';
+import { classifyToolResult } from './tool-result-status';
 import { generateMessageId } from '../stores/chatStore';
 import type { AgentPhase } from '../stores/agentStore';
 import { compactFileFromAttachment, createCompactNotice, withCompactFile, type CompactNoticeData } from './compact-notice';
@@ -121,7 +122,11 @@ export function parseSessionMessages(rawMessages: any[]): LoadedSession {
           if (resultText) {
             const idx = toolUseIdToIndex.get(b.tool_use_id);
             if (idx !== undefined && messages[idx]) {
-              messages[idx] = { ...messages[idx], toolResultContent: resultText };
+              messages[idx] = {
+                ...messages[idx],
+                toolResultContent: resultText,
+                toolResultError: classifyToolResult(b.is_error, resultText),
+              };
             }
           }
         }
@@ -245,7 +250,11 @@ export function parseSessionMessages(rawMessages: any[]): LoadedSession {
             if (block.tool_use_id && resultText) {
               const idx = toolUseIdToIndex.get(block.tool_use_id);
               if (idx !== undefined && messages[idx]) {
-                messages[idx] = { ...messages[idx], toolResultContent: resultText };
+                messages[idx] = {
+                  ...messages[idx],
+                  toolResultContent: resultText,
+                  toolResultError: classifyToolResult(block.is_error, resultText),
+                };
               }
             }
           } else if (block.type === 'thinking') {

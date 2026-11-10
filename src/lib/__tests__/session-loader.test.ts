@@ -19,6 +19,22 @@ describe('session history loading', () => {
     expect(loaded.messages.map((message) => message.content)).toEqual(['hello', 'world']);
   });
 
+  it('工具结果带出错标记：工具卡记下中断 / 拒绝 / 失败，成功的不记', () => {
+    const tool = (id: string) => ({ type: 'tool_use', id, name: 'Bash', input: { command: 'x' } });
+    const result = (id: string, content: string, is_error?: boolean) => ({ type: 'tool_result', tool_use_id: id, content, is_error });
+    const loaded = parseSessionMessages([
+      { type: 'assistant', uuid: 'a1', timestamp: 1, message: { content: [tool('t1'), tool('t2'), tool('t3'), tool('t4')] } },
+      { type: 'user', uuid: 'r1', timestamp: 2, toolUseResult: 'User rejected tool use', message: { content: [
+        result('t1', "The user doesn't want to proceed with this tool use. ... Correction to the text above: this call was stopped while running, not refused before it ran.", true),
+        result('t2', "The user doesn't want to proceed with this tool use. The tool use was rejected.", true),
+        result('t3', 'Exit code 2', true),
+        result('t4', 'ok'),
+      ] } },
+    ]);
+    const err = Object.fromEntries(loaded.messages.map((m) => [m.id, m.toolResultError]));
+    expect(err).toEqual({ t1: 'interrupted', t2: 'rejected', t3: 'failed', t4: undefined });
+  });
+
   it('CLI 中断时写入的标记不显示成用户消息', () => {
     const loaded = parseSessionMessages([
       { type: 'user', uuid: 'u1', timestamp: 1, message: { content: [{ type: 'text', text: 'hello' }] } },

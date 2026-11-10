@@ -216,6 +216,9 @@ export default {
 
   // Tool group
   'msg.toolGroup': '{n} 个工具调用',
+  'msg.toolResult.interrupted': '已中断',
+  'msg.toolResult.rejected': '已拒绝',
+  'msg.toolResult.failed': '失败',
   'msg.toolGroupSummary': '{summary}',
   'msg.toolGroupExpand': '展开',
   'msg.toolGroupCollapse': '收起',

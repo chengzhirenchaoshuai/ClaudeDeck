@@ -217,6 +217,9 @@ export default {
 
   // Tool group
   'msg.toolGroup': '{n} tool calls',
+  'msg.toolResult.interrupted': 'Interrupted',
+  'msg.toolResult.rejected': 'Rejected',
+  'msg.toolResult.failed': 'Failed',
   'msg.toolGroupSummary': '{summary}',
   'msg.toolGroupExpand': 'Expand',
   'msg.toolGroupCollapse': 'Collapse',

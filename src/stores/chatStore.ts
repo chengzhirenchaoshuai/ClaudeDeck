@@ -1,4 +1,5 @@
 import type { UnifiedCommand } from '../lib/tauri-bridge';
+import type { ToolResultError } from '../lib/tool-result-status';
 import { create } from 'zustand';
 import { useSessionStore } from './sessionStore';
 import { CLI_DEFAULT, useSettingsStore, mapSessionModeToPermissionMode, takeSkipModeSync } from './settingsStore';
@@ -53,6 +54,8 @@ export interface ChatMessage {
   toolInput?: any;
   toolResult?: string;
   toolResultContent?: string;      // tool result content merged from tool_result stream events
+  /** 工具调用没有成功完成（被中断、被拒绝或执行失败）；成功时为空 */
+  toolResultError?: ToolResultError;
   isPartial?: boolean;
   timestamp: number;
   // Interactive message fields

@@ -3,6 +3,7 @@ import { useChatStore } from '../../../stores/chatStore';
 import { toolResultText, type UserMessage } from '../../../lib/stream-message';
 import { type StreamContext } from '../context';
 import { updateLatestCompactNotice } from '../../../lib/compact-notice';
+import { classifyToolResult } from '../../../lib/tool-result-status';
 
 export function handleUserMessage(ctx: StreamContext, msg: UserMessage): void {
   const { tabId } = ctx;
@@ -71,7 +72,10 @@ export function handleUserMessage(ctx: StreamContext, msg: UserMessage): void {
           const msgs = useChatStore.getState().getTab(tabId)?.messages ?? [];
           const parent = msgs.find((m) => m.id === tuId);
           if (parent) {
-            useChatStore.getState().updateMessage(tabId, tuId, { toolResultContent: resultText });
+            useChatStore.getState().updateMessage(tabId, tuId, {
+              toolResultContent: resultText,
+              toolResultError: classifyToolResult(block.is_error, resultText),
+            });
           }
         }
       }

@@ -93,6 +93,22 @@ describe('handleUserMessage', () => {
       ctx.addMessage(toolCard('t1'));
       handleUserMessage(ctx, resultOf(['t1']));
       expect(findMsg('t1')?.toolResultContent).toBe('结果 t1');
+      expect(findMsg('t1')?.toolResultError).toBeUndefined();
+    });
+
+    it('回合被中断、执行失败：工具卡记下没有成功完成的原因（文案取自真实 CLI 输出）', () => {
+      ctx.addMessage(toolCard('t1', 'Bash'));
+      ctx.addMessage(toolCard('t2', 'Bash'));
+      handleUserMessage(ctx, {
+        type: 'user',
+        message: { content: [
+          { type: 'tool_result', tool_use_id: 't1', is_error: true,
+            content: "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed. Correction to the text above: this call was stopped while running, not refused before it ran." },
+          { type: 'tool_result', tool_use_id: 't2', is_error: true, content: 'Exit code 1' },
+        ] },
+      });
+      expect(findMsg('t1')?.toolResultError).toBe('interrupted');
+      expect(findMsg('t2')?.toolResultError).toBe('failed');
     });
 
     it('content 为空时用 tool_use_result.stdout 回填', () => {
