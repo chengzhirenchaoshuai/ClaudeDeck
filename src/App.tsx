@@ -15,12 +15,11 @@ import { useFileStore } from './stores/fileStore';
 import { useChatStore, useActiveTab } from './stores/chatStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useAgentStore } from './stores/agentStore';
-import { bridge, onFileChange, onClaudeStream, onSessionExit, isRemotePath, setPermissionAnsweredHook } from './lib/tauri-bridge';
-import { hasStreamListener, setStreamListener } from './lib/stream-listeners';
+import { bridge, onFileChange, isRemotePath, setPermissionAnsweredHook } from './lib/tauri-bridge';
 import { disposableListen } from './lib/disposable-listen';
 import { useScrollZoom } from './lib/useScrollZoom';
 import { useT } from './lib/i18n';
-import { loadClaudeUuid } from './hooks/stream/token-state';
+import { startReconnect } from './hooks/stream/reconnect';
 import { requestQuit } from './lib/app-quit';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -31,11 +30,6 @@ import { useSystemNotifications } from './hooks/useSystemNotifications';
 import { installChipCopy } from './lib/chip-copy';
 import { installDraftCleanup } from './lib/draft-cleanup';
 import { useTerminalSessions } from './hooks/useTerminalSessions';
-import {
-  getContextInputTokens,
-  getContextOutputTokens,
-  hasMeaningfulContextUsage,
-} from './lib/context-usage';
 import { skinForMode } from './lib/themes';
 import { resolveProjectPath } from './components/conversations/session-list-model';
 import { isHomeDirectory } from './lib/home-dir';
@@ -44,46 +38,6 @@ import './App.css';
 // 设置面板、用量统计打开时才加载
 const SettingsPanel = lazy(() => import('./components/settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
 const UsageModal = lazy(() => import('./components/usage/UsageModal').then((m) => ({ default: m.UsageModal })));
-
-// --- Token state cache (survives F5 via sessionStorage) ---
-// Primary F5 recovery: fast, real-time, covers active streaming sessions.
-// JSONL (Claude native) is authoritative for historical/archived sessions.
-// On reconnect we try JSONL first; sessionStorage is the reliable fallback.
-
-const TOKEN_STATE_KEY = 'tokenicode_token_state_v2';
-
-interface PersistedTokenState {
-  inputTokens?: number;
-  outputTokens?: number;
-  contextInputTokens?: number;
-  contextOutputTokens?: number;
-  totalInputTokens?: number;
-  totalOutputTokens?: number;
-}
-
-function saveTokenState(tabId: string, meta: PersistedTokenState) {
-  try {
-    const data = JSON.parse(sessionStorage.getItem(TOKEN_STATE_KEY) || '{}');
-    data[tabId] = {
-      inputTokens: meta.inputTokens,
-      outputTokens: meta.outputTokens,
-      contextInputTokens: meta.contextInputTokens,
-      contextOutputTokens: meta.contextOutputTokens,
-      totalInputTokens: meta.totalInputTokens,
-      totalOutputTokens: meta.totalOutputTokens,
-    };
-    sessionStorage.setItem(TOKEN_STATE_KEY, JSON.stringify(data));
-  } catch {/* ignore */}
-}
-
-function loadTokenState(tabId: string): PersistedTokenState | null {
-  try {
-    const data = JSON.parse(sessionStorage.getItem(TOKEN_STATE_KEY) || '{}');
-    return data[tabId] || null;
-  } catch {
-    return null;
-  }
-}
 
 const FONT_FAMILY_STACKS: Record<FontFamily, string> = {
   system: '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif',
@@ -195,185 +149,10 @@ function App() {
   useSystemNotifications();
   useTerminalSessions();
 
-  // TK-329: On app startup (incl. browser F5 refresh), handle active backend processes.
-  // - Processes WITH stdinToTab mapping: re-register event listeners and restore streaming state
-  // - Processes WITHOUT stdinToTab mapping: kill them (orphaned, no frontend mapping)
-  // Use a ref to prevent double-run in React Strict Mode (dev only; harmless in prod)
-  const reconnectRanRef = useRef(false);
+  // 页面刷新（F5、WebView 重新加载）后重新接上仍存活的 CLI 进程，结束没有标签页对应的孤儿进程。
+  // 只执行一次；ConversationList 恢复上次选中的会话前也会等它完成
   useEffect(() => {
-    if (reconnectRanRef.current) return;
-    reconnectRanRef.current = true;
-    bridge.listActiveProcesses().then((activeIds) => {
-      if (!activeIds.length) return;
-      const sessionState = useSessionStore.getState();
-      const { stdinToTab } = sessionState;
-      const chatState = useChatStore.getState();
-      const agentState = useAgentStore.getState();
-
-      for (const stdinId of activeIds) {
-        const tabId = stdinToTab[stdinId];
-        if (!tabId) {
-          // Orphaned: no frontend mapping — kill it
-          console.log('[ClaudeDeck:cleanup] killing orphaned process:', stdinId);
-          bridge.killSession(stdinId).catch(() => {});
-          continue;
-        }
-
-        // Reconnect: the session has a valid tab mapping
-        console.log('[ClaudeDeck:reconnect] reconnecting to:', stdinId, '→ tab:', tabId);
-
-        // Ensure tab exists before setting state (tab may not exist yet at startup)
-        chatState.ensureTab(tabId);
-
-        // Mark session as running and streaming
-        chatState.setSessionStatus(tabId, 'running');
-        chatState.setSessionMeta(tabId, { stdinId });
-
-        // Restore token totals: sessionStorage first (real-time, works for active streaming),
-        // then JSONL as authoritative check (covers completed/historical sessions).
-        const cachedTokens = loadTokenState(tabId);
-        if (cachedTokens) {
-          chatState.setSessionMeta(tabId, cachedTokens);
-          console.log('[reconnect] restored tokens from cache for', tabId, cachedTokens);
-        }
-        // Background: cross-check with Claude's native JSONL for authoritative totals
-        const claudeUuid = loadClaudeUuid(tabId);
-        if (claudeUuid) {
-          bridge.getSessionTokens(claudeUuid).then((jsonlTokens) => {
-            // JSONL is authoritative; use it to correct if it has more data
-            const current = chatState.getTab(tabId)?.sessionMeta ?? {};
-            const corrected = {
-              totalInputTokens: Math.max(current.totalInputTokens ?? 0, jsonlTokens.totalInputTokens),
-              totalOutputTokens: Math.max(current.totalOutputTokens ?? 0, jsonlTokens.totalOutputTokens),
-            };
-            chatState.setSessionMeta(tabId, corrected);
-            console.log('[reconnect] JSONL cross-check for', tabId, jsonlTokens, '→ merged:', corrected);
-          }).catch(() => {
-            // JSONL not available yet (active streaming session) — cache is sufficient
-          });
-        }
-        const tab = chatState.getTab(tabId);
-        if (tab) {
-          useChatStore.setState({
-            tabs: new Map(chatState.tabs).set(tabId, {
-              ...tab,
-              isStreaming: true,
-            }),
-          });
-        }
-        sessionState.setSessionRunning(tabId, true);
-
-        // Reset agent state: clear stale "completed" agents from disk load,
-        // then create a fresh main agent to reflect the running session.
-        // Also save to agentCache so that handleLoadSession's restoreFromCache
-        // doesn't wipe the agents (restoreFromCache clears agents on cache miss).
-        agentState.clearAgents();
-        agentState.upsertAgent({
-          id: 'main',
-          parentId: null,
-          description: 'Reconnected',
-          phase: 'thinking',
-          startTime: Date.now(),
-          isMain: true,
-        });
-        agentState.saveToCache(tabId);
-
-        // Skip if listeners already exist (e.g. InputBar already set them up)
-        if (hasStreamListener(stdinId)) continue;
-
-        // Re-register stream listener — handle text/thinking deltas, token tracking,
-        // agent phase updates, and process exit.
-        onClaudeStream(stdinId, (msg: any) => {
-          msg.__stdinId = stdinId;
-          const ownerTabId = useSessionStore.getState().getTabForStdin(stdinId);
-          const activeTabId = useSessionStore.getState().selectedSessionId;
-          const targetTabId = ownerTabId || activeTabId;
-          if (!targetTabId) return;
-
-          const store = useChatStore.getState();
-          const agStore = useAgentStore.getState();
-
-          if (msg.type === 'stream_event' && msg.event) {
-            const evt = msg.event;
-
-            if (evt.type === 'content_block_delta') {
-              const delta = evt.delta;
-              if (delta?.type === 'text_delta' && delta.text) {
-                store.updatePartialMessage(targetTabId, delta.text);
-                agStore.updatePhase('main', 'writing');
-              } else if (delta?.type === 'thinking_delta' && delta.thinking) {
-                store.updatePartialThinking(targetTabId, delta.thinking);
-                agStore.updatePhase('main', 'thinking');
-              }
-            }
-
-            // Track input tokens from message_start (per-turn + cumulative total)
-            if (evt.type === 'message_start' && evt.message?.usage) {
-              const meta = store.getTab(targetTabId)?.sessionMeta ?? {};
-              const delta = evt.message.usage.input_tokens || 0;
-              const usage = evt.message.usage;
-              store.setSessionMeta(targetTabId, {
-                inputTokens: (meta.inputTokens || 0) + delta,
-                totalInputTokens: (meta.totalInputTokens || 0) + delta,
-                ...(hasMeaningfulContextUsage(usage) ? {
-                  contextInputTokens: getContextInputTokens(usage),
-                  contextOutputTokens: 0,
-                } : {}),
-              });
-              const updated = store.getTab(targetTabId)?.sessionMeta;
-              if (updated) saveTokenState(targetTabId, updated);
-            }
-
-            // Track output tokens from message_delta (per-turn + cumulative total)
-            if (evt.type === 'message_delta' && evt.usage?.output_tokens) {
-              const meta = store.getTab(targetTabId)?.sessionMeta ?? {};
-              const delta = evt.usage.output_tokens;
-              store.setSessionMeta(targetTabId, {
-                outputTokens: (meta.outputTokens || 0) + delta,
-                totalOutputTokens: (meta.totalOutputTokens || 0) + delta,
-                contextOutputTokens: getContextOutputTokens(evt.usage),
-              });
-              const updated = store.getTab(targetTabId)?.sessionMeta;
-              if (updated) saveTokenState(targetTabId, updated);
-            }
-
-            // Create sub-agents for Task/Agent tool_use starts
-            if (evt.type === 'content_block_start'
-                && evt.content_block?.type === 'tool_use'
-                && (evt.content_block?.name === 'Task' || evt.content_block?.name === 'Agent')) {
-              agStore.upsertAgent({
-                id: evt.content_block.id || `task_${Date.now()}`,
-                parentId: 'main',
-                description: '',
-                phase: 'spawning',
-                startTime: Date.now(),
-                isMain: false,
-              });
-            }
-          }
-
-          // Handle process exit — complete all agents and mark session idle
-          if (msg.type === 'process_exit') {
-            agStore.completeAll();
-            store.setSessionStatus(targetTabId, 'idle');
-          }
-        }).then((unlisten) => {
-          // Store unlisten for cleanup
-          if (!hasStreamListener(stdinId)) {
-            setStreamListener(stdinId, unlisten);
-          }
-        });
-
-        // Re-register exit listener
-        onSessionExit(stdinId, () => {
-          const exitTabId = useSessionStore.getState().getTabForStdin(stdinId);
-          if (exitTabId) {
-            useAgentStore.getState().completeAll();
-            useChatStore.getState().setSessionStatus(exitTabId, 'idle');
-          }
-        });
-      }
-    }).catch(() => {});
+    void startReconnect();
   }, []);
 
   // Load custom session names and provider config on startup

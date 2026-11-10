@@ -116,6 +116,11 @@ export interface SessionMeta {
    * CLI 随后回的 error_during_execution 按正常结束处理，收到 result 时清除；见 lib/interrupt-turn.ts
    */
   userInterruptStdinId?: string;
+  /**
+   * 页面刷新后重新接上进程的标签页：内存里只有刷新后新收到的消息，
+   * 切到它时 restoreFromCache 按缓存缺失处理，从磁盘重新加载完整历史（加载后随空白标签页一起清掉）
+   */
+  reloadFromDisk?: boolean;
   /** The desk-generated ID used as key in Rust StdinManager for sending follow-up messages */
   stdinId?: string;
   /** Message ID of a pending processing card (for CLI slash commands) */
@@ -181,6 +186,23 @@ export interface ActivityStatus {
   runningToolIds?: string[];
   /** 仅 awaiting：进入等待前的状态，用户回复后恢复 */
   resumeStatus?: ActivityStatus;
+}
+
+/**
+ * 与 CLI 进程绑定的字段：进程 stdinId 和它启动时的条件快照（发送前 dropStaleProcess 据此判断进程是否过期）。
+ * 页面刷新后重新接上进程时要连同快照一起恢复，否则第一次发送就会因快照缺失而结束进程、另开一个。
+ */
+export const PROCESS_META_KEYS = [
+  'stdinId', 'envFingerprint', 'snapshotMode', 'snapshotModel', 'snapshotThinking',
+  'snapshotContextWindowMode', 'snapshotProviderId', 'spawnedModel',
+] as const satisfies readonly (keyof SessionMeta)[];
+
+export type ProcessMeta = Pick<SessionMeta, (typeof PROCESS_META_KEYS)[number]>;
+
+export function pickProcessMeta(meta: SessionMeta): ProcessMeta {
+  const out: Record<string, unknown> = {};
+  for (const k of PROCESS_META_KEYS) if (meta[k] !== undefined) out[k] = meta[k];
+  return out as ProcessMeta;
 }
 
 // --- Tab session: the ONLY place session data lives ---
@@ -704,16 +726,28 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (!tab) return false;
     // #27/#30 safety net: if tab has zero messages but this is a persisted session
     // (has a disk path), treat as cache miss so the caller falls back to disk load.
-    if (tab.messages.length === 0 && !tab.isStreaming && !tab.partialText) {
+    // 页面刷新后重新接上进程的标签页也一样：内存里只有刷新后新到的消息，要从磁盘加载完整历史
+    if ((tab.messages.length === 0 && !tab.isStreaming && !tab.partialText) || tab.sessionMeta.reloadFromDisk) {
       const session = useSessionStore.getState().sessions.find((s) => s.id === tabId);
       if (session?.path) {
         // 重建为空白 tab，但保留用户还没发送的草稿和待上传附件——
         // 这里只是判定“消息要从磁盘重新加载”，不代表用户正在输入的内容也作废了。
+        // 页面刷新后重新接上的进程（stdinToTab 指向这个标签页）连同运行状态一起保留，
+        // 否则下一条消息会另开进程，原进程和它的后台任务就脱离了界面
+        const ownStdinId = tab.sessionMeta.stdinId
+          && useSessionStore.getState().getTabForStdin(tab.sessionMeta.stdinId) === tabId
+          ? tab.sessionMeta.stdinId : undefined;
+        const blank = createTab(tabId);
         const newTabs = new Map(get().tabs);
         newTabs.set(tabId, {
-          ...createTab(tabId),
+          ...blank,
           inputDraft: tab.inputDraft,
           pendingAttachments: tab.pendingAttachments,
+          ...(ownStdinId ? {
+            sessionStatus: tab.sessionStatus,
+            activityStatus: tab.activityStatus,
+            sessionMeta: { ...blank.sessionMeta, ...pickProcessMeta(tab.sessionMeta) },
+          } : {}),
         });
         set({ tabs: newTabs });
         return false;

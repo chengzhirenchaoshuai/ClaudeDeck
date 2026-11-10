@@ -6,6 +6,7 @@ import { useFileStore } from '../../stores/fileStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { bridge, SessionListItem, onCliSessionsChanged } from '../../lib/tauri-bridge';
 import { applyDiskSession, syncSession } from '../../lib/session-sync';
+import { startReconnect } from '../../hooks/stream/reconnect';
 import { disposableListen } from '../../lib/disposable-listen';
 import { buildResumeCommand } from '../../lib/resume-command';
 import { listen } from '@tauri-apps/api/event';
@@ -127,7 +128,8 @@ export function ConversationList() {
 
   // Initial fetch + polling
   useEffect(() => {
-    fetchSessions().then(() => {
+    // 先等刷新前存活的进程重新接上，再恢复上次选中的会话（见 hooks/stream/reconnect.ts）
+    Promise.all([fetchSessions(), startReconnect()]).then(() => {
       const currentSelected = useSessionStore.getState().selectedSessionId;
       if (!currentSelected) {
         const lastId = useSessionStore.getState().getLastSessionId();
@@ -316,26 +318,30 @@ export function ConversationList() {
     useSettingsStore.getState().setWorkingDirectory(resolveProjectPath(projectOrDir));
     const { clearMessages, addMessage, setSessionStatus, setSessionMeta } = useChatStore.getState();
     const agentActions = useAgentStore.getState();
+    // 页面刷新后重新接上的进程（stdinToTab 指向这个会话）要保留，连同它的运行状态；
+    // 其他残留的 stdinId 可能属于别的会话，照旧清掉，下一条消息用 --resume 新开进程
+    const before = useChatStore.getState().getTab(sessionId);
+    const liveStdinId = before?.sessionMeta.stdinId
+      && useSessionStore.getState().getTabForStdin(before.sessionMeta.stdinId) === sessionId
+      ? before.sessionMeta.stdinId : undefined;
+    const liveRunning = !!liveStdinId && before?.sessionStatus === 'running';
     clearMessages(sessionId);
     agentActions.clearAgents();
     setSessionStatus(sessionId, 'running');
-    // TK-329: explicitly clear stdinId when loading from disk — no live process exists yet.
-    // Only set the CLI UUID (for resume). Prevents inheriting a stale stdinId
-    // from a previous session that might still be alive in the backend.
-    setSessionMeta(sessionId, { sessionId, stdinId: undefined });
+    setSessionMeta(sessionId, { sessionId, stdinId: liveStdinId });
 
     try {
       const applied = await applyDiskSession(sessionId, sessionPath);
       if (!applied) {
         // 加载途中切到了别的会话：撤销上面为显示加载状态设置的“运行中”，否则会一直残留
         const tab = useChatStore.getState().getTab(sessionId);
-        if (tab?.sessionStatus === 'running' && !tab.sessionMeta.stdinId) {
+        if (tab?.sessionStatus === 'running' && !liveRunning) {
           setSessionStatus(sessionId, 'idle');
         }
         return;
       }
 
-      setSessionStatus(sessionId, 'completed');
+      setSessionStatus(sessionId, liveRunning ? 'running' : 'completed');
     } catch (err) {
       if (useSessionStore.getState().selectedSessionId !== sessionId) return;
       setSessionStatus(sessionId, 'error');

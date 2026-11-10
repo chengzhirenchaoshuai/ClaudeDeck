@@ -38,3 +38,20 @@ export function releaseStreamListener(stdinId: string | null | undefined): void 
   unlisten();
   delete window.__claudeUnlisteners![stdinId];
 }
+
+/**
+ * 把流消息交给 InputBar 提供的完整处理函数；InputBar 还没挂载时先排队，挂载后由它补处理。
+ * 用于在 InputBar 之外注册的监听（预热进程、刷新后重新接上的进程）。
+ */
+export function dispatchToStreamHandler(msg: StreamMessage): void {
+  const handler = window.__claudeStreamHandler;
+  if (!handler) {
+    (window.__claudeStreamQueue ??= []).push(msg);
+    return;
+  }
+  const queue = window.__claudeStreamQueue;
+  if (queue && queue.length > 0) {
+    for (const queued of queue.splice(0)) handler(queued);
+  }
+  handler(msg);
+}

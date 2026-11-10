@@ -62,3 +62,20 @@ export function loadClaudeUuid(tabId: string): string | null {
     return null;
   }
 }
+
+/** 刷新前缓存的 token 状态；没有时返回 null */
+export function loadTokenState(tabId: string): {
+  inputTokens?: number;
+  outputTokens?: number;
+  contextInputTokens?: number;
+  contextOutputTokens?: number;
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+} | null {
+  try {
+    const data = JSON.parse(sessionStorage.getItem(TOKEN_STATE_KEY) || '{}');
+    return data[tabId] || null;
+  } catch {
+    return null;
+  }
+}
