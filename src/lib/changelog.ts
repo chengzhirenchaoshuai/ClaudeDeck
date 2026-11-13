@@ -18,6 +18,65 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.8.0',
+    date: '2026-11-13',
+    highlights: {
+      zh: ['终止改为只中断当前回合，保留后台任务；补齐新模型与模型说明卡片'],
+      en: ['Stop now interrupts only the current turn and keeps background tasks; new models and a model info card'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '模型列表补上 Haiku 5.5 和 Fable 5',
+            '新增「新会话默认模型」「新会话默认思考档位」设置',
+            '模型说明卡片：上下文、输出上限、知识截止与价格',
+            '压缩时默认附上参数，摘要用中文并保留 CLAUDE.md 等长期要求',
+            '停止后台任务后按会话状态给出提示，可中断当前回合',
+          ],
+          en: [
+            'Haiku 5.5 and Fable 5 added to the model list',
+            'New settings for the default model and thinking level of new sessions',
+            'Model info card with context, output limit, knowledge cutoff and pricing',
+            'Compaction now passes default instructions so summaries stay in Chinese and keep long-term rules',
+            'Stopping a background task now explains the session state and can interrupt the current turn',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '终止只中断当前回合，保留 CLI 进程和后台任务，排队消息放回输入框',
+            '用户主动中断后不再显示成出错',
+            '工具卡片区分已中断、已拒绝、失败，不再一律显示对勾',
+            '修正过期的模型价格与上下文数据',
+          ],
+          en: [
+            'Stop interrupts only the current turn, keeping the CLI process and background tasks; queued messages return to the input',
+            'Interrupting yourself no longer looks like an error',
+            'Tool cards distinguish interrupted, denied and failed instead of always showing a check',
+            'Corrected outdated model pricing and context data',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '页面刷新后重新接上的会话卡在运行中、回合结束收不到结果',
+            '远程会话终止撤回后界面被磁盘上的旧分支盖回',
+          ],
+          en: [
+            'Sessions reconnected after a refresh got stuck running or missed the turn result',
+            'After stopping and taking back a remote message, the old branch on disk reappeared',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.7.0',
     date: '2026-11-07',
     highlights: {
