@@ -791,15 +791,17 @@ useSettingsStore.subscribe((state, prevState) => {
 });
 
 // --- 跟随 CLI 配置时，模型 / 思考档位的临时修改只对所在会话生效 ---
-// 切换到某个标签页时，恢复它启动 CLI 时用的选择；新会话（没有快照）回到“CLI 默认”。
+// 切换到某个标签页时，恢复它启动 CLI 时用的选择；新会话（没有快照）用设置里的默认值
+// （默认仍是「CLI 默认」，即沿用 CLI 自己的模型与思考档位）。
 useSessionStore.subscribe((state, prevState) => {
   if (state.selectedSessionId === prevState.selectedSessionId) return;
-  if (!useSettingsStore.getState().followCli) return;
+  const settings = useSettingsStore.getState();
+  if (!settings.followCli) return;
   const meta = state.selectedSessionId
     ? useChatStore.getState().getTab(state.selectedSessionId)?.sessionMeta
     : undefined;
   useSettingsStore.setState({
-    selectedModel: meta?.snapshotModel ?? CLI_DEFAULT,
-    thinkingLevel: meta?.snapshotThinking ?? CLI_DEFAULT,
+    selectedModel: meta?.snapshotModel ?? settings.defaultModel ?? CLI_DEFAULT,
+    thinkingLevel: meta?.snapshotThinking ?? settings.defaultThinkingLevel ?? CLI_DEFAULT,
   });
 });

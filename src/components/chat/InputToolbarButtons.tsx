@@ -1,22 +1,11 @@
 // 输入栏工具行上的小控件：思考等级选择器、计划面板开关。
 import { useState, useRef, useEffect } from 'react';
 import { useActiveTab } from '../../stores/chatStore';
-import { CLI_DEFAULT, useSettingsStore, type ThinkingLevel } from '../../stores/settingsStore';
+import { THINKING_LEVELS as THINK_LEVELS, useSettingsStore } from '../../stores/settingsStore';
 import { useT } from '../../lib/i18n';
 import { useProviderStore } from '../../stores/providerStore';
 import { PROVIDER_PRESETS } from '../../lib/provider-presets';
 import { usePlanPanelStore } from './PlanPanel';
-
-/** Thinking effort level configuration data */
-const THINK_LEVELS: { id: ThinkingLevel; labelKey: string }[] = [
-  { id: CLI_DEFAULT, labelKey: 'think.cliDefault' },
-  { id: 'off', labelKey: 'think.off' },
-  { id: 'low', labelKey: 'think.low' },
-  { id: 'medium', labelKey: 'think.medium' },
-  { id: 'high', labelKey: 'think.high' },
-  { id: 'xhigh', labelKey: 'think.xhigh' },
-  { id: 'max', labelKey: 'think.max' },
-];
 
 /** Thinking effort level selector dropdown for the toolbar */
 export function ThinkLevelSelector({ disabled = false }: { disabled?: boolean }) {

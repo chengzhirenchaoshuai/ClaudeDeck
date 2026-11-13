@@ -33,16 +33,22 @@ export interface ModelPrice {
 }
 
 /**
- * 官方模型标价（USD / 百万 token），来源：platform.claude.com/docs/en/about-claude/pricing，
- * 2026-09-21 核对。缓存写入价按输入价的倍数计算：5 分钟 1.25 倍、1 小时 2 倍（同一页面的说明）。
+ * 官方模型标价（USD / 百万 token），2026-11-13 与已安装 CLI（2.1.319）内置模型目录里的
+ * 定价档核对过。缓存写入价按输入价的倍数计算：5 分钟 1.25 倍、1 小时 2 倍（与目录一致）。
+ * 按从具体到宽泛的顺序匹配，第一条命中即生效，新增小版本要放在同系列宽泛规则之前。
+ * 注意：Haiku 5.5 官方对超过 100K 的长提示另有一档更高价（$0.50 / $2.50，缓存读 $0.05），
+ * 这里只按基础档计算，长提示会话的花费会被低估。
  * 第三方模型（如 DeepSeek）没有可靠的统一标价，不预填，由用户在用量面板里自行填写。
  */
 const BUILTIN_PRICES: { pattern: RegExp; price: ModelPrice }[] = [
   { pattern: /^claude-fable-5-1/, price: { input: 10, output: 50, cacheRead: 0.25, currency: 'USD' } },
   { pattern: /^claude-fable-5/, price: { input: 10, output: 50, cacheRead: 1, currency: 'USD' } },
+  { pattern: /^claude-opus-5-5/, price: { input: 4, output: 20, cacheRead: 0.2, currency: 'USD' } },
   { pattern: /^claude-opus-(5|4-[5-8])/, price: { input: 5, output: 25, cacheRead: 0.5, currency: 'USD' } },
+  { pattern: /^claude-sonnet-5-5/, price: { input: 2, output: 10, cacheRead: 0.1, currency: 'USD' } },
   { pattern: /^claude-sonnet-5/, price: { input: 2, output: 10, cacheRead: 0.2, currency: 'USD' } },
   { pattern: /^claude-sonnet-4-[56]/, price: { input: 3, output: 15, cacheRead: 0.3, currency: 'USD' } },
+  { pattern: /^claude-haiku-5-5/, price: { input: 0.1, output: 0.5, cacheRead: 0.01, currency: 'USD' } },
   { pattern: /^claude-haiku-4-5/, price: { input: 1, output: 5, cacheRead: 0.1, currency: 'USD' } },
 ];
 

@@ -5,6 +5,8 @@ import { useChatStore, generateMessageId } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useProviderStore } from '../../stores/providerStore';
 import { displayProviderModelName, normalizeProviderModelName } from '../../lib/deepseek-models';
+import { cliDefaultTooltip, mappedTooltip } from '../../lib/model-info';
+import { ModelInfoCard } from '../shared/ModelInfoCard';
 
 const FIXED_TIERS = new Set(['opus', 'sonnet', 'haiku']);
 
@@ -14,6 +16,8 @@ interface DisplayOption {
   short: string;
   mapped: boolean;
   isExtra: boolean;
+  /** 没有官方参数可查时（「CLI 默认」、服务商映射的模型），说明卡片显示这段文本 */
+  tip: string;
 }
 
 export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
@@ -24,7 +28,13 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
     if (!s.activeProviderId) return null;
     return s.providers.find((p) => p.id === s.activeProviderId) ?? null;
   });
+  // 说明文本里含价格与 CLI 上次上报的模型，这两项变了要重算
+  const customModelPrices = useSettingsStore((s) => s.customModelPrices);
+  const lastCliModel = useSettingsStore((s) => s.lastCliModel);
   const [open, setOpen] = useState(false);
+  /** 说明卡片要展示的选项：展开时是鼠标悬停的那项，收起时是悬停按钮的当前模型 */
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [buttonHovered, setButtonHovered] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -33,6 +43,7 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
+        setHoveredId(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -46,8 +57,10 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
       // 没有服务商映射时提供“CLI 默认”：不传 --model，用 CLI 自己设置的模型
       const cliDefault = t('model.cliDefault');
       return [
-        { id: CLI_DEFAULT, label: cliDefault, short: cliDefault, mapped: false, isExtra: false },
-        ...MODEL_OPTIONS.map((m) => ({ id: m.id, label: m.label, short: m.short, mapped: false, isExtra: false })),
+        { id: CLI_DEFAULT, label: cliDefault, short: cliDefault, mapped: false, isExtra: false, tip: cliDefaultTooltip(t) },
+        ...MODEL_OPTIONS.map((m) => ({
+          id: m.id, label: m.label, short: m.short, mapped: false, isExtra: false, tip: '',
+        })),
       ];
     }
 
@@ -62,9 +75,12 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
         const providerModel = normalizeProviderModelName(mapping.providerModel);
         const providerLabel = displayProviderModelName(providerModel);
         const label = providerLabel === m.short ? m.short : `${m.short} -> ${providerLabel}`;
-        return { id: m.id, label, short: providerLabel, mapped: true, isExtra: false };
+        return {
+          id: m.id, label, short: providerLabel, mapped: true, isExtra: false,
+          tip: mappedTooltip(providerLabel, t),
+        };
       }
-      return { id: m.id, label: m.label, short: m.short, mapped: false, isExtra: false };
+      return { id: m.id, label: m.label, short: m.short, mapped: false, isExtra: false, tip: '' };
     });
 
     // Extra models (non-tier mappings added by user)
@@ -76,11 +92,14 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
         const short = providerLabel.includes('/')
           ? providerLabel.split('/').pop()!
           : providerLabel;
-        return { id: m.tier, label: providerLabel, short, mapped: true, isExtra: true };
+        return {
+          id: m.tier, label: providerLabel, short, mapped: true, isExtra: true,
+          tip: mappedTooltip(providerLabel, t),
+        };
       });
 
     return [...official, ...extras];
-  }, [activeProvider, t]);
+  }, [activeProvider, t, customModelPrices, lastCliModel]);
 
   const fallbackOption = displayOptions.find((option) => option.mapped) || displayOptions[0];
 
@@ -97,6 +116,8 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
     <div ref={ref} className="relative flex-shrink-0">
       <button
         onClick={() => !disabled && setOpen(!open)}
+        onMouseEnter={() => setButtonHovered(true)}
+        onMouseLeave={() => setButtonHovered(false)}
         disabled={disabled}
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg
           text-xs text-text-muted hover:text-text-primary whitespace-nowrap
@@ -115,16 +136,35 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
         </svg>
       </button>
 
+      {!open && buttonHovered && !disabled && (
+        <div className="absolute bottom-full right-0 mb-1 w-60 z-50 pointer-events-none">
+          <ModelInfoCard modelId={current.id} fallbackText={current.tip} />
+        </div>
+      )}
+
       {open && (
-        <div className="absolute bottom-full right-0 mb-1 w-56
-          bg-bg-card border border-border-subtle rounded-xl shadow-lg
-          py-1 z-50 animate-in fade-in slide-in-from-bottom-1 duration-150">
+        <div
+          onMouseLeave={() => setHoveredId(null)}
+          className="absolute bottom-full right-0 mb-1 w-56
+            bg-bg-card border border-border-subtle rounded-xl shadow-lg
+            py-1 z-50 animate-in fade-in slide-in-from-bottom-1 duration-150"
+        >
+          {/* 悬停某一项时，参数卡片贴在列表左侧，不挡住列表本身 */}
+          {hoveredId && (
+            <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 w-60 pointer-events-none">
+              <ModelInfoCard
+                modelId={hoveredId}
+                fallbackText={displayOptions.find((o) => o.id === hoveredId)?.tip}
+              />
+            </div>
+          )}
           {displayOptions.map((option, index) => (
             <Fragment key={option.id}>
               {option.isExtra && index > 0 && !displayOptions[index - 1].isExtra && (
                 <div className="border-t border-border-subtle my-1" />
               )}
               <button
+                onMouseEnter={() => setHoveredId(option.id)}
                 onClick={() => {
                   if (option.id !== selectedModel) {
                     const oldShort = current.short;
@@ -144,6 +184,7 @@ export function ModelSelector({ disabled = false }: { disabled?: boolean }) {
                     }
                   }
                   setOpen(false);
+                  setHoveredId(null);
                 }}
                 className={`w-full text-left px-3 py-2 text-xs
                   transition-smooth flex items-center justify-between

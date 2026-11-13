@@ -16,6 +16,8 @@ export type ModelId =
   | 'claude-fable-5-1'
   | 'claude-opus-5-5'
   | 'claude-sonnet-5-5'
+  | 'claude-haiku-5-5'
+  | 'claude-fable-5'
   | 'claude-opus-5'
   | 'claude-sonnet-5'
   | 'claude-opus-4-8'
@@ -45,6 +47,17 @@ export const CLI_DEFAULT = 'cli-default';
 export type ThinkingLevel = typeof CLI_DEFAULT | 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ContextWindowMode = 'default' | 'large1m';
 
+/** 思考档位选项（输入栏选择器与设置页共用）；labelKey 是 i18n 词条键 */
+export const THINKING_LEVELS: { id: ThinkingLevel; labelKey: string }[] = [
+  { id: CLI_DEFAULT, labelKey: 'think.cliDefault' },
+  { id: 'off', labelKey: 'think.off' },
+  { id: 'low', labelKey: 'think.low' },
+  { id: 'medium', labelKey: 'think.medium' },
+  { id: 'high', labelKey: 'think.high' },
+  { id: 'xhigh', labelKey: 'think.xhigh' },
+  { id: 'max', labelKey: 'think.max' },
+];
+
 function defaultAutoCompactThreshold(mode: ContextWindowMode): number {
   return mode === 'large1m' ? 800_000 : 160_000;
 }
@@ -56,26 +69,51 @@ function clampAutoCompactThreshold(tokens: number): number {
 
 // --- Model options (display mapping) ---
 
-// 与已安装 CLI（2.1.291）内置的模型 ID 核对过；按新到旧排列
-export const MODEL_OPTIONS: { id: ModelId; label: string; short: string }[] = [
-  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', short: 'Fable 5.1' },
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', short: 'Opus 5.5' },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', short: 'Sonnet 5.5' },
-  { id: 'claude-opus-5', label: 'Claude Opus 5', short: 'Opus 5' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', short: 'Sonnet 5' },
-  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', short: 'Opus 4.8' },
-  { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', short: 'Opus 4.7' },
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', short: 'Opus 4.6' },
-  { id: 'claude-opus-4-6-1m', label: 'Claude Opus 4.6 (1M)', short: 'Opus 4.6 1M' },
-  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', short: 'Sonnet 4.6' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', short: 'Haiku 4.5' },
+/** 模型选项。maxOutput 是 CLI 模型目录里的单次输出上限（default 档），cutoff 是知识截止月份。
+ *  上下文窗口不单独存，由 getContextWindowForModel 推导；价格见 lib/usage.ts 的内置价格表。 */
+export interface ModelOption {
+  id: ModelId;
+  label: string;
+  short: string;
+  /** 单次输出上限（token） */
+  maxOutput: number;
+  /** 知识截止，YYYY-MM */
+  cutoff: string;
+}
+
+// 与已安装 CLI（2.1.319）内置的模型目录核对过；按新到旧排列。
+// 不收录 Mythos 5 / 5.1：那是 Project Glasswing 限定，普通账号选了会报错。
+export const MODEL_OPTIONS: ModelOption[] = [
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', short: 'Fable 5.1', maxOutput: 64_000, cutoff: '2026-06' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', short: 'Opus 5.5', maxOutput: 128_000, cutoff: '2026-06' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', short: 'Sonnet 5.5', maxOutput: 128_000, cutoff: '2026-06' },
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', short: 'Haiku 5.5', maxOutput: 128_000, cutoff: '2026-06' },
+  { id: 'claude-fable-5', label: 'Claude Fable 5', short: 'Fable 5', maxOutput: 64_000, cutoff: '2026-01' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', short: 'Opus 5', maxOutput: 64_000, cutoff: '2026-05' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', short: 'Sonnet 5', maxOutput: 64_000, cutoff: '2026-01' },
+  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', short: 'Opus 4.8', maxOutput: 64_000, cutoff: '2026-01' },
+  { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', short: 'Opus 4.7', maxOutput: 64_000, cutoff: '2026-01' },
+  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', short: 'Opus 4.6', maxOutput: 64_000, cutoff: '2025-05' },
+  { id: 'claude-opus-4-6-1m', label: 'Claude Opus 4.6 (1M)', short: 'Opus 4.6 1M', maxOutput: 64_000, cutoff: '2025-05' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', short: 'Sonnet 4.6', maxOutput: 32_000, cutoff: '2025-08' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', short: 'Haiku 4.5', maxOutput: 32_000, cutoff: '2025-02' },
 ];
+
+/** 各系列的当前代（CLI 模型目录里的 latest_per_family），在选择器里标出来 */
+export const LATEST_MODELS = new Set<string>([
+  'claude-fable-5-1',
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
+  'claude-haiku-5-5',
+]);
 
 /** 官方模型所属档位；第三方供应商按档位（opus / sonnet / haiku）映射到自己的模型 */
 export const MODEL_TIER_MAP: Record<string, 'opus' | 'sonnet' | 'haiku'> = {
   'claude-fable-5-1': 'opus',
   'claude-opus-5-5': 'opus',
   'claude-sonnet-5-5': 'sonnet',
+  'claude-haiku-5-5': 'haiku',
+  'claude-fable-5': 'opus',
   'claude-opus-5': 'opus',
   'claude-sonnet-5': 'sonnet',
   'claude-opus-4-8': 'opus',
@@ -168,6 +206,11 @@ interface SettingsState {
   promptSuggestions: boolean;
   /** 跟随 CLI 配置（默认开启）：不注入 MCP、思考、输出上限、代理等参数，行为与终端里的 claude 一致 */
   followCli: boolean;
+  /** 新会话的默认模型（默认 CLI_DEFAULT，即沿用 CLI 自己的模型）。
+   *  只在「跟随 CLI 配置」开启时起作用：那种模式下模型按会话记忆，没有快照的新会话用这里的值兜底。 */
+  defaultModel: string;
+  /** 新会话的默认思考档位（默认 CLI_DEFAULT），生效条件同 defaultModel */
+  defaultThinkingLevel: ThinkingLevel;
   /** 「CLI 默认」模式下 CLI 最近一次上报的实际模型；新会话在 CLI 上报前用它估算上下文窗口 */
   lastCliModel: string;
   /** Whether Ctrl+Click on a file opens it with the system default app */
@@ -231,6 +274,10 @@ interface SettingsState {
   toggleEnableMcp: () => void;
   togglePromptSuggestions: () => void;
   toggleFollowCli: () => void;
+  /** 设置新会话的默认模型；当前选择还停在原默认值时一并切过去 */
+  setDefaultModel: (model: string) => void;
+  /** 设置新会话的默认思考档位；当前选择还停在原默认值时一并切过去 */
+  setDefaultThinkingLevel: (level: ThinkingLevel) => void;
   setLastCliModel: (model: string) => void;
   /** 打开/关闭用量面板；传入 tab 时同时切到该 Tab（仅在从关闭状态打开时生效） */
   toggleUsage: (tab?: 'usage' | 'activity') => void;
@@ -322,6 +369,8 @@ export const useSettingsStore = create<SettingsState>()(
       enableMcp: false,
       promptSuggestions: true,
       followCli: true,
+      defaultModel: CLI_DEFAULT,
+      defaultThinkingLevel: CLI_DEFAULT as ThinkingLevel,
       lastCliModel: '',
       ctrlClickOpenExternally: false,
       showImageThumbnails: false,
@@ -453,6 +502,20 @@ export const useSettingsStore = create<SettingsState>()(
       toggleFollowCli: () =>
         set((state) => ({ followCli: !state.followCli })),
 
+      setDefaultModel: (model) =>
+        set((state) => ({
+          defaultModel: model,
+          // 当前选择还停在原来的默认值时一并切过去（比如还在欢迎屏、尚未开始会话），
+          // 用户已手动给当前会话选过别的模型则不动，免得下一条消息莫名重启进程
+          selectedModel: state.selectedModel === state.defaultModel ? model : state.selectedModel,
+        })),
+
+      setDefaultThinkingLevel: (level) =>
+        set((state) => ({
+          defaultThinkingLevel: level,
+          thinkingLevel: state.thinkingLevel === state.defaultThinkingLevel ? level : state.thinkingLevel,
+        })),
+
       toggleUsage: (tab) => set((state) => ({
         usageOpen: !state.usageOpen,
         usageModalTab: !state.usageOpen && tab ? tab : state.usageModalTab,
@@ -482,7 +545,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 26,
+      version: 27,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -611,6 +674,11 @@ export const useSettingsStore = create<SettingsState>()(
           // 新增：压缩默认参数，null 表示用内置默认文案
           persisted.compactInstructions = null;
         }
+        if (version < 27) {
+          // 新增：新会话的默认模型 / 默认思考档位。沿用升级前的行为，默认仍是「CLI 默认」
+          persisted.defaultModel = CLI_DEFAULT;
+          persisted.defaultThinkingLevel = CLI_DEFAULT;
+        }
         return persisted;
       },
       partialize: (state) => ({
@@ -642,6 +710,8 @@ export const useSettingsStore = create<SettingsState>()(
         enableMcp: state.enableMcp,
         promptSuggestions: state.promptSuggestions,
         followCli: state.followCli,
+        defaultModel: state.defaultModel,
+        defaultThinkingLevel: state.defaultThinkingLevel,
         lastCliModel: state.lastCliModel,
         customModelPrices: state.customModelPrices,
         ctrlClickOpenExternally: state.ctrlClickOpenExternally,
@@ -681,8 +751,9 @@ export function getEffectiveThinking(meta: { snapshotThinking?: ThinkingLevel } 
 export function isLargeContextMode(model?: string, mode?: ContextWindowMode): boolean {
   if (mode === 'large1m') return true;
   const lower = (model || '').toLowerCase();
-  // 官方 API 下默认即 1M 上下文、无需 [1m] 后缀的模型：Fable 5.x、Sonnet 5、Opus 4.7 及之后
-  if (/^claude-(fable-5|sonnet-5|opus-5|opus-4-[78])/.test(lower)) return true;
+  // 官方 API 下默认即 1M 上下文、无需 [1m] 后缀的模型：
+  // Fable 5.x、Sonnet 5.x、Opus 5.x、Opus 4.7 / 4.8、Haiku 5.5（CLI 2.1.319 模型目录里 native_1m）
+  if (/^claude-(fable-5|sonnet-5|opus-5|opus-4-[78]|haiku-5-5)/.test(lower)) return true;
   // DeepSeek V4 Pro / Flash 官方文档标注 1,000,000 token 上下文
   if (lower.replace(/[\s_.()[\]-]/g, '').includes('deepseekv4')) return true;
   return lower.includes('1m') || lower.includes('[1m]');

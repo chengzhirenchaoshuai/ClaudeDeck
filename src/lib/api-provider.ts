@@ -93,8 +93,9 @@ export function supportsDeepSeekThinking(model: string): boolean {
 
 export function resolveThinkingLevelForProvider(selectedModel: string, requestedLevel: string): string {
   if (requestedLevel === 'off') return 'off';
-  // xhigh 仅 Opus 5 / Sonnet 5 / Fable 等较新模型支持；Opus 4.6、Sonnet 4.6、Haiku 不支持，降为 high
-  if (requestedLevel === 'xhigh' && /opus-4-6|sonnet-4-6|haiku/.test(selectedModel)) return 'high';
+  // xhigh 仅 Opus 4.7 及之后、Sonnet 5.x、Fable 5.x、Haiku 5.5 支持（CLI 2.1.319 模型目录里的
+  // xhigh_effort 能力）；Opus 4.6、Sonnet 4.6、Haiku 4.5 不支持，降为 high
+  if (requestedLevel === 'xhigh' && /opus-4-6|sonnet-4-6|haiku-4-5/.test(selectedModel)) return 'high';
   const provider = activeLocalProvider();
   if (!provider) return requestedLevel;
   const support = PROVIDER_PRESETS.find((preset) => preset.id === provider.preset)?.thinkingSupport;

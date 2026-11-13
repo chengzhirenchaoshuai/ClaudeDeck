@@ -3,20 +3,20 @@ import {
   useSettingsStore,
   getContextWindowForModel,
   getAutoCompactThreshold,
+  MODEL_OPTIONS,
   MODEL_TIER_MAP as TIER_MAP,
+  THINKING_LEVELS,
+  type ThinkingLevel,
 } from '../../stores/settingsStore';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useProviderStore } from '../../stores/providerStore';
 import { useT } from '../../lib/i18n';
 import { displayProviderModelName } from '../../lib/deepseek-models';
+import { cliDefaultTooltip, formatTokens } from '../../lib/model-info';
+import { ModelInfoCard } from '../shared/ModelInfoCard';
 
 /** 自动压缩阈值的预设（K tokens）；不在其中的值归为“自定义” */
 const COMPACT_PRESETS = [160, 400, 800];
-
-/** 200000 → 200K，1000000 → 1M */
-function formatTokens(n: number): string {
-  return n >= 1_000_000 && n % 100_000 === 0 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}K`;
-}
 
 /** 分组：小标题 + 带边框的设置行列表 */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -127,6 +127,10 @@ export function GeneralTab() {
   const followCli = useSettingsStore((s) => s.followCli);
   const lastCliModel = useSettingsStore((s) => s.lastCliModel);
   const toggleFollowCli = useSettingsStore((s) => s.toggleFollowCli);
+  const defaultModel = useSettingsStore((s) => s.defaultModel);
+  const setDefaultModel = useSettingsStore((s) => s.setDefaultModel);
+  const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel);
+  const setDefaultThinkingLevel = useSettingsStore((s) => s.setDefaultThinkingLevel);
 
   // 当前实际使用的模型（经服务商映射），用于显示窗口大小与阈值
   const selectedTier = TIER_MAP[selectedModel];
@@ -172,6 +176,47 @@ export function GeneralTab() {
         <Row title={t('settings.followCliToggle')} hint={t('settings.followCliShort')} tip={t('settings.followCliHint')}>
           <Toggle on={followCli} onClick={toggleFollowCli} />
         </Row>
+        {followCli && (
+          <Row
+            title={t('settings.defaultModel')}
+            hint={t('settings.defaultModelHint')}
+            below={(
+              // 选中模型的参数直接摊开显示，不用悬停去找
+              <div className="mt-2 max-w-[300px]">
+                <ModelInfoCard
+                  modelId={defaultModel}
+                  fallbackText={defaultModel === CLI_DEFAULT ? cliDefaultTooltip(t) : undefined}
+                />
+              </div>
+            )}
+          >
+            <select
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              className="h-8 px-2 rounded-lg bg-bg-secondary border border-border-subtle
+                text-[13px] text-text-primary outline-none focus:border-accent/60"
+            >
+              <option value={CLI_DEFAULT}>{t('model.cliDefault')}</option>
+              {MODEL_OPTIONS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </Row>
+        )}
+        {followCli && (
+          <Row title={t('settings.defaultThinking')} hint={t('settings.defaultThinkingHint')}>
+            <select
+              value={defaultThinkingLevel}
+              onChange={(e) => setDefaultThinkingLevel(e.target.value as ThinkingLevel)}
+              className="h-8 px-2 rounded-lg bg-bg-secondary border border-border-subtle
+                text-[13px] text-text-primary outline-none focus:border-accent/60"
+            >
+              {THINKING_LEVELS.map((lv) => (
+                <option key={lv.id} value={lv.id}>
+                  {lv.id === CLI_DEFAULT ? t('model.cliDefault') : t(lv.labelKey)}
+                </option>
+              ))}
+            </select>
+          </Row>
+        )}
         <Row title={t('settings.large1m')} hint={t('settings.large1mHint')}>
           <Toggle
             on={contextWindowMode === 'large1m'}
