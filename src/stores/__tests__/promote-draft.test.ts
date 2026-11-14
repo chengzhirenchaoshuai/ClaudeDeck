@@ -8,7 +8,7 @@ vi.stubGlobal('sessionStorage', {
   removeItem: (k: string) => { memory.delete(k); },
 });
 
-const { useSessionStore, keepPendingDrafts } = await import('../sessionStore');
+const { useSessionStore, keepPendingDrafts, ACTIVE_GAP_MS } = await import('../sessionStore');
 const { bridge } = await import('../../lib/tauri-bridge');
 import type { SessionListItem } from '../../lib/tauri-bridge';
 
@@ -113,17 +113,22 @@ describe('touchSession', () => {
     expect(useSessionStore.getState().sessions[0].lastPromptAt).toBe(5_000);
   });
 
-  it('间隔不到 30 分钟时这一轮开始的时间不变，超过后从新消息开始新一轮', () => {
+  it('间隔不到一轮间隔阈值时这一轮开始的时间不变，达到后从新消息开始新一轮', () => {
     const MIN = 60_000;
+    // 跟着 ACTIVE_GAP_MS 算，调整阈值时这个用例不用改
     const s = { ...item(REAL, 'x.jsonl'), lastPromptAt: 10 * MIN, activeSince: 5 * MIN };
     useSessionStore.setState({ sessions: [s], remoteSessions: [] });
     const current = () => useSessionStore.getState().sessions[0];
 
-    useSessionStore.getState().touchSession(REAL, 39 * MIN);
-    expect([current().lastPromptAt, current().activeSince]).toEqual([39 * MIN, 5 * MIN]);
+    // 距上一条差一分钟到阈值：还算同一轮
+    const sameRound = 10 * MIN + ACTIVE_GAP_MS - MIN;
+    useSessionStore.getState().touchSession(REAL, sameRound);
+    expect([current().lastPromptAt, current().activeSince]).toEqual([sameRound, 5 * MIN]);
 
-    useSessionStore.getState().touchSession(REAL, 69 * MIN);
-    expect([current().lastPromptAt, current().activeSince]).toEqual([69 * MIN, 69 * MIN]);
+    // 距上一条正好达到阈值：开始新一轮
+    const newRound = sameRound + ACTIVE_GAP_MS;
+    useSessionStore.getState().touchSession(REAL, newRound);
+    expect([current().lastPromptAt, current().activeSince]).toEqual([newRound, newRound]);
   });
 
   it('还没发过消息的会话（新建）从第一条消息开始一轮', () => {

@@ -11,7 +11,7 @@ export function hostOfPath(p: string): string | undefined {
 // Persist custom session names in localStorage as fast cache,
 // and sync to disk via Tauri backend for durability.
 /** 两次发消息间隔达到这个时长（毫秒）算开始新一轮使用，与后端 ACTIVE_GAP_MS 一致 */
-export const ACTIVE_GAP_MS = 30 * 60 * 1000;
+export const ACTIVE_GAP_MS = 60 * 60 * 1000;
 
 const CUSTOM_PREVIEWS_KEY = 'tokenicode_custom_previews';
 const LAST_SESSION_KEY = 'tokenicode_last_session';

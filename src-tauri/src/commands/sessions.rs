@@ -355,8 +355,9 @@ fn prompt_time_of_line(line: &[u8]) -> Option<u64> {
     parse_iso_millis(record["timestamp"].as_str()?)
 }
 
-/// 两次发消息间隔达到这个时长（毫秒），算开始新一轮使用
-pub(crate) const ACTIVE_GAP_MS: u64 = 30 * 60 * 1000;
+/// 两次发消息间隔达到这个时长（毫秒），算开始新一轮使用。
+/// 改这里要同步改前端 sessionStore 的 ACTIVE_GAP_MS 和 remote.rs 里远端脚本的毫秒数。
+pub(crate) const ACTIVE_GAP_MS: u64 = 60 * 60 * 1000;
 
 /// 会话里用户亲自发出的消息的时间（Unix 毫秒），用于会话列表排序
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

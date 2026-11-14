@@ -306,9 +306,9 @@ if (Test-Path -LiteralPath $proj) {
         if ($line -cmatch '"(content|text)":"<local-command-std') { continue }
         if ($line -cnotmatch '"timestamp":"([^"]+)"') { continue }
         try { $t = [DateTimeOffset]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds() } catch { continue }
-        # 继续往前找这一轮使用开始的时间：遇到间隔达到 30 分钟（与本机 ACTIVE_GAP_MS 一致）的上一条为止
+        # 继续往前找这一轮使用开始的时间：遇到间隔达到 1 小时（与本机 ACTIVE_GAP_MS 一致）的上一条为止
         if ($lastPrompt -eq 0) { $lastPrompt = $t; $activeSince = $t }
-        elseif ($activeSince - $t -lt 1800000) { $activeSince = $t }
+        elseif ($activeSince - $t -lt 3600000) { $activeSince = $t }
         else { break }
       }
       $out += [pscustomobject]@{ id = $f.BaseName; path = $f.FullName; projectDir = $d.Name; modifiedAt = $ms; lastPromptAt = $lastPrompt; activeSince = $activeSince; cwd = $cwd; preview = $prev }
