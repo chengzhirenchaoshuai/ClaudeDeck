@@ -18,6 +18,44 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.8.1',
+    date: '2026-11-16',
+    highlights: {
+      zh: ['修复毛玻璃模糊没生效、远程改名互相覆盖'],
+      en: ['Fixed the glass blur having no effect and remote renames overwriting each other'],
+    },
+    categories: [
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '会话列表换位置的间隔阈值由 30 分钟放宽到 1 小时',
+            '毛玻璃只做最外层一层，默认不透明度改为 65%',
+          ],
+          en: [
+            'Sessions now move up only after a one-hour gap instead of 30 minutes',
+            'Glass blur applies to the outermost layer only, with 65% opacity by default',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: [
+            '自定义背景的毛玻璃模糊在正式版里完全没生效',
+            '会话改名写回远程主机时互相覆盖，推不上去的现在能补推',
+            '别的窗口或客户端改的会话名要重启才看得到',
+          ],
+          en: [
+            'The glass blur on custom backgrounds had no effect in release builds',
+            'Renaming sessions on a remote host overwrote each other; failed pushes are now retried',
+            'Renames from another window or client needed a restart to appear',
+          ],
+        },
+      },
+    ],
+  },
+  {
     version: '1.8.0',
     date: '2026-11-13',
     highlights: {
