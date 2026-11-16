@@ -118,6 +118,8 @@ export default {
   'rewind.codeRestoreFailed': '代码恢复失败，请手动检查文件状态。',
   'rewind.summaryTitle': '第 {from}–{to} 轮摘要',
   'rewind.disabled': '运行中无法回退',
+  'rewind.inProgress': '回退中…',
+  'rewind.inProgressHint': '正在回退，请稍候…',
   'rewind.noCheckpoint': '历史对话无法恢复代码',
 
   // Markdown rich text

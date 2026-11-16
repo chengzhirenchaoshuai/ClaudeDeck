@@ -9,6 +9,7 @@ import { releaseStreamListener } from '../../lib/stream-listeners';
 import { findWithdrawableTurn, type Turn } from '../../lib/turns';
 import { interruptTurn } from '../../lib/interrupt-turn';
 import { t } from '../../lib/i18n';
+import { isRewinding } from '../../lib/rewind-lock';
 import type { RewindAction } from '../../hooks/useRewind';
 
 /** 正在启动 CLI 的标签页：启动返回前 stdinId 还没写入 sessionMeta，终止时靠这里标记取消 */
@@ -23,6 +24,8 @@ interface StopDeps {
 
 export async function stopCurrentSession({ spawning, executeRewind, restoreSendExtras }: StopDeps): Promise<void> {
   const tabId = useSessionStore.getState().selectedSessionId;
+  // 回退进行中：回退本身会结束进程并重置状态，这时再终止只会和它抢着改状态
+  if (isRewinding(tabId)) return;
   const tabState = getActiveTabState();
   const sid = tabState.sessionMeta.stdinId;
   const wasRunning = tabState.sessionStatus === 'running';

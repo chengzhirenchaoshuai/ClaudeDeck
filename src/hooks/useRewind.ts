@@ -11,7 +11,7 @@
  *   5. Cancel
  */
 import { useMemo, useCallback } from 'react';
-import { useChatStore, useActiveTab, getActiveTabState, generateMessageId } from '../stores/chatStore';
+import { useChatStore, useActiveTab, generateMessageId, type TabSession } from '../stores/chatStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { bridge } from '../lib/tauri-bridge';
@@ -20,6 +20,7 @@ import { parseTurns, type Turn } from '../lib/turns';
 import { resolveResumeAt, resolveResumeAtForLatest, recordUuidOf } from '../lib/rewind-point';
 import { t } from '../lib/i18n';
 import { showToast } from '../components/shared/Toast';
+import { beginRewind, endRewind, useIsRewinding } from '../lib/rewind-lock';
 
 export type RewindAction = 'restore_all' | 'restore_conversation' | 'restore_code' | 'summarize';
 
@@ -27,10 +28,9 @@ export type RewindAction = 'restore_all' | 'restore_conversation' | 'restore_cod
  * Restore files to a CLI checkpoint via bridge.rewindFiles().
  * Returns true if files were restored, false if no checkpoint available.
  */
-async function restoreFilesViaCheckpoint(turn: Turn): Promise<boolean> {
+async function restoreFilesViaCheckpoint(turn: Turn, tabState: TabSession): Promise<boolean> {
   if (!turn.checkpointUuid) return false;
 
-  const tabState = getActiveTabState();
   const stdinId = tabState.sessionMeta.stdinId;
   const sessionId = tabState.sessionMeta.sessionId;
   const cwd = useSettingsStore.getState().workingDirectory;
@@ -50,18 +50,18 @@ async function restoreFilesViaCheckpoint(turn: Turn): Promise<boolean> {
 export function useRewind() {
   const messages = useActiveTab((t) => t.messages);
   const sessionStatus = useActiveTab((t) => t.sessionStatus);
+  const rewinding = useIsRewinding(useSessionStore((s) => s.selectedSessionId));
 
   const turns = useMemo(() => parseTurns(messages), [messages]);
 
   /** Button visible as long as there are user messages */
   const showRewind = turns.length >= 1;
-  /** Button enabled when there is at least 1 turn and not running */
-  const canRewind = turns.length >= 1 && sessionStatus !== 'running';
+  /** Button enabled when there is at least 1 turn, not running and not already rewinding */
+  const canRewind = turns.length >= 1 && sessionStatus !== 'running' && !rewinding;
 
-  /** Kill the current CLI process and clean up listeners */
-  const killProcess = useCallback(async () => {
-    const state = getActiveTabState();
-    const stdinId = state.sessionMeta.stdinId;
+  /** 结束该标签页的 CLI 进程并清理监听（按 tabId 取，回退途中切换标签页也不会结束错进程） */
+  const killProcess = useCallback(async (tid: string) => {
+    const stdinId = useChatStore.getState().getTab(tid)?.sessionMeta.stdinId;
     if (stdinId) {
       await bridge.killSession(stdinId).catch(() => {});
       releaseStreamListener(stdinId);
@@ -78,13 +78,11 @@ export function useRewind() {
    *   resumeAt 有值时，下一次启动会续接旧会话并只保留到该消息为止的历史（分叉出新会话），
    *   为 null 表示回退到第一轮，直接开启全新会话。
    */
-  const resetSession = useCallback((opts: {
+  const resetSession = useCallback((tid: string, opts: {
     keepSession?: boolean;
     resumeAt?: string | null;
     pendingSummary?: string;
   } = {}) => {
-    const tid = useSessionStore.getState().selectedSessionId;
-    if (!tid) return;
     const previousSessionId = useChatStore.getState().getTab(tid)?.sessionMeta.sessionId;
     useChatStore.getState().setSessionStatus(tid, 'idle');
     if (opts.keepSession) {
@@ -102,30 +100,20 @@ export function useRewind() {
   }, []);
 
   /** Save rewound state to tab cache */
-  const saveToTab = useCallback(() => {
-    const tabId = useSessionStore.getState().selectedSessionId;
-    if (tabId) {
-      useChatStore.getState().ensureTab(tabId);
-    }
+  const saveToTab = useCallback((tid: string) => {
+    useChatStore.getState().ensureTab(tid);
   }, []);
 
-  /**
-   * Execute rewind with a specific action.
-   * All actions restore the user's original input text to the input box.
-   * overrideText：编辑已发送消息时，用修改后的文字替换原文回填到输入框
-   * （其余回退到这条消息之前的逻辑完全一致）。
-   * silent：不提示回退成功（终止时撤回刚发出的消息）。
-   * 返回对话是否已回退到位；false 表示中止，对话保持原样。
-   */
-  const executeRewind = useCallback(async (
+  /** 回退的实际步骤。tid 在开始时取定，之后全程只操作这个标签页 */
+  const runRewind = useCallback(async (
+    tid: string,
     turn: Turn,
-    action: RewindAction = 'restore_conversation',
-    overrideText?: string,
-    silent = false,
+    action: RewindAction,
+    overrideText: string | undefined,
+    silent: boolean,
   ): Promise<boolean> => {
-    const tid = useSessionStore.getState().selectedSessionId;
-    if (!tid) return false;
-    const state = getActiveTabState();
+    const state = useChatStore.getState().getTab(tid);
+    if (!state) return false;
 
     // Guard: validate turn index
     if (turn.startMsgIdx < 0 || turn.startMsgIdx > state.messages.length) {
@@ -166,13 +154,13 @@ export function useRewind() {
     let fileRestoreOk = false;
     if (needsFileRestore && turn.checkpointUuid) {
       try {
-        fileRestoreOk = await restoreFilesViaCheckpoint(turn);
+        fileRestoreOk = await restoreFilesViaCheckpoint(turn, state);
       } catch { /* handled below */ }
     }
 
     // Kill CLI process after file restore (or immediately for non-file actions)
     try {
-      await killProcess();
+      await killProcess(tid);
     } catch (err) {
       console.warn('[useRewind] Failed to kill process:', err);
     }
@@ -184,7 +172,7 @@ export function useRewind() {
         console.error('[useRewind] cannot locate rewind point after kill:', err);
         showToast(t('rewind.locateFailed'), 'error');
         // 进程已结束、监听已释放：对话保持原样，只把标签页恢复成可继续输入的状态
-        resetSession({ keepSession: true });
+        resetSession(tid, { keepSession: true });
         return false;
       }
     }
@@ -196,7 +184,7 @@ export function useRewind() {
       switch (action) {
         case 'restore_all': {
           useChatStore.getState().rewindToTurn(tid, turn.startMsgIdx);
-          resetSession({ resumeAt });
+          resetSession(tid, { resumeAt });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
           const successMsg = fileRestoreOk
@@ -209,7 +197,7 @@ export function useRewind() {
         case 'restore_conversation': {
           // Only restore conversation (keep code as-is)
           useChatStore.getState().rewindToTurn(tid, turn.startMsgIdx);
-          resetSession({ resumeAt });
+          resetSession(tid, { resumeAt });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
           if (!silent) showToast(t('rewind.success').replace('{n}', String(turn.index)), 'success');
@@ -218,7 +206,7 @@ export function useRewind() {
 
         case 'restore_code': {
           // Don't truncate messages — keep full conversation and the CLI session
-          resetSession({ keepSession: true });
+          resetSession(tid, { keepSession: true });
           useChatStore.getState().setInputDraft(tid, originalUserText);
 
           const codeMsg = fileRestoreOk
@@ -248,14 +236,14 @@ export function useRewind() {
           // Truncate to selected point
           useChatStore.getState().rewindToTurn(tid, turn.startMsgIdx);
 
-          const totalTurns = turns.length;
+          const totalTurns = parseTurns(state.messages).length;
           const summaryHeader = t('rewind.summaryTitle')
             .replace('{from}', String(turn.index))
             .replace('{to}', String(totalTurns));
           const summaryContent = `**${summaryHeader}**\n\n${summaryParts.join('\n\n')}`;
           // 模型的上下文也回到该轮之前，摘要作为下一条消息的前缀交给模型；
           // 否则界面上有摘要，模型却完全不知道被移除的内容
-          resetSession({ resumeAt, pendingSummary: summaryContent });
+          resetSession(tid, { resumeAt, pendingSummary: summaryContent });
 
           // 界面上以系统消息显示摘要
 
@@ -274,15 +262,40 @@ export function useRewind() {
     } catch (err) {
       console.error('[useRewind] executeRewind failed:', err);
       // Ensure we're in a recoverable state even if rewind failed
-      resetSession({ keepSession: true });
-      saveToTab();
+      resetSession(tid, { keepSession: true });
+      saveToTab(tid);
       return false;
     }
 
     // Save to cache
-    saveToTab();
+    saveToTab(tid);
     return true;
-  }, [killProcess, resetSession, saveToTab, turns.length]);
+  }, [killProcess, resetSession, saveToTab]);
+
+  /**
+   * Execute rewind with a specific action.
+   * All actions restore the user's original input text to the input box.
+   * overrideText：编辑已发送消息时，用修改后的文字替换原文回填到输入框
+   * （其余回退到这条消息之前的逻辑完全一致）。
+   * silent：不提示回退成功（终止时撤回刚发出的消息）。
+   * 返回对话是否已回退到位；false 表示中止，对话保持原样。
+   * 回退期间该标签页加锁（见 rewind-lock.ts）：重复触发直接返回 false，
+   * 发送、终止、编辑消息等入口也会据此拦住。
+   */
+  const executeRewind = useCallback(async (
+    turn: Turn,
+    action: RewindAction = 'restore_conversation',
+    overrideText?: string,
+    silent = false,
+  ): Promise<boolean> => {
+    const tid = useSessionStore.getState().selectedSessionId;
+    if (!tid || !beginRewind(tid)) return false;
+    try {
+      return await runRewind(tid, turn, action, overrideText, silent);
+    } finally {
+      endRewind(tid);
+    }
+  }, [runRewind]);
 
   return { turns, showRewind, canRewind, executeRewind };
 }

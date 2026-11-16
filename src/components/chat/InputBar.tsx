@@ -27,6 +27,7 @@ import { stopCurrentSession, type SpawningSessions } from './stop-session';
 import { handleStderrLine as processStderrLine } from './stderr-handler';
 import { useAttachmentSync, useInputBarEvents, useRestoreSendExtras } from './useInputBarEvents';
 import { prepareSubmission, showUserTurn, launchTurn } from './submit-message';
+import { isRewinding, useIsRewinding } from '../../lib/rewind-lock';
 
 /* PlanApprovalBar removed — PlanReviewCard (triggered by ExitPlanMode detection)
    is the proper plan approval UI. The fallback bar was too broad: it appeared on
@@ -127,6 +128,8 @@ export function InputBar() {
   }, [workingDirectory]);
 
   const isRunning = sessionStatus === 'running';
+  // 回退进行中（回退面板、编辑消息、终止时撤回）：发送、终止、输入全部暂停，直到回退完成
+  const rewinding = useIsRewinding(selectedSessionId);
   // 提示建议：输入框为空且空闲时，用占位文字显示 CLI 预测的下一句话，按 Tab 填入
   const promptSuggestion = useActiveTab((t) => t.promptSuggestion);
   const showSuggestion = !!promptSuggestion && !input && !isRunning && activePrefixes.length === 0;
@@ -189,6 +192,8 @@ export function InputBar() {
       useSessionStore.getState().addDraftSession(tabId, workingDirectory);
     }
     useChatStore.getState().ensureTab(tabId);
+    // 回退进行中不发送：回退结束时会截断对话、重置会话，新消息会被一起截掉或发给将被结束的进程
+    if (isRewinding(tabId)) return;
 
     // 直接从 store 读输入（不用闭包里的值）：handlePlanApprove 这类先 setInput 再 rAF 调用的场景也能读到最新内容
     const rawInput = getActiveTabState().inputDraft || textareaRef.current?.getText() || '';
@@ -459,7 +464,10 @@ export function InputBar() {
               }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={showSuggestion
+              editable={!rewinding}
+              placeholder={rewinding
+                ? t('rewind.inProgressHint')
+                : showSuggestion
                 ? promptSuggestion
                 : activePrefixes.length > 0
                 ? t('input.prefixPlaceholder')
@@ -565,8 +573,20 @@ export function InputBar() {
           {/* Model selector */}
           <ModelSelector disabled={isRunning} />
 
+          {/* 回退进行中：占住终止按钮的位置，显示转圈和“回退中” */}
+          {rewinding && (
+            <span
+              className="flex-shrink-0 h-7 px-2.5 rounded-[10px] inline-flex items-center gap-1.5
+                bg-accent/10 text-accent text-[11px] whitespace-nowrap select-none animate-fade-in"
+              title={t('rewind.inProgressHint')}
+              role="status"
+            >
+              <span className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+              {t('rewind.inProgress')}
+            </span>
+          )}
           {/* Stop button — visible only while running */}
-          {isRunning && (
+          {isRunning && !rewinding && (
             <button
               onClick={() => stopCurrentSession({ spawning: spawningRef.current, executeRewind, restoreSendExtras })}
               className="flex-shrink-0 w-7 h-7 rounded-[10px]
@@ -585,7 +605,7 @@ export function InputBar() {
               of the textarea (e.g. placing the cursor) never accidentally trigger it. */}
           <button
             onClick={handleSubmit}
-            disabled={isAwaiting || (!input.trim() && activePrefixes.length === 0)}
+            disabled={rewinding || isAwaiting || (!input.trim() && activePrefixes.length === 0)}
             className={`flex-shrink-0 w-7 h-7 rounded-[10px]
               flex items-center justify-center transition-smooth
               disabled:opacity-30 disabled:cursor-not-allowed

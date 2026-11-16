@@ -6,6 +6,8 @@ import { useLightboxStore } from '../shared/ImageLightbox';
 import { useT } from '../../lib/i18n';
 import { bridge } from '../../lib/tauri-bridge';
 import { useRewind } from '../../hooks/useRewind';
+import { useIsRewinding } from '../../lib/rewind-lock';
+import { useSessionStore } from '../../stores/sessionStore';
 import { isLocalSessionFile, toSessionFilePath } from '../../lib/remote';
 import { parseInlineDirPath, parseInlineFilePath, resolveSessionPath } from '../../lib/file-path-link';
 import { InlineDirChip } from '../shared/InlineDirChip';
@@ -115,7 +117,9 @@ export function UserMsg({ message }: MessageProps) {
   // 进程再回退，所以"编辑一条已发出、正在处理中的消息"直接等价于"打断 + 改内容重发"，
   // 不需要等它跑完，这正是打错字不小心发出去时最需要的场景。
   const turn = turns.find((tn) => tn.userMessageId === message.id);
-  const canEdit = !!turn;
+  // 回退进行中（本条或别的消息正在回退/撤回）不能再编辑
+  const rewinding = useIsRewinding(useSessionStore((s) => s.selectedSessionId));
+  const canEdit = !!turn && !rewinding;
 
   const startEdit = useCallback(() => {
     if (!canEdit) return;
@@ -135,12 +139,12 @@ export function UserMsg({ message }: MessageProps) {
 
   const confirmEdit = useCallback(() => {
     const text = editText.trim();
-    if (!text || !turn) return;
+    if (!text || !turn || rewinding) return;
     setIsEditing(false);
     // 复用回退到这条消息之前的逻辑（撤销之后的对话，代码改动保留），
     // 只是把回填到输入框的文字换成编辑后的版本，而不是原文。
     void executeRewind(turn, 'restore_conversation', text);
-  }, [editText, turn, executeRewind]);
+  }, [editText, turn, rewinding, executeRewind]);
 
   if (isEditing) {
     return (

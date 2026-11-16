@@ -119,6 +119,8 @@ export default {
   'rewind.codeRestoreFailed': 'Code restore failed. Please check file state manually.',
   'rewind.summaryTitle': 'Summary of turns {from}–{to}',
   'rewind.disabled': 'Cannot rewind while running',
+  'rewind.inProgress': 'Rewinding…',
+  'rewind.inProgressHint': 'Rewinding, please wait…',
   'rewind.noCheckpoint': 'Code restore unavailable for historical conversations',
 
   // Markdown rich text

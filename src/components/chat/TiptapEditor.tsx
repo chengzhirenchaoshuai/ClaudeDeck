@@ -55,6 +55,8 @@ interface TiptapEditorProps {
   onPaste?: (e: ClipboardEvent) => boolean | void;
   /** Additional CSS class for the wrapper */
   className?: string;
+  /** 是否可编辑（默认 true）；回退进行中设为 false，避免输入的内容被回填覆盖 */
+  editable?: boolean;
   /** data attribute for external querySelector targeting */
   'data-chat-input'?: boolean;
 }
@@ -106,6 +108,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
       onKeyDown,
       onPaste,
       className,
+      editable = true,
     } = props;
 
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -173,6 +176,11 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
         onUpdateRef.current?.(text);
       },
     });
+
+    // 同步可编辑状态
+    useEffect(() => {
+      if (editor && editor.isEditable !== editable) editor.setEditable(editable);
+    }, [editor, editable]);
 
     // Track IME composition state and flush text on compositionend
     useEffect(() => {

@@ -15,6 +15,7 @@ const { useChatStore } = await import('../../../stores/chatStore');
 const { useSessionStore } = await import('../../../stores/sessionStore');
 const { bridge } = await import('../../../lib/tauri-bridge');
 const { stopCurrentSession } = await import('../stop-session');
+const { beginRewind, endRewind } = await import('../../../lib/rewind-lock');
 import type { ChatMessage } from '../../../stores/chatStore';
 import type { SpawningSessions } from '../stop-session';
 
@@ -54,6 +55,22 @@ describe('stopCurrentSession', () => {
     spawning,
     executeRewind: executeRewind as never,
     restoreSendExtras: restoreSendExtras as never,
+  });
+
+  it('回退进行中：终止不做任何事，状态和进程都交给回退处理', async () => {
+    useChatStore.getState().setSessionMeta(TAB, { stdinId: 'live_stdin' });
+    beginRewind(TAB);
+    try {
+      await stop();
+    } finally {
+      endRewind(TAB);
+    }
+
+    expect(tab().sessionStatus).toBe('running');
+    expect(tab().sessionMeta.stdinId).toBe('live_stdin');
+    expect(bridge.killSession).not.toHaveBeenCalled();
+    expect(bridge.interruptSession).not.toHaveBeenCalled();
+    expect(executeRewind).not.toHaveBeenCalled();
   });
 
   it('中断请求发不出去：状态改为完成，清掉 stdinId，结束进程，3 秒后兜底注销监听', async () => {
