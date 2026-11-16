@@ -233,7 +233,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
         style={{ width: showSidebar ? `${sidebarWidth}px` : '0px' }}
       >
         <div
-          className="h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar"
+          className="h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar glass-pane"
           style={{ width: `${sidebarWidth}px` }}
         >
           {sidebar}
@@ -251,7 +251,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
       )}
 
       {/* Main Panel — full-height, separated by vertical border lines */}
-      <div className="flex-1 min-w-0 flex flex-col bg-bg-chat overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col bg-bg-chat glass-pane overflow-hidden">
         {main}
       </div>
 
@@ -270,7 +270,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
         className={`flex-shrink-0 overflow-hidden ${panelTransition}`}
         style={{ width: isFilePreviewMode ? `${previewWidth}px` : '0px' }}
       >
-        <div className="h-full overflow-hidden flex flex-col bg-bg-chat"
+        <div className="h-full overflow-hidden flex flex-col bg-bg-chat glass-pane"
           style={{ width: `${previewWidth}px` }}>
           {previewMounted && (
             <Suspense fallback={null}>
@@ -297,7 +297,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
           style={{ width: showSecondary ? `${secondaryPanelWidth}px` : '0px' }}
         >
           <div
-            className="h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar"
+            className="h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar glass-pane"
             style={{ width: `${secondaryPanelWidth}px` }}
           >
             {secondary}
@@ -316,7 +316,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
             className="fixed top-[var(--titlebar-h)] bottom-0 left-0 z-50 flex animate-in slide-in-from-left duration-200"
             style={{ width: `${sidebarWidth}px` }}
           >
-            <div className="flex-1 h-full overflow-y-auto bg-bg-sidebar
+            <div className="flex-1 h-full overflow-y-auto bg-bg-sidebar glass-pane
               border-r border-border-subtle shadow-lg">
               {sidebar}
             </div>
@@ -337,7 +337,7 @@ export function AppShell({ sidebar, main, secondary }: AppShellProps) {
             className="fixed top-[var(--titlebar-h)] bottom-0 right-0 z-50 flex animate-in slide-in-from-right duration-200"
             style={{ width: `${secondaryPanelWidth}px` }}
           >
-            <div className="flex-1 h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar
+            <div className="flex-1 h-full overflow-y-auto overflow-x-hidden bg-bg-sidebar glass-pane
               border-l border-border-subtle shadow-lg">
               {secondary}
             </div>

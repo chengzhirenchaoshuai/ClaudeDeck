@@ -1572,45 +1572,98 @@ thead {
   background: transparent !important;
 }
 
-/* Glass panels — backdrop-filter blur + semi-transparent bg */
-.custom-bg-active .bg-bg-sidebar,
-.custom-bg-active .bg-bg-chat,
-.custom-bg-active .bg-bg-card,
-.custom-bg-active .bg-bg-input {
+/* ---------------- 毛玻璃 ----------------
+   ⚠ backdrop-filter 只写标准写法，不要手写 -webkit-backdrop-filter：
+   源码里一旦两条都写，Lightning CSS 打包时只会留下 -webkit- 那条，
+   而 Chromium / WebView2 根本不认 -webkit-backdrop-filter（只 Safari 认），
+   结果正式版里毛玻璃整个失效、模糊滑块怎么拖都没反应。让打包自己去补前缀。
+
+   另外：元素只要带 backdrop-filter，自己就成了新的 backdrop root，
+   它的子元素再写 backdrop-filter 就只能采样父元素内部已画的东西，采不到壁纸——
+   子面板的 blur 等于白写，调「毛玻璃模糊」滑块也看不出变化（实测 blur 0 与 20 像素级一致）。
+   加上每层 85% 的半透明色相乘，两三层叠完壁纸只剩 2% 可见，更没有模糊可言。
+   所以毛玻璃只做最外面一层：只有 .glass-pane（侧栏、主面板、右侧面板等顶层面板）做模糊，
+   面板内部的次级容器一律不再 blur，只叠一层淡色，让外层那层模糊透上来。 */
+
+.custom-bg-active .glass-pane {
   backdrop-filter: blur(var(--glass-blur, 8px));
-  -webkit-backdrop-filter: blur(var(--glass-blur, 8px));
+  background-image: none !important;
+}
+
+.custom-bg-active .glass-pane.bg-bg-sidebar {
   background-color: color-mix(
     in srgb,
-    var(--color-bg-primary, #F8F8FA) calc(var(--glass-opacity, 0.85) * 100%),
+    var(--color-bg-sidebar, #F5F5F7) calc(var(--glass-opacity, 0.85) * 100%),
+    transparent
+  ) !important;
+}
+
+.custom-bg-active .glass-pane.bg-bg-chat {
+  background-color: color-mix(
+    in srgb,
+    var(--color-bg-chat, #FFFFFF) calc(var(--glass-opacity, 0.85) * 100%),
+    transparent
+  ) !important;
+}
+
+/* 面板内部：去掉嵌套的 blur，底色改成半透明，否则实色色块会把毛玻璃整片盖住 */
+.custom-bg-active .app-row :not(.glass-pane).bg-bg-sidebar,
+.custom-bg-active .app-row :not(.glass-pane).bg-bg-chat,
+.custom-bg-active .app-row .bg-bg-primary,
+.custom-bg-active .app-row .bg-bg-card,
+.custom-bg-active .app-row .bg-bg-secondary,
+.custom-bg-active .app-row .bg-bg-tertiary,
+.custom-bg-active .app-row .bg-bg-input,
+.custom-bg-active .app-row input,
+.custom-bg-active .app-row textarea {
+  backdrop-filter: none !important;
+}
+
+/* 顶栏、分组容器等与所在面板同色，直接透明即可 */
+.custom-bg-active .app-row :not(.glass-pane).bg-bg-sidebar,
+.custom-bg-active .app-row :not(.glass-pane).bg-bg-chat {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* 卡片、输入框要能和面板拉开层次，留一层淡色；
+   这里用固定比例，不跟「背景不透明度」滑块走，免得两层相乘后又糊成实色 */
+.custom-bg-active .app-row .bg-bg-primary {
+  background-color: color-mix(in srgb, var(--color-bg-primary, #F8F8FA) 45%, transparent) !important;
+}
+
+.custom-bg-active .app-row .bg-bg-card {
+  background-color: color-mix(in srgb, var(--color-bg-card, #FFFFFF) 45%, transparent) !important;
+}
+
+.custom-bg-active .app-row .bg-bg-secondary {
+  background-color: color-mix(in srgb, var(--color-bg-secondary, #F0F0F2) 50%, transparent) !important;
+}
+
+.custom-bg-active .app-row .bg-bg-tertiary {
+  background-color: color-mix(in srgb, var(--color-bg-tertiary, #E8E8EA) 55%, transparent) !important;
+}
+
+/* 输入框是打字的地方，比卡片再实一点 */
+.custom-bg-active .app-row .bg-bg-input {
+  background-color: color-mix(in srgb, var(--color-bg-input, #FFFFFF) 60%, transparent) !important;
+}
+
+/* 设置、用量、命令面板等浮层渲染在 .app-row 之外，背后直接就是壁纸，
+   它们自己这一层 blur 是有效的，照旧做毛玻璃（浮层内部的按钮、分组保持实色） */
+.custom-bg-active .bg-bg-card:not(.app-row *) {
+  backdrop-filter: blur(var(--glass-blur, 8px));
+  background-color: color-mix(
+    in srgb,
+    var(--color-bg-card, #FFFFFF) calc(var(--glass-opacity, 0.85) * 100%),
     transparent
   ) !important;
   background-image: none !important;
 }
 
-/* Secondary panels also get glass */
-.custom-bg-active .bg-bg-secondary,
-.custom-bg-active .bg-bg-tertiary {
-  backdrop-filter: blur(var(--glass-blur, 8px));
-  -webkit-backdrop-filter: blur(var(--glass-blur, 8px));
-  background-color: color-mix(
-    in srgb,
-    var(--color-bg-secondary, #F0F0F2) calc(var(--glass-opacity, 0.85) * 100%),
-    transparent
-  ) !important;
-}
-
-/* Input area needs slightly more opacity for readability */
-.custom-bg-active .bg-bg-input,
-.custom-bg-active input,
-.custom-bg-active textarea {
-  backdrop-filter: blur(calc(var(--glass-blur, 8px) * 1.2));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur, 8px) * 1.2));
-}
-
 /* 面板之间的拖动条：同样用毛玻璃，否则会露出一条没有模糊的壁纸缝 */
 .custom-bg-active .app-row > div[class*="cursor-col-resize"] {
   backdrop-filter: blur(var(--glass-blur, 8px));
-  -webkit-backdrop-filter: blur(var(--glass-blur, 8px));
   background-color: color-mix(
     in srgb,
     var(--color-bg-sidebar) calc(var(--glass-opacity, 0.85) * 100%),
@@ -1621,7 +1674,6 @@ thead {
 /* Keep user message bubbles solid */
 .custom-bg-active .bg-bg-user-msg {
   backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   background: var(--skin-accent-gradient, var(--color-accent)) !important;
 }
 

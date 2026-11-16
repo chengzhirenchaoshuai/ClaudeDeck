@@ -377,7 +377,7 @@ export const useSettingsStore = create<SettingsState>()(
       skillDirectories: [],
       customBgImage: '',
       glassBlur: 8,
-      glassOpacity: 85,
+      glassOpacity: 65,
 
       toggleTheme: () =>
         set((state) => ({ theme: nextTheme(state.theme) })),
@@ -483,7 +483,7 @@ export const useSettingsStore = create<SettingsState>()(
       setCustomBgImage: (image) => set(() => ({ customBgImage: image })),
       setGlassBlur: (blur) => set(() => ({ glassBlur: Math.max(0, Math.min(20, blur)) })),
       setGlassOpacity: (opacity) => set(() => ({ glassOpacity: Math.max(30, Math.min(100, opacity)) })),
-      clearCustomBg: () => set(() => ({ customBgImage: '', glassBlur: 8, glassOpacity: 85 })),
+      clearCustomBg: () => set(() => ({ customBgImage: '', glassBlur: 8, glassOpacity: 65 })),
       toggleHiddenFiles: () =>
         set((state) => ({ showHiddenFiles: !state.showHiddenFiles })),
       toggleCtrlEnterToSend: () =>
@@ -545,7 +545,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'tokenicode-settings',
       storage: createJSONStorage(() => safeLocalStorage),
-      version: 27,
+      version: 28,
       migrate: (persistedState: unknown, version: number) => {
         const persisted = persistedState as Record<string, unknown>;
         if (version === 0) {
@@ -678,6 +678,11 @@ export const useSettingsStore = create<SettingsState>()(
           // 新增：新会话的默认模型 / 默认思考档位。沿用升级前的行为，默认仍是「CLI 默认」
           persisted.defaultModel = CLI_DEFAULT;
           persisted.defaultThinkingLevel = CLI_DEFAULT;
+        }
+        if (version < 28) {
+          // 毛玻璃改成只做最外层一层后，面板上还会再叠一层卡片色，85% 太厚、模糊看不出来；
+          // 只把没动过的旧默认值 85 调到 65，用户自己调过的值不动
+          if (persisted.glassOpacity === 85) persisted.glassOpacity = 65;
         }
         return persisted;
       },

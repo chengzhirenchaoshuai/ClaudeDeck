@@ -27,6 +27,7 @@ scripts/bump-version.sh <版本号>    # 同步三处版本号
 - **Windows**：`.cmd`/`.bat` 经 `cmd /C` 启动，子进程加 CREATE_NO_WINDOW。
 - 用户文案全部走 `src/lib/i18n`（zh/en，默认 zh）：词条按 key 前缀分在 `zh/<领域>.ts`，`en/` 下同名文件逐条对应（`satisfies` 约束，缺漏编译报错）；新前缀要在两边同一领域文件里加。素材放 `assets/`。
 - 残留的 `tokenicode` 命名（事件名、`tokenicode_session_names.json`、`.tokenicode/tmp`）用于兼容用户数据，不要改名。
+- **CSS 前缀**：`backdrop-filter` 等只写标准写法，不要手写 `-webkit-` 版本。两条都写时 Lightning CSS 只保留 `-webkit-` 那条，而 WebView2 不认它，正式版里效果会整个失效（毛玻璃踩过）。
 - **换行符一律 LF**（`.bat/.cmd/.ps1` 除外）。Python 改文件用 `read_bytes()/write_bytes()` 或 `open(..., newline="")`；改完用 `git ls-files --eol | grep w/crlf` 自查。
 
 ## 调试开发版 UI
