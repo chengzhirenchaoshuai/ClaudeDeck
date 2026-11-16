@@ -449,9 +449,9 @@ export const bridge = {
   /** 读取远程主机自己保存的会话改名文件——远程主机是这些名字的源端 */
   loadRemoteCustomPreviews: (hostId: string) =>
     invoke<Record<string, string>>('load_remote_custom_previews', { hostId }),
-  /** 把会话改名写回远程主机自己的文件，让它保持源端 */
-  saveRemoteCustomPreviews: (hostId: string, data: Record<string, string>) =>
-    invoke<void>('save_remote_custom_previews', { hostId, data }),
+  /** 把这次改的名字并进远程主机自己的文件（只发改动项，空字符串表示删除），让它保持源端 */
+  mergeRemoteCustomPreviews: (hostId: string, patch: Record<string, string>) =>
+    invoke<void>('merge_remote_custom_previews', { hostId, patch }),
 
   deleteSession: (sessionId: string, sessionPath: string) =>
     invoke<void>('delete_session', { sessionId, sessionPath }),

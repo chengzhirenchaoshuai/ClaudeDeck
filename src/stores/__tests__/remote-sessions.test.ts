@@ -1,4 +1,5 @@
-// 远程会话列表：替换远程部分、单台主机失败不影响其他主机、主机被删时退回本地、远端改名覆盖本地缓存。
+// 远程会话列表：替换远程部分、单台主机失败不影响其他主机、主机被删时退回本地、远端改名覆盖本地缓存；
+// 以及改名写回远端：只推改动项、推送失败记下待推、退出前与拉列表前补推。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const memoryStorage = () => {
@@ -119,5 +120,78 @@ describe('removeRemoteSession', () => {
     const { sessions, remoteSessions } = useSessionStore.getState();
     expect(sessions.map((s) => [s.id, s.host ?? 'local'])).toEqual([['same', 'local'], ['r2', 'a']]);
     expect(remoteSessions.map((s) => s.id)).toEqual(['r2']);
+  });
+});
+
+describe('改名写回远程主机', () => {
+  const PENDING_KEY = 'tokenicode_pending_remote_names';
+
+  beforeEach(() => {
+    localStorage.removeItem(PENDING_KEY);
+    vi.spyOn(bridge, 'saveCustomPreviews').mockResolvedValue(undefined);
+    useSessionStore.setState({
+      sessions: [item('r1', 'C:/r1.jsonl', 'a'), item('local-1', 'F:/a.jsonl')],
+      customPreviews: {},
+    });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('只把这一条改动发给远端，不整份覆盖（别的客户端刚改的名字才不会被抹掉）', async () => {
+    const merge = vi.spyOn(bridge, 'mergeRemoteCustomPreviews').mockResolvedValue(undefined);
+    useSessionStore.setState({ customPreviews: { r1: '旧名', hidden: '隐藏会话的名字' } });
+
+    useSessionStore.getState().setCustomPreview('r1', '新名');
+
+    await vi.waitFor(() => expect(merge).toHaveBeenCalledWith('a', { r1: '新名' }));
+  });
+
+  it('本机会话的改名不往远端推', async () => {
+    const merge = vi.spyOn(bridge, 'mergeRemoteCustomPreviews').mockResolvedValue(undefined);
+
+    useSessionStore.getState().setCustomPreview('local-1', '本机名');
+    await Promise.resolve();
+
+    expect(merge).not.toHaveBeenCalled();
+  });
+
+  it('推不上去时记下待推，补推成功后清空', async () => {
+    const merge = vi.spyOn(bridge, 'mergeRemoteCustomPreviews')
+      .mockResolvedValue(undefined)
+      .mockRejectedValueOnce(new Error('ssh: connect timed out'));
+
+    useSessionStore.getState().setCustomPreview('r1', '断网时改的');
+    await vi.waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(PENDING_KEY) || '{}')).toEqual({ a: { r1: '断网时改的' } }));
+
+    await useSessionStore.getState().flushPendingRemoteNames();
+
+    expect(merge).toHaveBeenLastCalledWith('a', { r1: '断网时改的' });
+    expect(localStorage.getItem(PENDING_KEY)).toBeNull();
+  });
+
+  it('补推又失败就继续留着，下次启动再推', async () => {
+    vi.spyOn(bridge, 'mergeRemoteCustomPreviews').mockRejectedValue(new Error('还是连不上'));
+
+    useSessionStore.getState().setCustomPreview('r1', '断网时改的');
+    await vi.waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(PENDING_KEY) || '{}')).toEqual({ a: { r1: '断网时改的' } }));
+
+    await useSessionStore.getState().flushPendingRemoteNames();
+
+    expect(JSON.parse(localStorage.getItem(PENDING_KEY) || '{}')).toEqual({ a: { r1: '断网时改的' } });
+  });
+
+  it('拉远程列表前先补推，待推的名字才不会被远端旧值盖回', async () => {
+    const order: string[] = [];
+    vi.spyOn(bridge, 'mergeRemoteCustomPreviews').mockImplementation(async () => { order.push('merge'); });
+    vi.spyOn(bridge, 'listRemoteHosts').mockResolvedValue([hostCfg('a')]);
+    vi.spyOn(bridge, 'listRemoteSessions').mockImplementation(async () => { order.push('list'); return []; });
+    vi.spyOn(bridge, 'loadRemoteCustomPreviews').mockResolvedValue({});
+    localStorage.setItem(PENDING_KEY, JSON.stringify({ a: { r1: '待推的名字' } }));
+
+    await useSessionStore.getState().fetchRemoteSessions();
+
+    expect(order).toEqual(['merge', 'list']);
+    expect(localStorage.getItem(PENDING_KEY)).toBeNull();
   });
 });

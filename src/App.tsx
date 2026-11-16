@@ -161,6 +161,14 @@ function App() {
     useProviderStore.getState().load();
   }, []);
 
+  // 本机会话的备注只在启动时读过一次盘：另开的窗口、或 ssh 过来的别的客户端改了名字，
+  // 这个窗口要重启才看得到。窗口重新获得焦点时再读一次（远程会话的名字由刷新列表时拉取）。
+  useEffect(() => {
+    const reload = () => { void useSessionStore.getState().loadCustomPreviewsFromDisk(); };
+    window.addEventListener('focus', reload);
+    return () => window.removeEventListener('focus', reload);
+  }, []);
+
   // Disable browser context menu globally (native app feel)
   useEffect(() => {
     const handler = (e: MouseEvent) => {

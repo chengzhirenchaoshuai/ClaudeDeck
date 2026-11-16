@@ -75,6 +75,13 @@ export async function confirmAndShutdownSessions(
   }
 
   await beforeShutdown?.();
+  // 退出前把没写回远程主机的改名补推一次：远端是名字的源端，带着没推上去的改动退出，
+  // 下次拉列表就会被远端的旧名字盖回去。ssh 可能很慢甚至连不上，最多等 4 秒；
+  // 推不动也照常退出——待推的改动存在 localStorage 里，下次启动拉列表前还会再推。
+  await Promise.race([
+    useSessionStore.getState().flushPendingRemoteNames().catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, 4000)),
+  ]);
   await bridge.shutdownAllSessions().catch(() => {});
   return true;
 }

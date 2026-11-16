@@ -31,6 +31,7 @@ export default {
   'conv.deleteFailed': 'Failed to delete',
   'conv.delete': 'Delete',
   'conv.rename': 'Rename',
+  'conv.renameSyncFailed': 'Could not sync the name to remote host {host}; it may be overwritten on the next refresh: {error}',
   'conv.revealInFinder': 'Reveal in {fileManagerEn}',
   'conv.export': 'Export as MD',
   'conv.copyResumeCommand': 'Copy terminal resume command',

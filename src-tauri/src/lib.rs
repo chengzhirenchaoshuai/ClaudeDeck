@@ -550,7 +550,7 @@ pub fn run() {
             commands::remote::open_remote_in_vscode,
             commands::remote::open_remote_terminal,
             commands::remote::load_remote_custom_previews,
-            commands::remote::save_remote_custom_previews,
+            commands::remote::merge_remote_custom_previews,
             commands::remote::load_remote_archived_sessions,
             commands::remote::save_remote_archived_sessions,
             commands::remote::hide_remote_session,

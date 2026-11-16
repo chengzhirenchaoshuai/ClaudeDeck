@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { bridge, SessionListItem, ContentSearchResult, RemoteHost, type TerminalSessionStatus } from '../lib/tauri-bridge';
 import { useSettingsStore } from './settingsStore';
 import { useBackgroundTaskStore } from './backgroundTaskStore';
+import { showToast } from '../components/shared/Toast';
+import { t } from '../lib/i18n';
 
 /** 从 ssh://<主机>/<路径> 中取出主机 id；本机路径返回 undefined */
 export function hostOfPath(p: string): string | undefined {
@@ -14,6 +16,7 @@ export function hostOfPath(p: string): string | undefined {
 export const ACTIVE_GAP_MS = 60 * 60 * 1000;
 
 const CUSTOM_PREVIEWS_KEY = 'tokenicode_custom_previews';
+const PENDING_REMOTE_NAMES_KEY = 'tokenicode_pending_remote_names';
 const LAST_SESSION_KEY = 'tokenicode_last_session';
 const STDIN_TO_TAB_KEY = 'tokenicode_stdinToTab';
 const UNREAD_KEY = 'tokenicode_unread_sessions';
@@ -44,6 +47,45 @@ function loadCustomPreviewsSync(): Record<string, string> {
 
 function saveCustomPreviewsLocal(map: Record<string, string>) {
   localStorage.setItem(CUSTOM_PREVIEWS_KEY, JSON.stringify(map));
+}
+
+/**
+ * 没能写回远程主机的改名（主机 id → 会话 id → 新名字，空字符串表示删除）。
+ * 远端是名字的源端，没推上去的话下次拉列表就会被远端的旧名字盖回去，所以要记下来补推。
+ * 存 localStorage：断网时退出应用，下次启动还得接着推；多窗口共用一份，每次都现读现写。
+ */
+type PendingNames = Record<string, Record<string, string>>;
+
+function readPendingNames(): PendingNames {
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_REMOTE_NAMES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writePendingNames(pending: PendingNames) {
+  try {
+    const left = Object.keys(pending).filter((h) => Object.keys(pending[h]).length > 0);
+    if (left.length === 0) localStorage.removeItem(PENDING_REMOTE_NAMES_KEY);
+    else localStorage.setItem(PENDING_REMOTE_NAMES_KEY, JSON.stringify(pending));
+  } catch {
+    // 本地存储不可用时，待推送的改名只在本次运行内有效
+  }
+}
+
+function markPendingName(hostId: string, sessionId: string, name: string) {
+  const pending = readPendingNames();
+  pending[hostId] = { ...pending[hostId], [sessionId]: name };
+  writePendingNames(pending);
+}
+
+function clearPendingName(hostId: string, sessionId: string) {
+  const pending = readPendingNames();
+  if (!pending[hostId]?.[sessionId] && pending[hostId]?.[sessionId] !== '') return;
+  delete pending[hostId][sessionId];
+  if (Object.keys(pending[hostId]).length === 0) delete pending[hostId];
+  writePendingNames(pending);
 }
 
 /** Persist the last active session ID so app restart can auto-restore */
@@ -112,6 +154,8 @@ interface SessionState {
   updateDraftProject: (id: string, projectPath: string) => void;
   /** Set a custom display name for a session */
   setCustomPreview: (sessionId: string, name: string) => void;
+  /** 把没写回远程主机的改名补推一次（退出前、下次启动拉远程列表前调用） */
+  flushPendingRemoteNames: () => Promise<void>;
   /** Get the display name for a session (custom > preview > fallback) */
   getDisplayName: (session: SessionListItem) => string;
   /** Mark a session as running (actively streaming/working) */
@@ -242,6 +286,8 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       if (activeEnv !== 'local' && !hosts.some((h) => h.id === activeEnv)) {
         setActiveEnv('local');
       }
+      // 先把上次没推上去的改名补推，再拉列表：顺序反了的话，待推的名字会被远端的旧值盖回去
+      await get().flushPendingRemoteNames();
       const results = await Promise.allSettled(hosts.map((h) => bridge.listRemoteSessions(h.id)));
       const remoteSessions: SessionListItem[] = [];
       const remoteErrors: Record<string, string> = {};
@@ -327,14 +373,38 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
 
     // 远程会话：改名也要写回远程主机自己的改名文件，让远程主机保持“源端”——
     // 连到同一台主机的其它客户端下次拉取列表时才能看到这次改的名字。
+    // 只发这一条改动交给远端合并：整份覆盖会抹掉本机列表里没有的会话（被隐藏的旧分支，
+    // 或别的客户端刚改完、本机还没拉到的名字）。
     const hostId = get().sessions.find((s) => s.id === sessionId)?.host;
     if (hostId) {
-      const hostNames: Record<string, string> = {};
-      for (const s of get().sessions) {
-        if (s.host === hostId && updated[s.id]) hostNames[s.id] = updated[s.id];
-      }
-      bridge.saveRemoteCustomPreviews(hostId, hostNames).catch(() => {});
+      bridge.mergeRemoteCustomPreviews(hostId, { [sessionId]: name })
+        .then(() => clearPendingName(hostId, sessionId))
+        .catch((err) => {
+          // 没写回远端的话，下次拉取列表会被远端的旧名字盖回去。记下来等退出前、
+          // 下次启动拉列表前补推，同时告诉用户这次没同步成功。
+          markPendingName(hostId, sessionId, name);
+          showToast(
+            t('conv.renameSyncFailed').replace('{host}', hostId).replace('{error}', String(err)),
+            'error',
+          );
+        });
     }
+  },
+
+  flushPendingRemoteNames: async () => {
+    const pending = readPendingNames();
+    const hosts = Object.keys(pending).filter((h) => Object.keys(pending[h]).length > 0);
+    if (hosts.length === 0) return;
+    // 只补推本机确实改过、却没推上去的那几条；不整份推，否则会把别的客户端
+    // 刚改完、本机还没拉到的名字盖成旧值。
+    await Promise.allSettled(hosts.map(async (hostId) => {
+      await bridge.mergeRemoteCustomPreviews(hostId, pending[hostId]);
+      const latest = readPendingNames();
+      for (const sessionId of Object.keys(pending[hostId])) {
+        // 推送期间又改了同一条的话，留着下次再推
+        if (latest[hostId]?.[sessionId] === pending[hostId][sessionId]) clearPendingName(hostId, sessionId);
+      }
+    }));
   },
 
   getDisplayName: (session) => {

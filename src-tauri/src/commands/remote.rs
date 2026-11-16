@@ -616,12 +616,51 @@ pub async fn load_remote_custom_previews(host_id: String) -> Result<Value, Strin
     read_remote_json_file(&host, REMOTE_NAMES_FILE, "{}").await
 }
 
-/// 把会话改名数据写回远端主机自己的改名文件，让远程主机成为“源端”——
-/// 连到同一台主机的其它客户端下次拉取列表时也能看到最新名字。
+/// 把这一次改的名字并进远端主机自己的改名文件，让远程主机保持“源端”。
+///
+/// 只发改动的条目（`patch`：会话 ID → 新名字，空字符串表示删掉这条），
+/// 在远端一次 ssh 里完成「读 → 合并 → 写」。不能整份覆盖：
+/// 本机列表里没有的会话（被隐藏名单过滤掉的旧分支，或别的客户端刚改完、本机还没拉到的）
+/// 会被整份写抹掉。
 #[tauri::command]
-pub async fn save_remote_custom_previews(host_id: String, data: Value) -> Result<(), String> {
+pub async fn merge_remote_custom_previews(host_id: String, patch: Value) -> Result<(), String> {
     let host = find_host(&host_id)?;
-    write_remote_json_file(&host, REMOTE_NAMES_FILE, &data).await
+    let content = serde_json::to_string(&patch).map_err(|e| format!("序列化失败: {}", e))?;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let b64 = STANDARD.encode(content.as_bytes());
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; \
+         $ProgressPreference = 'SilentlyContinue'; \
+         $root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }}; \
+         if (-not (Test-Path -LiteralPath $root)) {{ New-Item -ItemType Directory -Path $root -Force | Out-Null }}; \
+         $p = Join-Path $root '{file}'; \
+         $map = @{{}}; \
+         if (Test-Path -LiteralPath $p) {{ \
+           $raw = Get-Content -LiteralPath $p -Raw -Encoding UTF8; \
+           if ($raw -and $raw.Trim()) {{ \
+             try {{ $old = $raw | ConvertFrom-Json }} catch {{ $old = $null }}; \
+             if ($old) {{ foreach ($e in $old.PSObject.Properties) {{ $map[$e.Name] = [string]$e.Value }} }} \
+           }} \
+         }}; \
+         $patch = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64}')) | ConvertFrom-Json; \
+         foreach ($e in $patch.PSObject.Properties) {{ \
+           if ([string]$e.Value -eq '') {{ $map.Remove($e.Name) }} else {{ $map[$e.Name] = [string]$e.Value }} \
+         }}; \
+         $json = if ($map.Count -eq 0) {{ '{{}}' }} else {{ $map | ConvertTo-Json -Depth 3 -Compress }}; \
+         [System.IO.File]::WriteAllText($p, $json, (New-Object System.Text.UTF8Encoding($false)))",
+        file = REMOTE_NAMES_FILE,
+        b64 = b64,
+    );
+    let (_, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(20)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("写入远端改名文件失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    Ok(())
 }
 
 /// 读取远端主机自己保存的归档会话 ID 列表。文件不存在时返回空数组，不算错误。
