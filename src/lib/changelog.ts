@@ -45,11 +45,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             '自定义背景的毛玻璃模糊在正式版里完全没生效',
             '会话改名写回远程主机时互相覆盖，推不上去的现在能补推',
             '别的窗口或客户端改的会话名要重启才看得到',
+            '回退期间继续操作会和回退互相覆盖，现在回退中暂不可操作',
           ],
           en: [
             'The glass blur on custom backgrounds had no effect in release builds',
             'Renaming sessions on a remote host overwrote each other; failed pushes are now retried',
             'Renames from another window or client needed a restart to appear',
+            'Acting during a rewind clashed with it; the tab is now locked while rewinding',
           ],
         },
       },
