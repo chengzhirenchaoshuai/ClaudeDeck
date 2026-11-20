@@ -316,6 +316,21 @@ export function FilePreview() {
 
   if (!selectedFile) return null;
 
+  // 打开位置：本机文件在资源管理器中显示；远程文件在远端，改为在右侧文件树中定位
+  const revealSelectedFile = () => {
+    if (!isRemoteFile) {
+      bridge.revealInFinder(selectedFile).catch((err) => showToast(String(err), 'error'));
+      return;
+    }
+    if (!useFileStore.getState().revealInTree(selectedFile)) {
+      showToast(t('files.notInTree'), 'error');
+      return;
+    }
+    // 预览模式下右侧面板以浮层显示，不影响当前预览
+    useSettingsStore.getState().setSecondaryTab('files');
+  };
+  const revealLabel = isRemoteFile ? t('files.revealInTree') : t('files.revealInFinder');
+
   return (
     <div className="flex flex-col h-full bg-bg-primary" onKeyDown={handleKeyDown}>
       {/* Header bar — 底边与聊天顶栏对齐，z-10 above iframe content */}
@@ -416,23 +431,12 @@ export function FilePreview() {
             </button>
           )}
 
-          {/* 打开位置：本机文件在资源管理器中显示；远程文件在远端，改为在右侧文件树中定位 */}
+          {/* 打开位置 */}
           <button
-            onClick={() => {
-              if (!isRemoteFile) {
-                bridge.revealInFinder(selectedFile).catch((err) => showToast(String(err), 'error'));
-                return;
-              }
-              if (!useFileStore.getState().revealInTree(selectedFile)) {
-                showToast(t('files.notInTree'), 'error');
-                return;
-              }
-              // 预览模式下右侧面板以浮层显示，不影响当前预览
-              useSettingsStore.getState().setSecondaryTab('files');
-            }}
+            onClick={revealSelectedFile}
             className="p-2 rounded-lg hover:bg-bg-tertiary
               text-text-tertiary transition-smooth cursor-pointer"
-            title={isRemoteFile ? t('files.revealInTree') : t('files.revealInFinder')}
+            title={revealLabel}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
               stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
@@ -549,21 +553,19 @@ export function FilePreview() {
             <div className="text-center space-y-3">
               <FileIcon name={fileName} size={40} className="text-text-tertiary" />
               <div className="text-xs text-text-muted">{t('files.binaryFile')}</div>
-              {selectedFile && !isRemoteFile && (
-                <button
-                  onClick={() => bridge.openWithDefaultApp(selectedFile)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-bg-secondary
-                    text-text-muted hover:bg-bg-tertiary hover:text-text-primary
-                    transition-smooth cursor-pointer inline-flex items-center gap-1.5"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
-                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M10 6.5v3a1 1 0 01-1 1H2.5a1 1 0 01-1-1V3a1 1 0 011-1H6" />
-                    <path d="M7.5 1.5h3v3M7 5.5l3.5-4" />
-                  </svg>
-                  {t('files.openDefault')}
-                </button>
-              )}
+              {/* 无法预览：本机在资源管理器中显示，远程在文件树中定位 */}
+              <button
+                onClick={revealSelectedFile}
+                className="px-3 py-1.5 text-xs rounded-lg bg-bg-secondary
+                  text-text-muted hover:bg-bg-tertiary hover:text-text-primary
+                  transition-smooth cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                  stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+                  <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-7z" />
+                </svg>
+                {revealLabel}
+              </button>
             </div>
           </div>
         ) : isEditing ? (
