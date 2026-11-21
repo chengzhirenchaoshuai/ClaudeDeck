@@ -21,6 +21,20 @@ function autolinkText(node: MdNode): string | undefined {
   return node.url === text || node.url === `http://${text}` || node.url === `mailto:${text}` ? text : undefined;
 }
 
+// GFM 裸网址末尾不算进网址的标点；截断后要按同样规则再去一遍，
+// 否则“**http://a.com**。”里的 ** 会留在网址末尾
+const TRAILING_PUNCT_RE = /[?!.,:*_~]+$/;
+
+// 截断后网址前后成对的强调标记：** 加粗、* 斜体、~~/~ 删除线
+const EMPHASIS_MARKERS: Record<string, string> = { '**': 'strong', '*': 'emphasis', '~~': 'delete', '~': 'delete' };
+
+/** 前一段文字末尾恰好是 marker（再往前不是同一种标记符）时返回去掉标记后的文字 */
+function stripTrailingMarker(prev: MdNode | undefined, marker: string): string | undefined {
+  if (prev?.type !== 'text' || !prev.value?.endsWith(marker)) return undefined;
+  const rest = prev.value.slice(0, -marker.length);
+  return rest.endsWith(marker[0]) ? undefined : rest;
+}
+
 export function splitCjkAutolinks(node: MdNode): void {
   const children = node.children;
   if (!children) return;
@@ -30,10 +44,30 @@ export function splitCjkAutolinks(node: MdNode): void {
     const cut = text ? text.search(CJK_RE) : -1;
     if (text && cut > 0) {
       const prefix = child.url!.slice(0, child.url!.length - text.length);
-      child.url = prefix + text.slice(0, cut);
-      child.children = [{ type: 'text', value: text.slice(0, cut) }];
-      children.splice(i + 1, 0, { type: 'text', value: text.slice(cut) });
-      i++;
+      let urlText = text.slice(0, cut);
+      let tail = text.slice(cut);
+      const punct = urlText.match(TRAILING_PUNCT_RE)?.[0] ?? '';
+      if (punct && punct.length < urlText.length) {
+        urlText = urlText.slice(0, -punct.length);
+        tail = punct + tail;
+      }
+      child.url = prefix + urlText;
+      child.children = [{ type: 'text', value: urlText }];
+
+      // 网址前后是成对的强调标记：去掉标记文字，把链接包进对应的强调节点
+      const marker = Object.keys(EMPHASIS_MARKERS).find((m) => punct === m);
+      const prevRest = marker ? stripTrailingMarker(children[i - 1], marker) : undefined;
+      if (marker && prevRest !== undefined) {
+        tail = tail.slice(marker.length);
+        if (prevRest) children[i - 1].value = prevRest;
+        else { children.splice(i - 1, 1); i--; }
+        children[i] = { type: EMPHASIS_MARKERS[marker], children: [child] };
+      }
+
+      if (tail) {
+        children.splice(i + 1, 0, { type: 'text', value: tail });
+        i++;
+      }
     } else if (text && cut === 0) {
       // 整段都不是网址：还原成文字
       children[i] = { type: 'text', value: text };
