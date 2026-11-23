@@ -530,6 +530,10 @@ export const bridge = {
   writeFileContent: (path: string, content: string) =>
     invoke<void>('write_file_content', { path, content }),
 
+  /** 写入二进制文件，data 为 base64（不带 data: 前缀） */
+  writeFileBase64: (path: string, data: string) =>
+    invoke<void>('write_file_base64', { path, data }),
+
   /** 另存为：src 可以是本机路径或 ssh:// 远程路径，dest 为本机路径 */
   saveFileAs: (src: string, dest: string) =>
     invoke<void>('save_file_as', { src, dest }),

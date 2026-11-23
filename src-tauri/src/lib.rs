@@ -563,6 +563,7 @@ pub fn run() {
             commands::files::read_file_tree,
             commands::files::read_file_content,
             commands::files::write_file_content,
+            commands::files::write_file_base64,
             commands::files::copy_file,
             commands::files::save_file_as,
             commands::drag_out::start_file_drag,

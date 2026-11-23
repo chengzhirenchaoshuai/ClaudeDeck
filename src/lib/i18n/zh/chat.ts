@@ -87,6 +87,18 @@ export default {
   'chat.minutes': '分',
   'msg.edit': '编辑消息',
   'msg.resend': '重新发送',
+  // 导出为图片
+  'msg.exportImage': '导出为图片',
+  'msg.exportImageTurn': '第 {n} 轮',
+  'msg.exportImageTo': '到',
+  'msg.exportImageIncludeTools': '包含工具调用',
+  'msg.exportImageCopy': '复制图片',
+  'msg.exportImageSave': '保存为 PNG',
+  'msg.exportImageRendering': '生成中…',
+  'msg.exportImageCopied': '图片已复制，可直接粘贴发送',
+  'msg.exportImageEmpty': '所选轮次没有可导出的内容',
+  'msg.exportImageTooTall': '内容太长，超出图片高度上限，请减少轮次',
+  'msg.exportImageFailed': '导出图片失败：{error}',
   'rewind.locateFailed': '无法定位回退点（会话文件尚未写入、已被删除或消息链不完整），未做任何改动，请稍后再试',
 
   // Activity status

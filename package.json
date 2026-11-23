@@ -43,6 +43,7 @@
     "@uiw/codemirror-theme-vscode": "^4.25.4",
     "@uiw/react-codemirror": "^4.25.4",
     "highlight.js": "^11.11.1",
+    "html-to-image": "1.11.13",
     "katex": "^0.18.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

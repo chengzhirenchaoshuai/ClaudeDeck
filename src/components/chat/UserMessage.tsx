@@ -14,6 +14,7 @@ import { InlineDirChip } from '../shared/InlineDirChip';
 import { handleFileLinkContextMenu } from '../shared/FileLinkMenu';
 import { UserAvatar } from '../shared/UserAvatar';
 import { safeContent, type MessageProps } from './messageShared';
+import { useExportImageStore } from './ExportImageDialog';
 
 /* ================================================================
    UserMsg — bubble on the right
@@ -195,19 +196,35 @@ export function UserMsg({ message }: MessageProps) {
 
   return (
     <div className="flex justify-end gap-2.5 group/user relative">
-      {canEdit && (
-        <button
-          onClick={startEdit}
-          title={t('msg.edit')}
-          className="flex-shrink-0 self-center p-1.5 rounded-lg text-text-tertiary
-            opacity-0 group-hover/user:opacity-100 hover:text-accent hover:bg-bg-secondary
-            transition-smooth"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 2l3 3-8 8-3.5 1L3 10.5 11 2z" />
-          </svg>
-        </button>
+      {turn && (
+        <div className="flex-shrink-0 self-center flex items-center
+          opacity-0 group-hover/user:opacity-100 transition-smooth">
+          {/* 从这一轮开始导出为图片（对话框里可以再调整范围） */}
+          <button
+            onClick={() => useExportImageStore.getState().open(message.id)}
+            title={t('msg.exportImage')}
+            className="p-1.5 rounded-lg text-text-tertiary hover:text-accent hover:bg-bg-secondary transition-smooth"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="12" height="10" rx="1.5" />
+              <circle cx="5.5" cy="6.5" r="1" />
+              <path d="M14 11l-3.5-3.5L4 13" />
+            </svg>
+          </button>
+          {canEdit && (
+            <button
+              onClick={startEdit}
+              title={t('msg.edit')}
+              className="p-1.5 rounded-lg text-text-tertiary hover:text-accent hover:bg-bg-secondary transition-smooth"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 2l3 3-8 8-3.5 1L3 10.5 11 2z" />
+              </svg>
+            </button>
+          )}
+        </div>
       )}
       {/* 单行时 py-2(16px) + leading-6(24px) = 40px，与头像等高 */}
       <div className="max-w-[75%] px-3.5 py-2 rounded-2xl rounded-br-md

@@ -88,6 +88,18 @@ export default {
   'chat.minutes': 'm',
   'msg.edit': 'Edit message',
   'msg.resend': 'Resend',
+  // 导出为图片
+  'msg.exportImage': 'Export as image',
+  'msg.exportImageTurn': 'Turn {n}',
+  'msg.exportImageTo': 'to',
+  'msg.exportImageIncludeTools': 'Include tool calls',
+  'msg.exportImageCopy': 'Copy image',
+  'msg.exportImageSave': 'Save as PNG',
+  'msg.exportImageRendering': 'Rendering…',
+  'msg.exportImageCopied': 'Image copied, ready to paste',
+  'msg.exportImageEmpty': 'Nothing to export in the selected turns',
+  'msg.exportImageTooTall': 'Content too long for one image; select fewer turns',
+  'msg.exportImageFailed': 'Failed to export image: {error}',
   'rewind.locateFailed': 'Cannot locate the rewind point (session file not written yet, deleted, or the message chain is incomplete). Nothing was changed; please try again later.',
 
   // Activity status

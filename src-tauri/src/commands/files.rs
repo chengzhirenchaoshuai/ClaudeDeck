@@ -335,6 +335,17 @@ pub(crate) async fn write_file_content(path: String, content: String) -> Result<
     std::fs::write(&path, &content).map_err(|e| format!("Cannot write file: {}", e))
 }
 
+/// 写入二进制文件（内容为 base64），用于把导出的会话图片保存到保存对话框选的位置
+#[tauri::command]
+pub(crate) async fn write_file_base64(path: String, data: String) -> Result<(), String> {
+    reject_unsafe_path(&path)?;
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("Invalid base64: {}", e))?;
+    std::fs::write(&path, &bytes).map_err(|e| format!("Cannot write file: {}", e))
+}
+
 #[tauri::command]
 pub(crate) async fn copy_file(src: String, dest: String) -> Result<(), String> {
     reject_unsafe_path(&src)?;

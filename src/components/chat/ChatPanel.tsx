@@ -24,6 +24,7 @@ import { formatElapsed, getModelDisplayName } from './chatFormat';
 import { ActivityIndicator } from './ActivityIndicator';
 import { usePlanPanelStore, PlanPanel } from './PlanPanel';
 import { AiAvatar } from '../shared/AiAvatar';
+import { ExportImageDialog } from './ExportImageDialog';
 
 /** 首次只渲染最近这么多项（一个工具组算一项）：长会话全部渲染（含 Markdown）会让切换会话明显卡顿 */
 const RENDER_WINDOW = 60;
@@ -679,6 +680,7 @@ export function ChatPanel() {
         />
       )}
       </div>{/* end flex row */}
+      <ExportImageDialog />
     </div>
   );
 }
