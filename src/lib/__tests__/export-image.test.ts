@@ -41,6 +41,35 @@ describe('selectExportMessages', () => {
   });
 });
 
+describe('selectExportMessages 仅结论', () => {
+  const flow: ChatMessage[] = [
+    m('q1', 'user'),
+    m('mid1', 'assistant'),               // 过程文字：我先看看……
+    m('tool1', 'assistant', 'tool_use', ''),
+    m('res1', 'assistant', 'tool_result'),
+    m('mid2', 'assistant'),
+    m('tool2', 'assistant', 'tool_use', ''),
+    m('end1', 'assistant'),               // 最终回复可能分成多段
+    m('end2', 'assistant'),
+    m('q2', 'user'),
+    m('only', 'assistant'),               // 没有工具调用的一轮
+    m('q3', 'user'),
+    m('last', 'assistant'),
+    m('tool3', 'assistant', 'tool_use', ''), // 以工具调用收尾：取最后一段文字
+  ];
+  const flowTurns = parseTurns(flow);
+  const opts = { includeTools: true, conclusionOnly: true };
+
+  it('只留提问和最后一次工具调用之后的回复', () => {
+    expect(ids(selectExportMessages(flow, flowTurns, 0, 0, opts))).toEqual(['q1', 'end1', 'end2']);
+  });
+
+  it('多轮各自取结论；无工具的轮次保留全部回复；以工具收尾时取最后一段文字', () => {
+    expect(ids(selectExportMessages(flow, flowTurns, 0, 2, opts)))
+      .toEqual(['q1', 'end1', 'end2', 'q2', 'only', 'q3', 'last']);
+  });
+});
+
 describe('pickPixelRatio', () => {
   it('不太高时用 2 倍', () => {
     expect(pickPixelRatio(5000)).toBe(2);

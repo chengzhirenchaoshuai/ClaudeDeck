@@ -46,17 +46,22 @@ function ExportImageDialogInner({ messageId }: { messageId: string }) {
   const [startTurn, setStartTurn] = useState(initial);
   const [endTurn, setEndTurn] = useState(initial);
   const [includeTools, setIncludeTools] = useState(false);
+  // 默认只导出结论：发给别人时一般只需要问题和最终答复
+  const [conclusionOnly, setConclusionOnly] = useState(true);
   const [busy, setBusy] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
 
+  // 文件名用会话显示名（没改名时是首条消息的前 120 个字，截断不加省略号）
   const title = useSessionStore((s) => {
     const session = s.sessions.find((x) => x.id === s.selectedSessionId);
     return session ? s.getDisplayName(session) : '';
   });
+  // 图片顶部只放用户自己改过的会话名：首条消息截断后像半句话，和导出的这几轮也未必相关
+  const headerTitle = useSessionStore((s) => (s.selectedSessionId ? s.customPreviews[s.selectedSessionId] || '' : ''));
 
   const selected = useMemo(
-    () => selectExportMessages(messages, turns, startTurn, endTurn, { includeTools }),
-    [messages, turns, startTurn, endTurn, includeTools],
+    () => selectExportMessages(messages, turns, startTurn, endTurn, { includeTools, conclusionOnly }),
+    [messages, turns, startTurn, endTurn, includeTools, conclusionOnly],
   );
 
   useEffect(() => {
@@ -141,8 +146,15 @@ function ExportImageDialogInner({ messageId }: { messageId: string }) {
             onChange={(e) => { const v = Number(e.target.value); setEndTurn(v); if (v < startTurn) setStartTurn(v); }}>
             {turnOptions}
           </select>
-          <label className="flex items-center gap-1.5 ml-2 cursor-pointer select-none">
-            <input type="checkbox" checked={includeTools} onChange={(e) => setIncludeTools(e.target.checked)} />
+          <label className="flex items-center gap-1.5 ml-2 cursor-pointer select-none"
+            title={t('msg.exportImageConclusionOnlyHint')}>
+            <input type="checkbox" checked={conclusionOnly} onChange={(e) => setConclusionOnly(e.target.checked)} />
+            {t('msg.exportImageConclusionOnly')}
+          </label>
+          <label className={`flex items-center gap-1.5 select-none
+            ${conclusionOnly ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+            <input type="checkbox" checked={includeTools && !conclusionOnly} disabled={conclusionOnly}
+              onChange={(e) => setIncludeTools(e.target.checked)} />
             {t('msg.exportImageIncludeTools')}
           </label>
         </div>
@@ -153,9 +165,9 @@ function ExportImageDialogInner({ messageId }: { messageId: string }) {
             <div className="py-16 text-center text-sm text-text-muted">{t('msg.exportImageEmpty')}</div>
           ) : (
             <div ref={nodeRef} className="bg-bg-primary rounded-xl px-6 py-5 shadow-md" style={{ width: EXPORT_WIDTH }}>
-              {title && (
+              {headerTitle && (
                 <div className="mb-5 pb-3 border-b border-border-subtle text-sm font-semibold text-text-primary">
-                  {title}
+                  {headerTitle}
                 </div>
               )}
               <ExportMessageList messages={selected} />

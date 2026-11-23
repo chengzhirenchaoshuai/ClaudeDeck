@@ -92,6 +92,8 @@ export default {
   'msg.exportImageTurn': '第 {n} 轮',
   'msg.exportImageTo': '到',
   'msg.exportImageIncludeTools': '包含工具调用',
+  'msg.exportImageConclusionOnly': '仅结论',
+  'msg.exportImageConclusionOnlyHint': '每轮只保留提问和最终回复，省略中间过程',
   'msg.exportImageCopy': '复制图片',
   'msg.exportImageSave': '保存为 PNG',
   'msg.exportImageRendering': '生成中…',

@@ -93,6 +93,8 @@ export default {
   'msg.exportImageTurn': 'Turn {n}',
   'msg.exportImageTo': 'to',
   'msg.exportImageIncludeTools': 'Include tool calls',
+  'msg.exportImageConclusionOnly': 'Conclusion only',
+  'msg.exportImageConclusionOnlyHint': 'Keep only the question and final reply of each turn, skipping intermediate steps',
   'msg.exportImageCopy': 'Copy image',
   'msg.exportImageSave': 'Save as PNG',
   'msg.exportImageRendering': 'Rendering…',
