@@ -18,6 +18,43 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.8.2',
+    date: '2026-11-23',
+    highlights: {
+      zh: ['会话可导出为图片，支持「仅结论」，可复制或保存为 PNG'],
+      en: ['Export conversations as images, with a conclusion-only option, to the clipboard or as PNG'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '用户消息悬停出现「导出为图片」，可选轮次范围、仅结论或包含工具调用',
+            '导出图片可复制到剪贴板或保存为 PNG，内容过长时提示减少轮次',
+          ],
+          en: [
+            'Hover a user message to export as an image: pick the turn range, conclusion only or with tool calls',
+            'Copy the image to the clipboard or save it as PNG; overly long content asks for fewer turns',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: ['无法预览的文件改为「打开位置」：本机在资源管理器中显示，远程在文件树中定位'],
+          en: ['Unpreviewable files now offer "Reveal": in Explorer for local files, in the file tree for remote ones'],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['加粗、斜体、删除线包着的网址后紧跟中文时，标记被算进网址导致打开报错'],
+          en: ['Bold, italic or struck-through links followed by Chinese text included the markers in the URL and failed to open'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.8.1',
     date: '2026-11-16',
     highlights: {
