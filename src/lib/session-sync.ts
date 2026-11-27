@@ -2,7 +2,7 @@ import { bridge, isRemotePath, SessionListItem } from './tauri-bridge';
 import { parseSessionMessages } from './session-loader';
 import { useChatStore, type ChatMessage } from '../stores/chatStore';
 import { useAgentStore } from '../stores/agentStore';
-import { useSessionStore } from '../stores/sessionStore';
+import { findSessionInEnv, useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUsageStore } from '../stores/usageStore';
 import { LOCAL_ENV } from './remote';
@@ -18,16 +18,37 @@ const rawCache = new Map<string, { path: string; records: any[]; end: number }>(
 /** 最多缓存的会话数：只有正在查看的会话需要，留几个给来回切换 */
 const RAW_CACHE_LIMIT = 4;
 
+/** 远程会话正在经 ssh 读取（轮询时跳过，避免主机连不上时堆起一串等待超时的 ssh 进程） */
+const remoteInFlight = new Set<string>();
+/** 远程会话上次经 ssh 读取失败的时间：之后一段时间内轮询不再重试，手动刷新不受限 */
+const remoteFailedAt = new Map<string, number>();
+const REMOTE_RETRY_MS = 20_000;
+
 /**
  * 读取会话的全部原始记录。本机会话按字节偏移增量读取，再与缓存拼接；
  * 远程会话或 full 为 true 时整个读取。changed 为 false 表示自上次读取以来没有新记录。
+ * cacheOnly：远程会话只读本地缓存镜像、不连 ssh。
  */
 async function readSessionRecords(
   sessionId: string,
   path: string,
   full: boolean,
+  cacheOnly = false,
 ): Promise<{ records: any[]; changed: boolean }> {
-  if (isRemotePath(path)) return { records: await bridge.loadSession(path), changed: true };
+  if (isRemotePath(path)) {
+    if (cacheOnly) return { records: await bridge.loadCachedSession(path), changed: true };
+    remoteInFlight.add(sessionId);
+    try {
+      const records = await bridge.loadSession(path);
+      remoteFailedAt.delete(sessionId);
+      return { records, changed: true };
+    } catch (err) {
+      remoteFailedAt.set(sessionId, Date.now());
+      throw err;
+    } finally {
+      remoteInFlight.delete(sessionId);
+    }
+  }
   const cached = !full ? rawCache.get(sessionId) : undefined;
   const usable = cached && cached.path === path ? cached : undefined;
   const tail = await bridge.loadSessionTail(path, usable?.end ?? 0);
@@ -73,18 +94,26 @@ async function writtenExternally(path: string): Promise<boolean> {
  * 从磁盘（本机 JSONL 或远端 ssh）读取会话并替换标签页里的消息、Agent 和 token 统计。
  * 读取期间用户切换了会话则放弃并返回 false。
  * skipIfUnchanged：JSONL 记录数与上次相同时不重复替换，避免无意义的刷新。
+ * cacheOnly：远程会话只显示本地缓存（不连 ssh），并把标签页标为只读，等 ssh 读取成功后放开。
  */
 export async function applyDiskSession(
   sessionId: string,
   sessionPath: string,
-  opts: { skipIfUnchanged?: boolean; full?: boolean } = {},
+  opts: { skipIfUnchanged?: boolean; full?: boolean; cacheOnly?: boolean } = {},
 ): Promise<boolean> {
   const stillSelected = () => useSessionStore.getState().selectedSessionId === sessionId;
 
   // 先取大小再读文件：读取期间文件又变大时，下次同步会因大小不同而重新加载
   const fileSize = await localFileSize(sessionPath);
   // 本机会话只读新追加的部分，与缓存拼接；full（手动刷新）时整个重读
-  const { records: rawMessages, changed } = await readSessionRecords(sessionId, sessionPath, !!opts.full);
+  const { records: rawMessages, changed } = await readSessionRecords(
+    sessionId, sessionPath, !!opts.full, !!opts.cacheOnly,
+  );
+  // 经 ssh 读到了最新内容：放开只读（即使内容没变、下面跳过了替换）
+  if (isRemotePath(sessionPath) && !opts.cacheOnly
+    && useChatStore.getState().getTab(sessionId)?.sessionMeta.remoteCacheOnly) {
+    useChatStore.getState().setSessionMeta(sessionId, { remoteCacheOnly: undefined });
+  }
   if (!stillSelected()) return false;
   if (fileSize !== null) lastFileSize.set(sessionId, fileSize);
   if (opts.skipIfUnchanged && (!changed || lastRecordCount.get(sessionId) === rawMessages.length)) return false;
@@ -134,6 +163,7 @@ export async function applyDiskSession(
     }
   }
   chat.setMessages(sessionId, merged);
+  if (opts.cacheOnly) chat.setSessionMeta(sessionId, { remoteCacheOnly: true });
 
   lastRecordCount.set(sessionId, rawMessages.length);
   return true;
@@ -156,6 +186,12 @@ export async function syncSession(
   // 已回退（含终止时撤回刚发出的消息）、新分支还没建立：磁盘上仍是旧分支，
   // 被撤回的消息和 CLI 追加的中断记录都还在，不能拿它覆盖界面；手动刷新也一样
   if (useChatStore.getState().getTab(session.id)?.sessionMeta.rewoundFromSessionId) return;
+  // 远程会话：上一次 ssh 读取还没结束，或刚失败过（主机可能没开），轮询先不重试
+  if (isRemotePath(session.path)) {
+    if (remoteInFlight.has(session.id)) return;
+    const failedAt = remoteFailedAt.get(session.id);
+    if (!opts.force && failedAt !== undefined && Date.now() - failedAt < REMOTE_RETRY_MS) return;
+  }
   // 文件大小没变就跳过：避免每次轮询都把整个 JSONL 传到前端解析（大会话会让界面周期性卡顿）
   const size = await localFileSize(session.path);
   if (!opts.force && size !== null && lastFileSize.get(session.id) === size) return;
@@ -189,7 +225,7 @@ export async function syncSession(
  */
 export async function refreshAll(): Promise<void> {
   const st = useSessionStore.getState();
-  const current = st.sessions.find((s) => s.id === st.selectedSessionId);
+  const current = findSessionInEnv(st.sessions, st.selectedSessionId);
   const isRemoteEnv = useSettingsStore.getState().activeEnv !== LOCAL_ENV;
   const usage = useUsageStore.getState();
   await Promise.allSettled([

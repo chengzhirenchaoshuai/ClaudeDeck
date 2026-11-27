@@ -121,6 +121,11 @@ export interface SessionMeta {
    * 切到它时 restoreFromCache 按缓存缺失处理，从磁盘重新加载完整历史（加载后随空白标签页一起清掉）
    */
   reloadFromDisk?: boolean;
+  /**
+   * 远程会话当前显示的是本地缓存（还没经 ssh 读到最新内容，或主机连不上）：
+   * 输入框只读，经 ssh 读取成功后清除（见 lib/session-sync.ts）
+   */
+  remoteCacheOnly?: boolean;
   /** The desk-generated ID used as key in Rust StdinManager for sending follow-up messages */
   stdinId?: string;
   /** Message ID of a pending processing card (for CLI slash commands) */

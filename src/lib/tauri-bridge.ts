@@ -441,6 +441,9 @@ export const bridge = {
     invoke<RemoteTestResult>('test_remote_connection', { id }),
   listRemoteSessions: (hostId: string) =>
     invoke<SessionListItem[]>('list_remote_sessions', { hostId }),
+  /** 上次成功读取的远程会话列表（本地缓存，不连 ssh） */
+  loadCachedRemoteSessions: (hostId: string) =>
+    invoke<SessionListItem[]>('load_cached_remote_sessions', { hostId }),
   /** 远端终端里正在运行的 claude 会话（经 ssh 读取） */
   listRemoteTerminalSessions: (hostId: string) =>
     invoke<TerminalSessionInfo[]>('list_remote_terminal_sessions', { hostId }),
@@ -467,6 +470,10 @@ export const bridge = {
 
   loadSession: (path: string) =>
     invoke<any[]>('load_session', { path }),
+
+  /** 远程会话的本地缓存镜像（不连 ssh）；没有缓存时报错 */
+  loadCachedSession: (path: string) =>
+    invoke<any[]>('load_cached_session', { path }),
 
   /** 增量读取本机会话：从字节偏移 offset 读到末尾；reset 为 true 表示是从头读取的，需丢弃旧缓存 */
   loadSessionTail: (path: string, offset: number) =>
@@ -821,8 +828,9 @@ export const bridge = {
   loadRemoteArchivedSessions: (hostId: string) =>
     invoke<string[]>('load_remote_archived_sessions', { hostId }),
   /** 把归档状态写回远程主机自己的文件，让它保持源端 */
-  saveRemoteArchivedSessions: (hostId: string, data: string[]) =>
-    invoke<void>('save_remote_archived_sessions', { hostId, data }),
+  /** 把归档改动并进远端的归档文件（会话 ID → true 归档 / false 取消归档） */
+  mergeRemoteArchivedSessions: (hostId: string, patch: Record<string, boolean>) =>
+    invoke<void>('merge_remote_archived_sessions', { hostId, patch }),
 
   // AI title generation (spawns separate CLI process, no channel interference)
   generateSessionTitle: (userMessage: string, assistantMessage: string, providerId?: string, cwd?: string) =>

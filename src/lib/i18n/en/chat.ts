@@ -25,6 +25,7 @@ export default {
   // InputBar
   'input.working': 'The model is working...',
   'input.followUp': 'Send follow-up...',
+  'input.remoteCacheOnly': 'Remote host not connected yet. Showing local cache (read-only); it refreshes and unlocks once connected',
   'input.placeholder': 'Message the selected model...',
   'input.prefixPlaceholder': 'Enter arguments...',
   'input.attachFiles': 'Attach files',

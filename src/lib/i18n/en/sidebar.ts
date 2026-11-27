@@ -31,6 +31,7 @@ export default {
   'conv.deleteFailed': 'Failed to delete',
   'conv.delete': 'Delete',
   'conv.rename': 'Rename',
+  'conv.archiveSyncFailed': 'Could not sync the archive state to remote host {host}; it will be retried once connected: {error}',
   'conv.renameSyncFailed': 'Could not sync the name to remote host {host}; it may be overwritten on the next refresh: {error}',
   'conv.revealInFinder': 'Reveal in {fileManagerEn}',
   'conv.export': 'Export as MD',

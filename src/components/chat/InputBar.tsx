@@ -130,6 +130,8 @@ export function InputBar() {
   const isRunning = sessionStatus === 'running';
   // 回退进行中（回退面板、编辑消息、终止时撤回）：发送、终止、输入全部暂停，直到回退完成
   const rewinding = useIsRewinding(selectedSessionId);
+  // 远程会话显示的是本地缓存、还没经 ssh 读到最新内容（主机可能没开）：只读，连上后自动放开
+  const remoteCacheOnly = !!sessionMetaLive.remoteCacheOnly;
   // 提示建议：输入框为空且空闲时，用占位文字显示 CLI 预测的下一句话，按 Tab 填入
   const promptSuggestion = useActiveTab((t) => t.promptSuggestion);
   const showSuggestion = !!promptSuggestion && !input && !isRunning && activePrefixes.length === 0;
@@ -194,6 +196,8 @@ export function InputBar() {
     useChatStore.getState().ensureTab(tabId);
     // 回退进行中不发送：回退结束时会截断对话、重置会话，新消息会被一起截掉或发给将被结束的进程
     if (isRewinding(tabId)) return;
+    // 远程会话还只是本地缓存：不发送，免得基于过时内容续接
+    if (useChatStore.getState().getTab(tabId)?.sessionMeta.remoteCacheOnly) return;
 
     // 直接从 store 读输入（不用闭包里的值）：handlePlanApprove 这类先 setInput 再 rAF 调用的场景也能读到最新内容
     const rawInput = getActiveTabState().inputDraft || textareaRef.current?.getText() || '';
@@ -464,9 +468,11 @@ export function InputBar() {
               }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              editable={!rewinding}
+              editable={!rewinding && !remoteCacheOnly}
               placeholder={rewinding
                 ? t('rewind.inProgressHint')
+                : remoteCacheOnly
+                ? t('input.remoteCacheOnly')
                 : showSuggestion
                 ? promptSuggestion
                 : activePrefixes.length > 0
@@ -605,7 +611,7 @@ export function InputBar() {
               of the textarea (e.g. placing the cursor) never accidentally trigger it. */}
           <button
             onClick={handleSubmit}
-            disabled={rewinding || isAwaiting || (!input.trim() && activePrefixes.length === 0)}
+            disabled={rewinding || remoteCacheOnly || isAwaiting || (!input.trim() && activePrefixes.length === 0)}
             className={`flex-shrink-0 w-7 h-7 rounded-[10px]
               flex items-center justify-center transition-smooth
               disabled:opacity-30 disabled:cursor-not-allowed

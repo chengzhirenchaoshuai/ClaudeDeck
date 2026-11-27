@@ -2,6 +2,7 @@
 // 另含“在本机隐藏的项目”：按项目分组键记录，只存本客户端，不同步到远程主机。
 import { useCallback, useEffect, useState } from 'react';
 import { bridge, type RemoteHost, type SessionListItem } from '../../lib/tauri-bridge';
+import { pendingArchivesOf, useSessionStore } from '../../stores/sessionStore';
 
 export function usePinnedArchived(remoteHosts: RemoteHost[], remoteSessionsList: SessionListItem[]) {
   const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(() => {
@@ -63,8 +64,10 @@ export function usePinnedArchived(remoteHosts: RemoteHost[], remoteSessionsList:
           const r = results[i];
           if (r.status !== 'fulfilled') return;
           const remoteIds = new Set(r.value);
+          // 本机改过、还没推上去的归档以本机为准，不让远端的旧状态盖回去
+          const pending = pendingArchivesOf(h.id);
           for (const s of remoteSessionsList) {
-            if (s.host !== h.id) continue;
+            if (s.host !== h.id || s.id in pending) continue;
             const shouldBeArchived = remoteIds.has(s.id);
             if (shouldBeArchived !== next.has(s.id)) {
               changed = true;
@@ -82,15 +85,17 @@ export function usePinnedArchived(remoteHosts: RemoteHost[], remoteSessionsList:
     return () => { cancelled = true; };
   }, [remoteHosts, remoteSessionsList]);
 
-  // 归档一个远程会话时，把这台主机名下的全部归档 ID 写回它自己的归档文件
-  const pushArchivedToRemote = useCallback((session: SessionListItem, archivedIds: Set<string>) => {
-    if (!session.host) return;
-    const hostId = session.host;
-    const hostArchived = remoteSessionsList
-      .filter((s) => s.host === hostId && archivedIds.has(s.id))
-      .map((s) => s.id);
-    bridge.saveRemoteArchivedSessions(hostId, hostArchived).catch(() => {});
-  }, [remoteSessionsList]);
+  // 归档/取消归档远程会话时，把这些改动并进各自主机的归档文件（只发改动项，失败会记下补推）
+  const pushArchivedToRemote = useCallback((sessions: SessionListItem[], archivedIds: Set<string>) => {
+    const byHost = new Map<string, Record<string, boolean>>();
+    for (const s of sessions) {
+      if (!s.host) continue;
+      byHost.set(s.host, { ...byHost.get(s.host), [s.id]: archivedIds.has(s.id) });
+    }
+    for (const [hostId, patch] of byHost) {
+      void useSessionStore.getState().pushRemoteArchive(hostId, patch);
+    }
+  }, []);
 
   // Load pinned/archived from backend on init
   useEffect(() => {

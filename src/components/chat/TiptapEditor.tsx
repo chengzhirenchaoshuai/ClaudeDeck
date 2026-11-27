@@ -147,7 +147,8 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
           underline: false,
           link: false,
         }),
-        Placeholder.configure({ placeholder: () => placeholderRef.current }),
+        // 只读时也显示占位文字：回退中、远程会话只显示缓存时靠它说明为什么不能输入
+        Placeholder.configure({ placeholder: () => placeholderRef.current, showOnlyWhenEditable: false }),
         FileChipWithView,
       ],
       editorProps: {

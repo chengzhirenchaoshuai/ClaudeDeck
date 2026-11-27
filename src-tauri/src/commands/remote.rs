@@ -553,8 +553,8 @@ pub async fn scan_remote_skill_files(host_id: &str, remote_path: &str) -> Result
 const REMOTE_NAMES_FILE: &str = "tokenicode_session_names.json";
 
 /// 归档同样是 ClaudeDeck 自己的概念（claude CLI 没有“归档”），本机存在
-/// <数据目录>/config/archived.json 里，和改名一样只存在本地，不跨设备/远程同步。
-/// 用和改名相同的办法在远端主机自己的 CLAUDE_CONFIG_DIR 下也存一份，让它同样有源端。
+/// <数据目录>/config/archived.json 里。远程会话的归档状态用和改名相同的办法，
+/// 在远端主机自己的 CLAUDE_CONFIG_DIR 下也存一份，以远端为准（源端）。
 const REMOTE_ARCHIVED_FILE: &str = "tokenicode_archived_sessions.json";
 
 /// 读取远端主机自己保存的一个 JSON 文件；不存在时返回 `empty_literal`（不算错误）。
@@ -580,33 +580,6 @@ async fn read_remote_json_file(host: &RemoteHost, filename: &str, empty_literal:
         return serde_json::from_str(empty_literal).map_err(|e| e.to_string());
     }
     serde_json::from_str(text).map_err(|e| format!("解析远端文件 {} 失败: {}", filename, e))
-}
-
-/// 把数据写回远端主机自己的一个 JSON 文件（不存在则创建，含所在目录）。
-async fn write_remote_json_file(host: &RemoteHost, filename: &str, data: &Value) -> Result<(), String> {
-    let content = serde_json::to_string(data).map_err(|e| format!("序列化失败: {}", e))?;
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let b64 = STANDARD.encode(content.as_bytes());
-    let script = format!(
-        "$ErrorActionPreference = 'Stop'; \
-         $root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }}; \
-         if (-not (Test-Path -LiteralPath $root)) {{ New-Item -ItemType Directory -Path $root -Force | Out-Null }}; \
-         $p = Join-Path $root '{file}'; \
-         $json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64}')); \
-         [System.IO.File]::WriteAllText($p, $json, (New-Object System.Text.UTF8Encoding($false)))",
-        file = filename,
-        b64 = b64,
-    );
-    let (_, stderr, code) =
-        run_remote(host, &powershell_command(&script), Duration::from_secs(20)).await?;
-    if code != 0 {
-        return Err(if stderr.trim().is_empty() {
-            format!("写入远端文件 {} 失败（退出码 {}）", filename, code)
-        } else {
-            stderr.trim().to_string()
-        });
-    }
-    Ok(())
 }
 
 /// 读取远端会话改名文件。文件不存在时返回空对象，不算错误。
@@ -670,11 +643,31 @@ pub async fn load_remote_archived_sessions(host_id: String) -> Result<Value, Str
     read_remote_json_file(&host, REMOTE_ARCHIVED_FILE, "[]").await
 }
 
-/// 把归档会话 ID 列表写回远端主机自己的文件，让远程主机成为归档状态的“源端”。
+/// 把这一次的归档改动并进远端主机自己的归档文件，让远程主机保持归档状态的“源端”。
+///
+/// `patch`：会话 ID → true（归档）/ false（取消归档），在远端一次 ssh 里完成「读 → 合并 → 写」。
+/// 和改名一样不整份覆盖：本机列表里没有的会话（别的客户端刚归档、本机还没拉到的）会被整份写抹掉。
 #[tauri::command]
-pub async fn save_remote_archived_sessions(host_id: String, data: Value) -> Result<(), String> {
+pub async fn merge_remote_archived_sessions(host_id: String, patch: Value) -> Result<(), String> {
     let host = find_host(&host_id)?;
-    write_remote_json_file(&host, REMOTE_ARCHIVED_FILE, &data).await
+    let content = serde_json::to_string(&patch).map_err(|e| format!("序列化失败: {}", e))?;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let b64 = STANDARD.encode(content.as_bytes());
+    let script = format!(
+        "$ErrorActionPreference = 'Stop';          $ProgressPreference = 'SilentlyContinue';          $root = if ($env:CLAUDE_CONFIG_DIR) {{ $env:CLAUDE_CONFIG_DIR }} else {{ Join-Path $HOME '.claude' }};          if (-not (Test-Path -LiteralPath $root)) {{ New-Item -ItemType Directory -Path $root -Force | Out-Null }};          $p = Join-Path $root '{file}';          $set = New-Object System.Collections.Generic.List[string];          if (Test-Path -LiteralPath $p) {{            $raw = Get-Content -LiteralPath $p -Raw -Encoding UTF8;            if ($raw -and $raw.Trim()) {{              try {{ $old = $raw | ConvertFrom-Json }} catch {{ $old = $null }};              foreach ($id in @($old)) {{ if ($id -and -not $set.Contains([string]$id)) {{ $set.Add([string]$id) }} }}            }}          }};          $patch = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64}')) | ConvertFrom-Json;          foreach ($e in $patch.PSObject.Properties) {{            if ($e.Value -eq $true) {{ if (-not $set.Contains($e.Name)) {{ $set.Add($e.Name) }} }} else {{ [void]$set.Remove($e.Name) }}          }};          $json = ConvertTo-Json -InputObject @($set.ToArray()) -Compress;          [System.IO.File]::WriteAllText($p, $json, (New-Object System.Text.UTF8Encoding($false)))",
+        file = REMOTE_ARCHIVED_FILE,
+        b64 = b64,
+    );
+    let (_, stderr, code) =
+        run_remote(&host, &powershell_command(&script), Duration::from_secs(20)).await?;
+    if code != 0 {
+        return Err(if stderr.trim().is_empty() {
+            format!("写入远端归档文件失败（退出码 {}）", code)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    Ok(())
 }
 
 /// 在远端主机自己的隐藏名单里追加一个会话 ID（回退后隐藏被替换的旧分支）。
@@ -921,7 +914,42 @@ pub async fn list_remote_sessions(host_id: String) -> Result<Vec<Value>, String>
     sessions.sort_by(|a, b| {
         b["modifiedAt"].as_u64().unwrap_or(0).cmp(&a["modifiedAt"].as_u64().unwrap_or(0))
     });
+    // 记下这次成功读到的列表：下次启动时先显示它，主机连不上也能看到会话
+    if let Ok(cache) = remote_list_cache_path(&host_id) {
+        if let Ok(bytes) = serde_json::to_vec(&sessions) {
+            let _ = std::fs::write(cache, bytes);
+        }
+    }
     Ok(sessions)
+}
+
+/// 上次成功读取的远程会话列表（不连 ssh）。没有缓存或主机已删除时返回空列表。
+/// 隐藏名单在读取时重新过滤一次：缓存写入后才隐藏的会话（回退替换的旧分支）不会冒出来。
+#[tauri::command]
+pub async fn load_cached_remote_sessions(host_id: String) -> Result<Vec<Value>, String> {
+    if find_host(&host_id).is_err() {
+        return Ok(vec![]);
+    }
+    let Ok(bytes) = std::fs::read(remote_list_cache_path(&host_id)?) else {
+        return Ok(vec![]);
+    };
+    let items: Vec<Value> = serde_json::from_slice(&bytes).unwrap_or_default();
+    let hidden = crate::load_hidden_sessions();
+    Ok(items
+        .into_iter()
+        .filter(|s| s["id"].as_str().is_some_and(|id| crate::is_listable_session(id, &hidden)))
+        .collect())
+}
+
+/// 从会话列表缓存里去掉一个会话（远端删除成功后调用）
+fn remove_from_list_cache(host_id: &str, session_path_uri: &str) {
+    let Ok(cache) = remote_list_cache_path(host_id) else { return };
+    let Ok(bytes) = std::fs::read(&cache) else { return };
+    let Ok(mut items) = serde_json::from_slice::<Vec<Value>>(&bytes) else { return };
+    items.retain(|s| s["path"].as_str() != Some(session_path_uri));
+    if let Ok(bytes) = serde_json::to_vec(&items) {
+        let _ = std::fs::write(cache, bytes);
+    }
 }
 
 /// 列出远端终端里正在运行的 claude 会话的脚本：读取 <配置目录>/sessions/<pid>.json，
@@ -996,6 +1024,34 @@ fn remote_cache_path(uri: &str) -> Result<std::path::PathBuf, String> {
         .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '_' })
         .collect();
     Ok(dir.join(format!("{}.jsonl", safe)))
+}
+
+/// 远程会话列表的缓存文件：<数据目录>/cache/remote_cache/sessions_<主机>.json
+fn remote_list_cache_path(host_id: &str) -> Result<std::path::PathBuf, String> {
+    let safe: String = host_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '_' })
+        .collect();
+    Ok(remote_cache_dir()?.join(format!("sessions_{}.json", safe)))
+}
+
+/// 把缓存镜像的字节解析为记录列表，跳过解析不了的行（如末尾写了一半的行）
+fn parse_jsonl_bytes(bytes: &[u8]) -> Vec<Value> {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect()
+}
+
+/// 只读本地缓存镜像、不连 ssh：打开远程会话时先显示它，主机连不上也能看到上次的内容。
+/// 没有缓存时报错，由调用方改为直接经 ssh 读取。
+pub fn load_remote_session_cache(uri: &str) -> Result<Vec<Value>, String> {
+    let (_, path) = parse_remote_uri(uri).ok_or("无效的远程路径")?;
+    if !path.to_ascii_lowercase().ends_with(".jsonl") {
+        return Err("只能读取 .jsonl 会话文件".to_string());
+    }
+    let bytes = std::fs::read(remote_cache_path(uri)?).map_err(|_| "没有本地缓存".to_string())?;
+    Ok(parse_jsonl_bytes(&bytes))
 }
 
 /// 读取远端会话 JSONL 并解析为消息列表。只允许读取 .jsonl 文件。
@@ -1081,10 +1137,7 @@ pub async fn load_remote_session(uri: &str) -> Result<Vec<Value>, String> {
     }
 
     let bytes = std::fs::read(&cache_path).map_err(|e| format!("读取本地会话缓存失败: {}", e))?;
-    Ok(String::from_utf8_lossy(&bytes)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .collect())
+    Ok(parse_jsonl_bytes(&bytes))
 }
 
 /// 读取远端任意文件的原始字节（会话里点开的文件链接用）。超过 max_bytes 报错，
@@ -1485,6 +1538,7 @@ pub async fn delete_remote_session(uri: &str) -> Result<(), String> {
     if let Ok(cache_path) = remote_cache_path(uri) {
         let _ = std::fs::remove_file(&cache_path);
     }
+    remove_from_list_cache(&host_id, uri);
     Ok(())
 }
 

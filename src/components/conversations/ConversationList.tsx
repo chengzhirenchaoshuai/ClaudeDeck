@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
-import { useSessionStore } from '../../stores/sessionStore';
+import { findSessionInEnv, useSessionStore } from '../../stores/sessionStore';
 import { useChatStore, generateMessageId } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useFileStore } from '../../stores/fileStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { bridge, SessionListItem, onCliSessionsChanged } from '../../lib/tauri-bridge';
+import { bridge, isRemotePath, SessionListItem, onCliSessionsChanged } from '../../lib/tauri-bridge';
 import { applyDiskSession, syncSession } from '../../lib/session-sync';
 import { startReconnect } from '../../hooks/stream/reconnect';
 import { disposableListen } from '../../lib/disposable-listen';
@@ -128,14 +128,19 @@ export function ConversationList() {
 
   // Initial fetch + polling
   useEffect(() => {
-    // 先等刷新前存活的进程重新接上，再恢复上次选中的会话（见 hooks/stream/reconnect.ts）
-    Promise.all([fetchSessions(), startReconnect()]).then(() => {
+    // 先等刷新前存活的进程重新接上，再恢复上次选中的会话（见 hooks/stream/reconnect.ts）；
+    // 远程会话列表先用本地缓存填上，上次停在远程会话时也能立即恢复（只读，连上后刷新）
+    Promise.all([
+      fetchSessions(),
+      startReconnect(),
+      useSessionStore.getState().loadCachedRemoteSessions(),
+    ]).then(() => {
       const currentSelected = useSessionStore.getState().selectedSessionId;
       if (!currentSelected) {
         const lastId = useSessionStore.getState().getLastSessionId();
         if (lastId) {
           const sessions = useSessionStore.getState().sessions;
-          const match = sessions.find((s) => s.id === lastId);
+          const match = findSessionInEnv(sessions, lastId);
           if (match) {
             handleLoadSession(match);
           }
@@ -156,7 +161,7 @@ export function ConversationList() {
 
     const currentSession = () => {
       const st = useSessionStore.getState();
-      return st.sessions.find((s) => s.id === st.selectedSessionId);
+      return findSessionInEnv(st.sessions, st.selectedSessionId);
     };
     // 同一时刻只同步一次；期间又有变化则在 2 秒后再补一次，避免大会话被高频重复解析
     const syncCurrent = async () => {
@@ -185,7 +190,7 @@ export function ConversationList() {
   useEffect(() => {
     const interval = setInterval(() => {
       const st = useSessionStore.getState();
-      const current = st.sessions.find((s) => s.id === st.selectedSessionId);
+      const current = findSessionInEnv(st.sessions, st.selectedSessionId);
       void syncSession(current);
     }, 3000);
     return () => clearInterval(interval);
@@ -329,6 +334,18 @@ export function ConversationList() {
     agentActions.clearAgents();
     setSessionStatus(sessionId, 'running');
     setSessionMeta(sessionId, { sessionId, stdinId: liveStdinId });
+
+    // 远程会话先显示本地缓存（只读），再经 ssh 读最新内容：主机连不上时至少能看到上次的内容和结论
+    if (isRemotePath(sessionPath) && !liveStdinId) {
+      const fromCache = await applyDiskSession(sessionId, sessionPath, { cacheOnly: true }).catch(() => false);
+      if (fromCache) {
+        setSessionStatus(sessionId, 'completed');
+        applyDiskSession(sessionId, sessionPath, { skipIfUnchanged: true }).catch((err) => {
+          console.warn('[ClaudeDeck] remote session refresh failed, showing cache:', err);
+        });
+        return;
+      }
+    }
 
     try {
       const applied = await applyDiskSession(sessionId, sessionPath);
@@ -517,7 +534,7 @@ export function ConversationList() {
     if (next.has(session.id)) next.delete(session.id);
     else next.add(session.id);
     persistArchived(next);
-    pushArchivedToRemote(session, next);
+    pushArchivedToRemote([session], next);
   }, [archivedSessions, persistArchived, pushArchivedToRemote]);
 
   // Build flat list of visible session IDs for shift+click range selection
@@ -590,19 +607,11 @@ export function ConversationList() {
     const next = new Set(archivedSessions);
     for (const id of selectedIds) next.add(id);
     persistArchived(next);
-    // 批量归档里涉及到的每台远程主机，各推一次自己名下的最新归档列表
-    const touchedHosts = new Set(
-      remoteSessionsList.filter((s) => s.host && selectedIds.has(s.id)).map((s) => s.host!),
-    );
-    for (const hostId of touchedHosts) {
-      const hostArchived = remoteSessionsList
-        .filter((s) => s.host === hostId && next.has(s.id))
-        .map((s) => s.id);
-      bridge.saveRemoteArchivedSessions(hostId, hostArchived).catch(() => {});
-    }
+    // 批量归档涉及到的远程会话，按主机各推一次改动
+    pushArchivedToRemote(remoteSessionsList.filter((s) => selectedIds.has(s.id)), next);
     setSelectedIds(new Set());
     setMultiSelect(false);
-  }, [selectedIds, archivedSessions, persistArchived, remoteSessionsList]);
+  }, [selectedIds, archivedSessions, persistArchived, pushArchivedToRemote, remoteSessionsList]);
 
   const handleRename = useCallback((sessionId: string, newName: string) => {
     setCustomPreview(sessionId, newName);

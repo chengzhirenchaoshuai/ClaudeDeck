@@ -1069,6 +1069,20 @@ pub(crate) async fn load_session(path: String) -> Result<Vec<Value>, String> {
     .await
 }
 
+/// 只读远程会话的本地缓存镜像、不连 ssh（打开远程会话时先显示，连接成功后再刷新）。
+#[tauri::command]
+pub(crate) async fn load_cached_session(path: String) -> Result<Vec<Value>, String> {
+    if !path.starts_with(commands::remote::REMOTE_SCHEME) {
+        return Err("only remote sessions have a local cache".to_string());
+    }
+    run_blocking(move || {
+        let mut records = commands::remote::load_remote_session_cache(&path)?;
+        records.iter_mut().for_each(slim_session_record);
+        Ok(records)
+    })
+    .await
+}
+
 /// 增量读取本机会话 JSONL：从字节偏移 offset 开始读到末尾最后一个完整行，返回新记录与新的偏移。
 /// offset 为 0、超过文件长度（文件被截断或重写）、或不在行首时，改为从头读取并置 reset=true，
 /// 前端据此丢弃缓存的旧记录。末尾尚未写完的半行留到下次再读。

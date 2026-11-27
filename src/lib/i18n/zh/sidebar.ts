@@ -30,6 +30,7 @@ export default {
   'conv.deleteFailed': '删除失败',
   'conv.delete': '删除会话',
   'conv.rename': '重命名',
+  'conv.archiveSyncFailed': '归档状态没能同步到远程主机 {host}，已记下，下次连上时补推：{error}',
   'conv.renameSyncFailed': '备注没能同步到远程主机 {host}，刷新列表后可能被旧名字盖回：{error}',
   'conv.revealInFinder': '在 {fileManager} 中显示',
   'conv.export': '导出为 md',

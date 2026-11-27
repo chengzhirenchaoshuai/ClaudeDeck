@@ -24,6 +24,7 @@ export default {
   // InputBar
   'input.working': '模型正在工作...',
   'input.followUp': '追加消息...',
+  'input.remoteCacheOnly': '远程主机尚未连上，显示的是本地缓存（只读），连上后自动刷新并恢复输入',
   'input.placeholder': '给当前模型发消息...',
   'input.prefixPlaceholder': '输入参数...',
   'input.attachFiles': '附加文件',

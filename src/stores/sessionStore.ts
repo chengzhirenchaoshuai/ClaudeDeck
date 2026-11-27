@@ -17,6 +17,7 @@ export const ACTIVE_GAP_MS = 60 * 60 * 1000;
 
 const CUSTOM_PREVIEWS_KEY = 'tokenicode_custom_previews';
 const PENDING_REMOTE_NAMES_KEY = 'tokenicode_pending_remote_names';
+const PENDING_REMOTE_ARCHIVES_KEY = 'claudedeck_pending_remote_archives';
 const LAST_SESSION_KEY = 'tokenicode_last_session';
 const STDIN_TO_TAB_KEY = 'tokenicode_stdinToTab';
 const UNREAD_KEY = 'tokenicode_unread_sessions';
@@ -88,6 +89,60 @@ function clearPendingName(hostId: string, sessionId: string) {
   writePendingNames(pending);
 }
 
+/**
+ * 没能写回远程主机的归档改动（主机 id → 会话 id → true 归档 / false 取消归档）。
+ * 和改名一样：远端是归档状态的源端，没推上去的话下次拉列表会被远端的旧状态盖回去。
+ */
+type PendingArchives = Record<string, Record<string, boolean>>;
+
+function readPendingArchives(): PendingArchives {
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_REMOTE_ARCHIVES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writePendingArchives(pending: PendingArchives) {
+  try {
+    const left = Object.keys(pending).filter((h) => Object.keys(pending[h]).length > 0);
+    if (left.length === 0) localStorage.removeItem(PENDING_REMOTE_ARCHIVES_KEY);
+    else localStorage.setItem(PENDING_REMOTE_ARCHIVES_KEY, JSON.stringify(pending));
+  } catch {
+    // 本地存储不可用时，待推送的归档只在本次运行内有效
+  }
+}
+
+/** 某台主机上还没推上去的归档改动；拉取远端归档状态时这些会话以本机为准 */
+export function pendingArchivesOf(hostId: string): Record<string, boolean> {
+  return readPendingArchives()[hostId] ?? {};
+}
+
+/** 推送成功后清掉对应条目；推送期间又改过的（值不同）留着下次再推 */
+function clearPendingArchives(hostId: string, pushed: Record<string, boolean>) {
+  const pending = readPendingArchives();
+  const host = pending[hostId];
+  if (!host) return;
+  for (const [id, archived] of Object.entries(pushed)) {
+    if (host[id] === archived) delete host[id];
+  }
+  if (Object.keys(host).length === 0) delete pending[hostId];
+  writePendingArchives(pending);
+}
+
+/**
+ * 按 ID 找会话。远程主机就是本机时（如 ssh 到 localhost），同一个会话在本机列表和远程列表里
+ * 各有一行、ID 相同：优先取与当前环境一致的那一行，否则远程模式下会拿到本机路径，
+ * 远程会话的同步、只读状态的解除都不会发生。
+ */
+export function findSessionInEnv(sessions: SessionListItem[], id: string | null): SessionListItem | undefined {
+  if (!id) return undefined;
+  const matches = sessions.filter((s) => s.id === id);
+  if (matches.length <= 1) return matches[0];
+  const env = useSettingsStore.getState().activeEnv;
+  return matches.find((s) => (env === 'local' ? !s.host : s.host === env)) ?? matches[0];
+}
+
 /** Persist the last active session ID so app restart can auto-restore */
 function saveLastSessionId(id: string | null) {
   if (id && !id.startsWith('draft_')) {
@@ -156,6 +211,10 @@ interface SessionState {
   setCustomPreview: (sessionId: string, name: string) => void;
   /** 把没写回远程主机的改名补推一次（退出前、下次启动拉远程列表前调用） */
   flushPendingRemoteNames: () => Promise<void>;
+  /** 把归档改动写回远程主机（只发改动项，远端合并）；失败时记下待推并提示 */
+  pushRemoteArchive: (hostId: string, patch: Record<string, boolean>) => Promise<void>;
+  /** 补推上次没写回远程主机的归档改动（拉列表前、退出前调用） */
+  flushPendingRemoteArchives: () => Promise<void>;
   /** Get the display name for a session (custom > preview > fallback) */
   getDisplayName: (session: SessionListItem) => string;
   /** Mark a session as running (actively streaming/working) */
@@ -191,6 +250,8 @@ interface SessionState {
   clearContentSearch: () => void;
   /** 读取所有已配置远程主机的会话（经 ssh，较慢，需手动或在启动时调用） */
   fetchRemoteSessions: () => Promise<void>;
+  /** 远程会话列表还空着时，先用上次成功读取的本地缓存填上（不连 ssh，启动时调用） */
+  loadCachedRemoteSessions: () => Promise<void>;
   /** 从远程会话缓存和列表中移除一个会话（远程删除成功后调用，fetchSessions 不会重读远程） */
   removeRemoteSession: (sessionId: string) => void;
   markUnread: (sessionId: string) => void;
@@ -277,9 +338,35 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     }));
   },
 
+  loadCachedRemoteSessions: async () => {
+    try {
+      const hosts = await bridge.listRemoteHosts();
+      const results = await Promise.allSettled(hosts.map((h) => bridge.loadCachedRemoteSessions(h.id)));
+      const cached: SessionListItem[] = [];
+      results.forEach((r) => { if (r.status === 'fulfilled') cached.push(...r.value); });
+      if (cached.length === 0) return;
+      set((state) => {
+        // ssh 已经先读到了真实列表就不再用缓存覆盖
+        if (state.remoteSessions.length > 0) return {};
+        return {
+          remoteSessions: cached,
+          sessions: [
+            ...state.sessions.filter((s) => !s.host && s.path !== ''),
+            ...keepPendingDrafts(state.sessions, cached),
+            ...cached,
+          ],
+        };
+      });
+    } catch {
+      // 缓存读不到不影响正常流程
+    }
+  },
+
   fetchRemoteSessions: async () => {
     set({ isRemoteLoading: true });
     try {
+      // 先显示上次的缓存：ssh 读取较慢，主机连不上时也不至于一片空白
+      await get().loadCachedRemoteSessions();
       const hosts = await bridge.listRemoteHosts();
       // 当前所处的远程主机已被删除时，退回本地模式
       const { activeEnv, setActiveEnv } = useSettingsStore.getState();
@@ -287,13 +374,18 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
         setActiveEnv('local');
       }
       // 先把上次没推上去的改名补推，再拉列表：顺序反了的话，待推的名字会被远端的旧值盖回去
-      await get().flushPendingRemoteNames();
+      await Promise.all([get().flushPendingRemoteNames(), get().flushPendingRemoteArchives()]);
       const results = await Promise.allSettled(hosts.map((h) => bridge.listRemoteSessions(h.id)));
       const remoteSessions: SessionListItem[] = [];
       const remoteErrors: Record<string, string> = {};
+      const previous = get().remoteSessions;
       results.forEach((r, i) => {
         if (r.status === 'fulfilled') remoteSessions.push(...r.value);
-        else remoteErrors[hosts[i].id] = String(r.reason);
+        else {
+          remoteErrors[hosts[i].id] = String(r.reason);
+          // 连不上的主机保留已有列表（含启动时读的缓存），会话仍可只读查看
+          remoteSessions.push(...previous.filter((s) => s.host === hosts[i].id));
+        }
       });
       // 用最新的远程会话替换列表中旧的远程部分，本机会话与草稿保持不变；
       // 草稿只保留远端还没有的（已转为真实 ID、远端也已列出的草稿行要去掉，否则出现同 ID 的影子行）
@@ -404,6 +496,32 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
         // 推送期间又改了同一条的话，留着下次再推
         if (latest[hostId]?.[sessionId] === pending[hostId][sessionId]) clearPendingName(hostId, sessionId);
       }
+    }));
+  },
+
+  pushRemoteArchive: async (hostId, patch) => {
+    if (Object.keys(patch).length === 0) return;
+    // 先记下待推再推：推送途中退出应用，下次启动也会补推
+    const pending = readPendingArchives();
+    pending[hostId] = { ...pending[hostId], ...patch };
+    writePendingArchives(pending);
+    try {
+      await bridge.mergeRemoteArchivedSessions(hostId, patch);
+      clearPendingArchives(hostId, patch);
+    } catch (err) {
+      showToast(
+        t('conv.archiveSyncFailed').replace('{host}', hostId).replace('{error}', String(err)),
+        'error',
+      );
+    }
+  },
+
+  flushPendingRemoteArchives: async () => {
+    const pending = readPendingArchives();
+    const hosts = Object.keys(pending).filter((h) => Object.keys(pending[h]).length > 0);
+    await Promise.allSettled(hosts.map(async (hostId) => {
+      await bridge.mergeRemoteArchivedSessions(hostId, pending[hostId]);
+      clearPendingArchives(hostId, pending[hostId]);
     }));
   },
 
