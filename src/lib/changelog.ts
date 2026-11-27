@@ -18,6 +18,49 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.8.3',
+    date: '2026-11-27',
+    highlights: {
+      zh: ['远程主机离线也能查看会话缓存；Git 未提交改动可展开为文件列表'],
+      en: ['View cached remote sessions while the host is offline; uncommitted Git changes expand into a file list'],
+    },
+    categories: [
+      {
+        label: { zh: '新增', en: 'Added' },
+        items: {
+          zh: [
+            '远程会话列表和内容会存本地缓存，主机连不上时可只读查看，连上后自动刷新',
+            'Git 信息里的未提交改动可展开为文件列表，标出修改、新增、删除等状态',
+          ],
+          en: [
+            'Remote session lists and content are cached locally and viewable read-only while the host is offline, refreshing once it connects',
+            'Uncommitted changes in the Git info expand into a file list marked modified, added, deleted and so on',
+          ],
+        },
+      },
+      {
+        label: { zh: '调整', en: 'Changed' },
+        items: {
+          zh: [
+            '远程归档只合并改动、不再整份覆盖，推送失败时记下补推',
+            '远程会话读取失败后暂停重试，不再堆起等待超时的 ssh 进程',
+          ],
+          en: [
+            'Remote archive changes are merged instead of overwriting the whole file, and failed pushes are retried',
+            'Failed remote session reads back off before retrying instead of piling up ssh processes',
+          ],
+        },
+      },
+      {
+        label: { zh: '修复', en: 'Fixed' },
+        items: {
+          zh: ['远程主机就是本机时，会话可能取错那一行，导致只读状态解除不了'],
+          en: ['When the remote host was this machine, the wrong session row could be picked and stay read-only'],
+        },
+      },
+    ],
+  },
+  {
     version: '1.8.2',
     date: '2026-11-23',
     highlights: {
