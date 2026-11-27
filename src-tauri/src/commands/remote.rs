@@ -1427,7 +1427,7 @@ function GitOut($a) { $x = Run $git "--no-optional-locks $a" 5000; if ($x -and $
 function GitOk($a) { $x = Run $git "--no-optional-locks $a" 5000; [bool]($x -and $x.code -eq 0) }
 $r = [ordered]@{
   isRepo = $false; branch = ''; originHead = ''; hasOriginMain = $false; hasOriginMaster = $false
-  userName = ''; userEmail = ''; remoteUrl = ''; changedFiles = 0
+  userName = ''; userEmail = ''; remoteUrl = ''; changedFiles = 0; statusOutput = ''
   ghInstalled = $false; ghTokenCode = $null; ghTokenStderr = ''; ghStatusCode = $null; ghStatusOutput = ''
 }
 if ($git -and (GitOut 'rev-parse --is-inside-work-tree') -eq 'true') {
@@ -1441,8 +1441,9 @@ if ($git -and (GitOut 'rev-parse --is-inside-work-tree') -eq 'true') {
   $r.userName = GitOut 'config --show-scope --get user.name'
   $r.userEmail = GitOut 'config --show-scope --get user.email'
   $r.remoteUrl = GitOut 'remote get-url origin'
-  $s = GitOut 'status --porcelain'
+  $s = GitOut '-c core.quotePath=false status --porcelain'
   $r.changedFiles = @($s -split "`n" | Where-Object { $_.Trim() }).Count
+  $r.statusOutput = $s
 }
 if ($gh) {
   $x = Run $gh 'auth token' 5000 -NoStdout

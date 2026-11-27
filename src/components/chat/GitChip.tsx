@@ -1,4 +1,5 @@
-// 顶部栏的 Git 小标签：当前分支 + 未提交改动数，gh 登录有问题时标出提醒色；点击展开详情。
+// 顶部栏的 Git 小标签：当前分支 + 未提交改动数，gh 登录有问题时标出提醒色；点击展开详情，
+// 详情里的未提交改动可再展开为文件列表。
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -6,7 +7,10 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { bridge } from '../../lib/tauri-bridge';
 import { useT } from '../../lib/i18n';
 import { finishedSessionIds } from '../../lib/session-finish';
-import { ghHintKey, ghNeedsAttention, type GitInfo } from '../../lib/git-info';
+import {
+  changeKind, ghHintKey, ghNeedsAttention, splitChangedPath,
+  type ChangeKind, type ChangedFile, type GitInfo,
+} from '../../lib/git-info';
 
 const LOGIN_CMD = 'gh auth login -h github.com --web --git-protocol https';
 
@@ -62,6 +66,48 @@ function Row({ label, title, children }: { label: string; title?: string; childr
   );
 }
 
+// 每类改动的标记字母与颜色（与 VS Code 源代码管理的习惯一致）
+const KIND_MARK: Record<ChangeKind, { letter: string; cls: string }> = {
+  modified: { letter: 'M', cls: 'text-warning' },
+  added: { letter: 'A', cls: 'text-success' },
+  untracked: { letter: 'U', cls: 'text-success' },
+  deleted: { letter: 'D', cls: 'text-red-500' },
+  renamed: { letter: 'R', cls: 'text-accent' },
+  conflict: { letter: '!', cls: 'text-red-500' },
+};
+
+/** 未提交文件列表：文件名在前，所在目录浅色跟在后面；放不下时目录先被省略，悬停看完整路径 */
+function ChangedFileList({ files, total, t }: { files: ChangedFile[]; total: number; t: (k: string) => string }) {
+  return (
+    <ul className="mt-1 mb-1 max-h-60 overflow-y-auto rounded-lg border border-border-subtle bg-bg-secondary/40 px-2 py-1">
+      {files.map((f) => {
+        const kind = changeKind(f.status);
+        const mark = KIND_MARK[kind];
+        const { name, dir } = splitChangedPath(f.path);
+        // 第一位（暂存区）有状态说明已 git add，未跟踪的 ?? 除外
+        const staged = f.status[0] !== ' ' && f.status[0] !== '?';
+        const title = [
+          t(`git.change.${kind}`) + (staged ? ` · ${t('git.change.staged')}` : ''),
+          f.orig_path ? `${f.orig_path} → ${f.path}` : f.path,
+        ].join('\n');
+        return (
+          <li key={f.path} className="flex items-center gap-2 py-0.5 min-w-0" title={title}>
+            <span className={`w-3 flex-shrink-0 text-center font-mono ${mark.cls}`}>{mark.letter}</span>
+            <span className={`flex-shrink-0 max-w-[65%] truncate text-text-primary
+              ${kind === 'deleted' ? 'line-through opacity-70' : ''}`}>{name}</span>
+            {dir && <span className="min-w-0 truncate text-text-tertiary">{dir}</span>}
+          </li>
+        );
+      })}
+      {total > files.length && (
+        <li className="py-0.5 text-text-tertiary">
+          {t('git.moreFiles').replace('{n}', String(total - files.length))}
+        </li>
+      )}
+    </ul>
+  );
+}
+
 function CommandLine({ command, t }: { command: string; t: (k: string) => string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -88,6 +134,8 @@ export function GitChip() {
   const cwd = useSettingsStore((s) => s.workingDirectory) ?? '';
   const { info, loading, refresh } = useGitInfo(cwd);
   const [open, setOpen] = useState(false);
+  // 未提交文件列表是否展开；关掉弹层再打开时保持上次的选择
+  const [showFiles, setShowFiles] = useState(false);
   // 弹层经 Portal 挂到 body 并按按钮位置 fixed 定位：顶栏所在的祖先形成了层叠上下文，
   // 留在顶栏里的弹层无论 z-index 多大都会被消息区里的代码片段、气泡等盖住
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -137,7 +185,7 @@ export function GitChip() {
       {open && createPortal(
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
-          <div className="fixed z-[9999] w-80 max-h-[70vh] overflow-y-auto p-3 rounded-xl
+          <div className="fixed z-[9999] w-96 max-h-[70vh] overflow-y-auto p-3 rounded-xl
             border border-border-subtle bg-bg-primary shadow-lg text-[11px] animate-fade-in"
             style={{ top: pos.top, right: pos.right }}>
             <div className="flex items-center mb-1.5">
@@ -155,10 +203,25 @@ export function GitChip() {
             <Row label={t('git.branch')}>{info.branch}</Row>
             <Row label={t('git.mainBranch')}>{info.main_branch}</Row>
             <Row label={t('git.changes')}>
-              {info.changed_files > 0
-                ? t('git.changesCount').replace('{n}', String(info.changed_files))
-                : t('git.clean')}
+              {info.changed_files > 0 ? (
+                <button
+                  onClick={() => setShowFiles(!showFiles)}
+                  className="inline-flex items-center gap-1 text-warning hover:text-accent transition-smooth"
+                  aria-expanded={showFiles}
+                >
+                  {t('git.changesCount').replace('{n}', String(info.changed_files))}
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor"
+                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform ${showFiles ? 'rotate-90' : ''}`}>
+                    <path d="M3.5 2l3 3-3 3" />
+                  </svg>
+                </button>
+              ) : t('git.clean')}
             </Row>
+            {showFiles && info.changed_files > 0 && (
+              // 旧版本后端没有 changed_list 字段时不显示列表
+              <ChangedFileList files={info.changed_list ?? []} total={info.changed_files} t={t} />
+            )}
             <Row label={t('git.commitAs')} title={t('git.commitAsHint')}>
               {info.user_name ?? <span className="text-text-tertiary">{t('git.notSet')}</span>}
               {info.user_name && <span className="text-text-tertiary">{scope(info.user_name_scope)}</span>}

@@ -82,6 +82,8 @@ struct GitProbe {
     user_email: String,
     remote_url: String,
     changed_files: u32,
+    /// `git status --porcelain` 的原始输出（首行开头的空格可能已被裁掉，见 parse_porcelain）
+    status_output: String,
     gh_installed: bool,
     /// `gh auth token` 的退出码，None 表示超时
     gh_token_code: Option<i32>,
@@ -108,6 +110,8 @@ pub(crate) struct GitInfo {
     /// origin 地址，已去掉其中可能内嵌的账号和令牌
     remote_url: Option<String>,
     changed_files: u32,
+    /// 未提交的文件明细（最多 CHANGED_LIST_LIMIT 条，总数看 changed_files）
+    changed_list: Vec<ChangedFile>,
     /// not_installed / authenticated / not_authenticated / unknown
     gh_status: String,
     gh_error: Option<String>,
@@ -115,6 +119,55 @@ pub(crate) struct GitInfo {
     gh_account: Option<String>,
     /// `gh auth status` 报告令牌失效（CLI 只看令牌是否存在，这里额外提示）
     gh_token_invalid: bool,
+}
+
+/// 一个未提交的文件。status 为 porcelain 的两位状态码（如 " M"、"??"、"R "），
+/// path 是相对仓库根目录的路径（重命名时为新路径，旧路径放 orig_path）
+#[derive(Debug, Serialize, PartialEq)]
+pub(crate) struct ChangedFile {
+    status: String,
+    path: String,
+    orig_path: Option<String>,
+}
+
+/// 明细最多回传的条数：改动成千上万时（如误加了构建产物）只列前面一部分，避免传一大坨数据
+const CHANGED_LIST_LIMIT: usize = 300;
+
+/// 解析 `git status --porcelain` 输出。采集时整段输出做过 trim，第一行开头的空格
+/// （工作区修改 " M file" 的暂存区位）可能被裁掉，变成 "M file"：第二个字符是空格时按此补回。
+fn parse_porcelain(output: &str) -> Vec<ChangedFile> {
+    output
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(CHANGED_LIST_LIMIT)
+        .filter_map(|line| {
+            let line = line.trim_end_matches('\r');
+            let (status, rest) = if line.len() >= 3 && line.as_bytes()[2] == b' ' {
+                (line[..2].to_string(), &line[3..])
+            } else if line.len() >= 2 && line.as_bytes()[1] == b' ' {
+                (format!(" {}", &line[..1]), &line[2..])
+            } else {
+                return None;
+            };
+            // 重命名、复制：「旧路径 -> 新路径」
+            let (orig_path, path) = match rest.split_once(" -> ") {
+                Some((from, to)) if status.contains('R') || status.contains('C') => {
+                    (Some(unquote(from)), unquote(to))
+                }
+                _ => (None, unquote(rest)),
+            };
+            Some(ChangedFile { status, path, orig_path })
+        })
+        .collect()
+}
+
+/// 含空格等特殊字符的路径会被 git 加上双引号（已用 core.quotePath=false 关掉非 ASCII 的转义）
+fn unquote(s: &str) -> String {
+    let s = s.trim();
+    match s.strip_prefix('"').and_then(|x| x.strip_suffix('"')) {
+        Some(inner) => inner.replace("\\\"", "\"").replace("\\\\", "\\"),
+        None => s.to_string(),
+    }
 }
 
 fn non_empty(s: &str) -> Option<String> {
@@ -223,6 +276,7 @@ fn build_git_info(p: &GitProbe) -> GitInfo {
         user_email_scope,
         remote_url: non_empty(&p.remote_url).map(|u| strip_url_credentials(&u)),
         changed_files: p.changed_files,
+        changed_list: parse_porcelain(&p.status_output),
         gh_status: gh_status.to_string(),
         gh_error,
         gh_account: parse_gh_account(&p.gh_status_output),
@@ -288,7 +342,7 @@ async fn probe_local_git(cwd: &str) -> GitProbe {
             git(&["config", "--show-scope", "--get", "user.name"]),
             git(&["config", "--show-scope", "--get", "user.email"]),
             git(&["remote", "get-url", "origin"]),
-            git(&["status", "--porcelain"]),
+            git(&["-c", "core.quotePath=false", "status", "--porcelain"]),
         );
         p.branch = branch.unwrap_or_default();
         p.has_origin_main = has_main.is_some();
@@ -296,9 +350,9 @@ async fn probe_local_git(cwd: &str) -> GitProbe {
         p.user_name = user_name.unwrap_or_default();
         p.user_email = user_email.unwrap_or_default();
         p.remote_url = remote_url.unwrap_or_default();
-        p.changed_files = status
-            .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count() as u32)
-            .unwrap_or(0);
+        let status = status.unwrap_or_default();
+        p.changed_files = status.lines().filter(|l| !l.trim().is_empty()).count() as u32;
+        p.status_output = status;
         // origin/HEAD 指向的分支必须在 origin 上确实存在
         if let Some(head) = origin_head {
             let head = head.trim().trim_start_matches("origin/").to_string();
@@ -415,6 +469,35 @@ mod tests {
     /// 用远端脚本实测得到的输出构造：gh 留有账号记录但经 SSH 读不到令牌
     fn ssh_probe() -> GitProbe {
         serde_json::from_str(r#"{"isRepo":true,"branch":"main","originHead":"","hasOriginMain":true,"hasOriginMaster":false,"userName":"local\tchengzhiren66","userEmail":"local\tchengzhiren66@gmail.com","remoteUrl":"https://github.com/chengzhirenchaoshuai/ClaudeDeck.git","changedFiles":3,"ghInstalled":true,"ghTokenCode":1,"ghTokenStderr":"no oauth token found for github.com","ghStatusCode":1,"ghStatusOutput":"\ngithub.com\n  X Failed to log in to github.com account chengzhirenchaoshuai (default)\n  - Active account: true\n  - The token in default is invalid.\n"}"#).unwrap()
+    }
+
+    #[test]
+    fn porcelain_list() {
+        // 首行 " M src/a.rs" 采集时被 trim 成 "M src/a.rs"
+        let out = "M src/a.rs\nM  staged.rs\nMM both.rs\n?? 新文件.md\nR  old.rs -> new/name.rs\n D \"with space.txt\"\n";
+        let list = parse_porcelain(out);
+        let got: Vec<(&str, &str, Option<&str>)> = list
+            .iter()
+            .map(|f| (f.status.as_str(), f.path.as_str(), f.orig_path.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (" M", "src/a.rs", None),
+                ("M ", "staged.rs", None),
+                ("MM", "both.rs", None),
+                ("??", "新文件.md", None),
+                ("R ", "new/name.rs", Some("old.rs")),
+                (" D", "with space.txt", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn porcelain_list_is_capped() {
+        let out: String = (0..CHANGED_LIST_LIMIT + 50).map(|i| format!("?? f{}.txt\n", i)).collect();
+        assert_eq!(parse_porcelain(&out).len(), CHANGED_LIST_LIMIT);
+        assert!(parse_porcelain("").is_empty());
     }
 
     #[test]

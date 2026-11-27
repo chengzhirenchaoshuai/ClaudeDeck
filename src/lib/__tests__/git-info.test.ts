@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ghHintKey, ghNeedsAttention, type GitInfo } from '../git-info';
+import { changeKind, ghHintKey, ghNeedsAttention, splitChangedPath, type GitInfo } from '../git-info';
 
 const base: GitInfo = {
   is_repo: true,
@@ -11,6 +11,7 @@ const base: GitInfo = {
   user_email_scope: null,
   remote_url: null,
   changed_files: 0,
+  changed_list: [],
   gh_status: 'authenticated',
   gh_error: null,
   gh_account: 'someone',
@@ -36,5 +37,26 @@ describe('ghHintKey', () => {
     expect(ghNeedsAttention({ ...base, gh_token_invalid: true })).toBe(true);
     expect(ghHintKey({ ...base, gh_status: 'not_installed' }, false)).toBe('git.hint.ghMissing');
     expect(ghHintKey({ ...base, gh_status: 'unknown' }, false)).toBe('git.hint.ghUnknown');
+  });
+});
+
+describe('changeKind', () => {
+  it('按暂存区和工作区两位状态归类', () => {
+    expect(changeKind(' M')).toBe('modified');
+    expect(changeKind('MM')).toBe('modified');
+    expect(changeKind('A ')).toBe('added');
+    expect(changeKind('??')).toBe('untracked');
+    expect(changeKind(' D')).toBe('deleted');
+    expect(changeKind('R ')).toBe('renamed');
+    expect(changeKind('UU')).toBe('conflict');
+    expect(changeKind('AA')).toBe('conflict');
+  });
+});
+
+describe('splitChangedPath', () => {
+  it('拆出文件名和目录，根目录文件的目录为空，未跟踪目录保留结尾的 /', () => {
+    expect(splitChangedPath('src/lib/a.ts')).toEqual({ name: 'a.ts', dir: 'src/lib' });
+    expect(splitChangedPath('README.md')).toEqual({ name: 'README.md', dir: '' });
+    expect(splitChangedPath('assets/new/')).toEqual({ name: 'new/', dir: 'assets' });
   });
 });
